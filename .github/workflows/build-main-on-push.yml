@@ -1,0 +1,329 @@
+name: Snapshot Build
+on:
+  push:
+    tags:
+    - 'r[0-9]+' # any tag name that looks like an svn commit
+concurrency: 
+  group: Snapshot Build
+  cancel-in-progress: true
+
+jobs:
+  static_analysis:
+      name: Static Analysis
+      runs-on: macos-10.15
+      needs: build_doc
+      strategy:
+        fail-fast: false
+        matrix:
+          ui: [ GTK3, SDL2 ]
+      
+      steps:
+        - name: Install Dependencies
+          shell: bash
+          run: |
+            pip3 install scan-build
+            brew install autoconf automake pkg-config dos2unix
+            brew install sdl2 sdl2_image
+            brew install gtk+3 librsvg adwaita-icon-theme
+            brew install ffmpeg glew xa lame libvorbis flac
+
+        - name: Checkout Source
+          uses: actions/checkout@v2
+        
+        - name: Checkout Pages
+          uses: actions/checkout@v2
+          with:
+            ref: 'gh-pages'
+            path: 'gh-pages'
+
+        - name: Analyse
+          shell: bash
+          run: |
+            ./vice/build/github-actions/build-macos.sh analyse "${{ matrix.ui }}" "$(echo "${{ github.ref }}" | sed 's,.*/,,')"
+
+        - name: Publish Results
+          shell: bash
+          run: |
+            cd gh-pages
+            
+            git add .
+            git commit -m "Updated $UI static analysis output"
+
+            # Try to avoid the race condition between the the two analysis runs
+            for i in $(seq 1 3)
+            do
+              git pull --rebase
+              git push && break
+              sleep 15
+            done
+
+  cleanup_previous_builds: # Delete unfinished draft prereleases, and prereleases older than 30 days (but keep at least 10)
+    name: Cleanup Previous Builds
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/github-script@v3
+        with:
+          github-token: ${{secrets.GITHUB_TOKEN}}
+          script: |
+            // Get a list of all releases, sorted newest first
+            let releases =
+              (await github.paginate(
+                github.repos.listReleases,
+                {
+                  owner: context.repo.owner,
+                  repo: context.repo.repo
+                }))
+                .sort((a,b) => b.created_at.localeCompare(a.created_at));
+            
+            let releaseCount = 0;
+            let releasesToDelete = [];
+
+            // Initiate deletion of draft prereleases
+            for (const release of releases)
+            {
+              // Only cleanup prereleases
+              if (!release.prerelease)
+                continue;
+
+              // Failed builds leave drafts - delete them
+              if (release.draft)
+              {
+                console.log("Will delete draft prerelease: " + release.tag_name);
+                releasesToDelete.push(release.id);
+                continue;
+              }
+              
+              // Keep at least 10, no matter how old
+              if (++releaseCount <= 10)
+                continue;
+              
+              // We have more than 10 releases - delete those more than 30 days old
+              let daysAgo = Math.floor((new Date() - Date.parse(release.created_at)) / 1000 / 60 / 60 / 24);
+
+              if (daysAgo <= 30)
+                continue;
+              
+              console.log("Will delete old prerelease: " + release.tag_name);
+              releasesToDelete.push(release.id);
+            }
+
+            if (releasesToDelete.length)
+            {
+              let promises = [];
+
+              for (const id of releasesToDelete)
+              {
+                promises.push(
+                  github.repos.deleteRelease(
+                    {
+                      owner: context.repo.owner,
+                      repo: context.repo.repo,
+                      release_id: id
+                    }));
+              }
+              
+              console.log("Waiting for deletions to complete");
+              await Promise.all(promises);
+            }
+
+            console.log("Done.");
+
+  create_release:
+    name: Create Draft Release
+    needs: cleanup_previous_builds
+    runs-on: ubuntu-latest
+    outputs:
+      upload_url: ${{ steps.create_release.outputs.upload_url }}
+      release_id: ${{ steps.create_release.outputs.id }}
+    steps:
+      - name: Create Release
+        id: create_release
+        uses: actions/create-release@v1
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        with:
+          tag_name: ${{ github.ref }}
+          release_name: ${{ github.ref }} snapshot
+          draft: true
+          prerelease: true
+
+  build_doc:
+    name: Test Headless, Build Documentation
+    needs: create_release
+    runs-on: ubuntu-latest
+    
+    steps:
+      - shell: bash
+        run: git config --global core.autocrlf input
+      
+      - name: Checkout Source
+        uses: actions/checkout@v2
+
+      - name: Install Dependencies
+        shell: bash
+        run: |
+          sudo apt update
+          sudo apt-get install autoconf automake build-essential byacc flex xa65 dos2unix
+          sudo apt-get install texinfo texlive-fonts-recommended
+          
+      - name: Build
+        id: build
+        shell: bash
+        run: |
+          cd vice
+          ./src/buildtools/genvicedate_h.sh
+          ./autogen.sh
+          ./configure --enable-headlessui --enable-html-docs --without-pulse --without-alsa --without-png
+          make
+
+      - name: Upload
+        uses: actions/upload-artifact@v2
+        with:
+          name: vice-pdf
+          path: vice/doc/vice.pdf
+          retention-days: 1
+  
+  build:
+    name: Build
+    needs: [create_release, build_doc]
+    runs-on: windows-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        arch:
+        - { msystem: MINGW64, arch: x86_64 }
+        - { msystem: MINGW32, arch: i686 }
+        ui: [ GTK3, SDL2 ]
+    steps:
+      - run: git config --global core.autocrlf input
+        shell: bash
+
+      - name: Checkout Source
+        uses: actions/checkout@v2
+
+      - name: Download Documentation
+        uses: actions/download-artifact@v2
+        with:
+          name: vice-pdf
+          path: vice/doc/
+
+      - name: Install GTK3 Dependencies if Applicable
+        if: ${{ matrix.ui == 'GTK3' }}
+        uses: msys2/setup-msys2@v2
+        with:
+          msystem: ${{ matrix.arch.msystem }}
+          update: true
+          install: >-
+            git
+            base-devel
+            autotools
+            mingw-w64-${{ matrix.arch.arch }}-toolchain
+            zip
+            p7zip
+            subversion
+            git
+            mingw-w64-${{ matrix.arch.arch }}-pkg-config
+            mingw-w64-${{ matrix.arch.arch }}-ntldd
+            mingw-w64-${{ matrix.arch.arch }}-glew
+            mingw-w64-${{ matrix.arch.arch }}-giflib
+            mingw-w64-${{ matrix.arch.arch }}-lame
+            mingw-w64-${{ matrix.arch.arch }}-libvorbis
+            mingw-w64-${{ matrix.arch.arch }}-flac
+            mingw-w64-${{ matrix.arch.arch }}-icoutils
+            mingw-w64-${{ matrix.arch.arch }}-ffmpeg
+            mingw-w64-${{ matrix.arch.arch }}-gtk3
+      
+      - name: Install SDL2 Dependencies if Applicable
+        if: ${{ matrix.ui == 'SDL2' }}
+        uses: msys2/setup-msys2@v2
+        with:
+          msystem: ${{ matrix.arch.msystem }}
+          update: true
+          install: >-
+            git
+            base-devel
+            autotools
+            mingw-w64-${{ matrix.arch.arch }}-toolchain
+            zip
+            p7zip
+            subversion
+            git
+            mingw-w64-${{ matrix.arch.arch }}-pkg-config
+            mingw-w64-${{ matrix.arch.arch }}-ntldd
+            mingw-w64-${{ matrix.arch.arch }}-glew
+            mingw-w64-${{ matrix.arch.arch }}-giflib
+            mingw-w64-${{ matrix.arch.arch }}-lame
+            mingw-w64-${{ matrix.arch.arch }}-libvorbis
+            mingw-w64-${{ matrix.arch.arch }}-flac
+            mingw-w64-${{ matrix.arch.arch }}-icoutils
+            mingw-w64-${{ matrix.arch.arch }}-ffmpeg
+            mingw-w64-${{ matrix.arch.arch }}-SDL2
+            mingw-w64-${{ matrix.arch.arch }}-SDL2_image
+
+      - name: Build
+        id: build
+        shell: msys2 {0}
+        run: |
+          MINGW_INSTALLS=${{ matrix.arch.msystem }} ./vice/build/github-actions/build-msys2.sh ${{ matrix.ui }} "$(echo "${{ github.ref }}" | sed 's,.*/,,')"
+          echo ::set-output name=zip_path::$(cygpath -w -a vice/*.zip)
+          echo ::set-output name=zip_name::$(basename vice/*.zip)
+          echo ::set-output name=seven_zip_path::$(cygpath -w -a vice/*.7z)
+          echo ::set-output name=seven_zip_name::$(basename vice/*.7z)
+
+      - name: Upload Zip
+        id: upload-zip
+        uses: actions/upload-release-asset@v1
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        with:
+          upload_url: ${{ needs.create_release.outputs.upload_url }}
+          asset_path: ${{ steps.build.outputs.zip_path }}
+          asset_name: ${{ steps.build.outputs.zip_name }}
+          asset_content_type: application/zip
+      
+      - name: Upload 7Zip
+        id: upload-7zip
+        uses: actions/upload-release-asset@v1
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        with:
+          upload_url: ${{ needs.create_release.outputs.upload_url }}
+          asset_path: ${{ steps.build.outputs.seven_zip_path }}
+          asset_name: ${{ steps.build.outputs.seven_zip_name }}
+          asset_content_type: application/x-7z-compressed
+
+  publish_release:
+    name: Publish Release
+    needs: [create_release, build]
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/github-script@v3
+        with:
+          github-token: ${{secrets.GITHUB_TOKEN}}
+          script: |
+            await github.repos.updateRelease(
+              {
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                release_id: ${{ needs.create_release.outputs.release_id }},
+                draft: false
+              });
+            
+  build_error_notify:
+    name: IRC Notification of Build Errors
+    needs: [static_analysis, cleanup_previous_builds, create_release, build_doc, build, publish_release]
+    runs-on: ubuntu-latest
+    if: ${{ failure() }}
+    steps:
+      - shell: bash
+        run: git config --global core.autocrlf input
+      
+      - name: Checkout Source
+        uses: actions/checkout@v2
+
+      - name: Notify IRC of Build Failure
+        env:
+          IRC_PASS: ${{ secrets.IRC_PASS }}
+        shell: bash
+        run: |
+          ./vice/build/github-actions/irc-message.sh "tried to build $(echo "${{ github.ref }}" | sed 's,.*/,,') but it failed :( $GITHUB_SERVER_URL/$GITHUB_REPOSITORY/actions/runs/$GITHUB_RUN_ID"
