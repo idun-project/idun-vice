@@ -165,6 +165,10 @@ const ui_menu_entry_t scpu64_hardware_menu[] = {
       MENU_ENTRY_SUBMENU,
       submenu_callback,
       (ui_callback_data_t)ds12c887rtc_c64_menu },
+    { CARTRIDGE_NAME_IDUNIO " settings",
+      MENU_ENTRY_SUBMENU,
+      submenu_callback,
+      (ui_callback_data_t)idunio_c64_menu },
 #ifdef HAVE_MIDI
     { "MIDI settings",
       MENU_ENTRY_SUBMENU,
