@@ -6,7 +6,7 @@ This emulator can also work for development even if you lack the actual idun car
 
 ### Installation
 
-To use the emulator on the Raspberry Pi connected with your idun cart, install the latest release of Vice from this GitHub page onto your cartridge.
+To use the emulator on the Raspberry Pi connected with your idun cart, install the latest release of Vice from this GitHub page onto your cartridge. If you are new to `pacman`, consider perusing the Arch Linux [pacman primer](https://wiki.archlinux.org/title/Pacman). You may need to sync with the remote repository using `pacman -Sy` before continuing.
 
 ```
 sudo pacman -U idun-vice-3.6-1-armv7h.pkg.tar.zst
