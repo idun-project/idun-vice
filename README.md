@@ -14,6 +14,8 @@ sudo pacman -U idun-vice-3.6-1-armv7h.pkg.tar.zst
 
 Connect a keyboard to your RPi, and start the emulator using the included launch script `idun-vice/emu.sh`. The emulator runs fullscreen using SDL2. Press F12 to access the Vice menu.
 
+_Note_: `idun-vice/emu64.sh` is sort of ancillary. It exists mainly because the `go64` shell command doesn't work in the emulator. Instead, you can exit the x128 emulator (`emu.sh`), and start the x64sc emulator (`emu64.sh`), without upsetting the state of the cartridge.
+
 ### Building
 
 This GitHub repo is fully buildable on a RPi.

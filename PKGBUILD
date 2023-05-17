@@ -6,23 +6,22 @@ arch=("x86_64" "armv7h")
 url="https://github.com/idun-project/idun-vice"
 license=(GPLv2)
 depends=(alsa-lib giflib libjpeg-turbo libpng sdl2 sdl2_image)
-makedepends=(dos2unix libpcap libxaw texlive-bin texlive-core xa xorg-bdftopcf)
+makedepends=(pkgconf flex bison dos2unix libpcap xa xorg-bdftopcf)
 provides=(idun-vice)
 conflicts=(vice)
 options=(emptydirs)
 source=("$pkgname-$pkgver.tar.gz")
-md5sums=('7b50f35e24f427c8880d4933b1dc662d')
+md5sums=('0bd4b0933e827aa594cd864d33872a15')
 
 build() {
   cd vice/idun && make clean && make
   cd ..
   ./configure \
-    --enable-sdl2ui \
-    --enable-gtk3ui \
+    --enable-sdlui2 \
+    --without-pulse \
     --without-oss \
+    --with-vorbis \
     --disable-pdf-docs \
-    --disable-ffmpeg \
-    --with-fastsid \
     --libdir=/usr/lib \
     --prefix=/usr
   make -j4
