@@ -95,6 +95,7 @@ entryPoint = *
     jsr kernelIOINIT
     jsr kernelRAMTAS
     jsr kernelCINT
+    jsr kernelRESTOR
 }
 warmstart = *
     ; idun boot device
