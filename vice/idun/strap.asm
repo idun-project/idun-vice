@@ -1,32 +1,4 @@
-!if computer-64 {
-    useC128 = 1
-    useC64  = 0
-    LOADADDR = $1300
-    RAMR = $0e00    ; kernel hooks page
-} else {
-    useC128 = 0
-    useC64  = 1
-    LOADADDR = $c000
-    RAMR = $cf00    ; kernel hooks page
-}
-; Local vars stored at the end of RAM-resident block
-RAMVAR      = RAMR+$f8
-temp        = RAMVAR+0  ;(2)
-kernalOpen  = RAMVAR+2  ;(2)
-kernalLoader= RAMVAR+4  ;(2)
-kernalSaver = RAMVAR+6  ;(2)
-
-; These parameters may be altered by booter.
-; Note: $9b/$9c are used by kernal tape loader
-MyDevice    = $9b       ;(1)
-IdunDrive   = $9c       ;(1)
-
-;** ROM entry points
-JUMP_ROM    = $800b
-hookOpen    = <JUMP_ROM+0
-hookLoad    = <JUMP_ROM+3
-hookSave    = <JUMP_ROM+6
-hookClose   = <JUMP_ROM+9
+!source "bootconf.asm"
 
 ;** kernal entry points
 kernelRAMTAS    = $ff87
@@ -126,7 +98,7 @@ booter = *
 }
 
 Loader = *
-    lda #"R"
+    lda #"P"
     jsr Open
     beq +
     jmp kernalErrNotFound
@@ -148,17 +120,13 @@ Loader = *
 +   ldx temp
     beq +
     jsr idunGetbuf
-    lda kCurraddr+0
++   lda kCurraddr+0
     clc
     adc temp
     sta kCurraddr+0
     bcc +
     inc kCurraddr+1
-+   lda kCurraddr+0
-    ldy kCurraddr+1
-    ;critical to update kFileaddr too!
-    sta kFileaddr+0
-    sty kFileaddr+1
++   nop
 !if useC64 {
     cpy #>RAMR-1
     bcc +
@@ -167,6 +135,8 @@ Loader = *
 +   jsr Close
     lda #$40
     sta kStatus
+    ldx kCurraddr+0
+    ldy kCurraddr+1
     clc
     rts
 Saver = *
@@ -281,10 +251,8 @@ Open = *
     iny
     jmp -
     ;send flag
-+   lda #$2c    ; ","
-    sta idDataport
-    pla
-    jsr idunChOut
++   pla
+    jsr mode
     ;end command
     lda #0
     jsr idunChOut
@@ -293,6 +261,14 @@ Open = *
     bne +
     sta $6c
 +   rts
+
+mode = *
+    cmp #"R"
+    bne +
+    rts
++   ldx #$2c    ; ","
+    stx idDataport
+    jmp idunChOut
 
 talk = *
     lda #$01
