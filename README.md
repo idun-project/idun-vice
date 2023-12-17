@@ -9,7 +9,7 @@ This emulator can also work for development even if you lack the actual idun car
 To use the emulator on the Raspberry Pi connected with your idun cart, install the latest release of Vice from this GitHub page onto your cartridge. If you are new to `pacman`, consider perusing the Arch Linux [pacman primer](https://wiki.archlinux.org/title/Pacman). You may need to sync with the remote repository using `pacman -Sy` before continuing.
 
 ```
-sudo pacman -U idun-vice-3.6-1-armv7h.pkg.tar.zst
+sudo pacman -U idun-vice-3.6-2-armv7h.pkg.tar.zst
 ```
 
 Connect a keyboard to your RPi, and start the emulator using the included launch script `idun-vice/emu.sh`. The emulator runs fullscreen using SDL2. Press F12 to access the Vice menu.
@@ -27,13 +27,16 @@ cd idun-vice
 
 If you want to build modified Vice binaries for other platforms, then start in directory `vice` and build things the normal way using `configure` and `make`.
 
-### Using without Idun Cartridge
+### Using without idun-cartridge
 
-- You will need to edit `~/.config/idunrc.toml` and comment out the setting for `io.serial` such as shown below. This will prevent the idun software from continually trying to connect with the cartridge, otherwise it's unusable!
+- You will need to edit `~/.config/idunrc.toml` and comment out the setting for `io.serial` such as shown below. This will stop the RPi continually trying to re-connect with the cartridge, otherwise it's unusable!
 ```
 [io]
 #serial 	= "/dev/ttyAMA0"
 ```
+- You will also need to make an addition to `/etc/systemd/system/idun.service`. In the section under `[Service]`, add an additional line
+    + `Environment=IDUN_MODE_SWITCH=False`
+    + This variable is used to toggle whether the Mode switch is seen as enabled when you don't have an actual idun-cart connected to the RPi.
 - To connect to the RPi from a PC running the emulator, make sure `io.devsock` is set as shown below. Otherwise, only local connection is allowed!
 ```
 [io]
