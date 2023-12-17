@@ -1,6 +1,6 @@
 pkgname=idun-vice
 pkgver=3.6
-pkgrel=1
+pkgrel=2
 pkgdesc="Patched VICE emulator for Idun"
 arch=("x86_64" "armv7h")
 url="https://github.com/idun-project/idun-vice"
@@ -11,7 +11,7 @@ provides=(idun-vice)
 conflicts=(vice)
 options=(emptydirs)
 source=("$pkgname-$pkgver.tar.gz")
-md5sums=('0bd4b0933e827aa594cd864d33872a15')
+md5sums=('3d035d63064e9acec4fcc4e9f0b046c8')
 
 build() {
   cd vice/idun && make clean && make
@@ -29,13 +29,13 @@ build() {
 }
 
 package() {
-  install -d -o idun -g idun "${pkgdir}"/home/idun/idun-vice/resc
-  install -d -o idun -g idun "${pkgdir}"/home/idun/.config/vice
-  install -m644 "${srcdir}"/vice/idun/resc/emu.rom "${pkgdir}"/home/idun/idun-vice/resc
-  install -m644 "${srcdir}"/vice/idun/resc/emu64.rom "${pkgdir}"/home/idun/idun-vice/resc
-  install -m644 "${srcdir}"/vice/idun/sdl-vicerc "${pkgdir}"/home/idun/.config/vice
-  install -m755 "${srcdir}"/vice/idun/emu.sh "${pkgdir}"/home/idun/idun-vice
-  install -m755 "${srcdir}"/vice/idun/emu64.sh "${pkgdir}"/home/idun/idun-vice
+  install -d -o idun -g idun "${pkgdir}"${HOME}/idun-vice/resc
+  install -d -o idun -g idun "${pkgdir}"${HOME}/.config/vice
+  install -m644 "${srcdir}"/vice/idun/resc/emu.rom "${pkgdir}"${HOME}/idun-vice/resc
+  install -m644 "${srcdir}"/vice/idun/resc/emu64.rom "${pkgdir}"${HOME}/idun-vice/resc
+  install -m644 "${srcdir}"/vice/idun/sdl-vicerc "${pkgdir}"${HOME}/.config/vice
+  install -m755 "${srcdir}"/vice/idun/emu.sh "${pkgdir}"${HOME}/idun-vice
+  install -m755 "${srcdir}"/vice/idun/emu64.sh "${pkgdir}"${HOME}/idun-vice
   cd "${srcdir}"/vice
   make DESTDIR="$pkgdir" install
 }
