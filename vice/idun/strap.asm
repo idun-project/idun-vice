@@ -33,6 +33,7 @@ kSaveaddr   = $c1
     kernalErrNotFound   = $f685
     kernalErrNotOpen    = $f682
     kernalErrMemory     = $f697
+    hookCatalog = $1310
 } else {
     bkExtrom = $37
     bkSelect = $01
@@ -40,6 +41,7 @@ kSaveaddr   = $c1
     kernalErrNotFound   = $f703
     kernalErrNotOpen    = $f700
     kernalErrMemory     = $f700     ;???
+    hookCatalog = $c00f
 }
 
 * = $8000
@@ -59,7 +61,8 @@ kSaveaddr   = $c1
     jmp Loader
     jmp Saver
     jmp Close
-
+    jmp hookCatalog
+    
 entryPoint = *
     lda #bkExtrom
     sta bkSelect
