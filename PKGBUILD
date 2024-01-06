@@ -1,6 +1,6 @@
 pkgname=idun-vice
 pkgver=3.6
-pkgrel=2
+pkgrel=3
 pkgdesc="Patched VICE emulator for Idun"
 arch=("x86_64" "armv7h")
 url="https://github.com/idun-project/idun-vice"
