@@ -143,7 +143,7 @@ Loader = *
     clc
     rts
 Saver = *
-    lda #"W"
+    lda #"P"
     jsr Open
     beq +
     jmp kernalErrNotOpen
