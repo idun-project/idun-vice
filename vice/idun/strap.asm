@@ -85,7 +85,7 @@ warmstart = *
     jsr kernelSetnam
 !if useC128 {
     lda #bkRam0
-    ldx #bkExtrom
+    ldx #$08
     jsr kernelSetbnk
 }
     ; load booter and jump
