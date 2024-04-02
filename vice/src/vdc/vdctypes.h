@@ -88,12 +88,6 @@ typedef struct vdc_light_pen_s vdc_light_pen_t;
 struct alarm_s;
 struct video_chip_cap_s;
 
-#define VDC_REVISION_0  0 /* 8563 R7A */
-#define VDC_REVISION_1  1 /* 8563 R8/R9 */
-#define VDC_REVISION_2  2 /* 8568 */
-
-#define VDC_NUM_REVISIONS 3
-
 struct vdc_s {
     /* Flag: Are we initialized?  */
     int initialized;            /* = 0; */
@@ -143,9 +137,10 @@ struct vdc_s {
 
     /* Character width - width of each character on screen in physical pixels */
     unsigned int charwidth;
-    
+
     /* Value to add to `mem_counter' after the graphics has been painted.  */
-    unsigned int mem_counter_inc;
+    unsigned int mem_counter_inc;   /* FIXME - always the same as screen_text_cols! */
+    unsigned int skip_after_line;   /* derived from reg27 */
 
     /* All the VDC logging goes here.  */
     signed int log;
@@ -199,6 +194,7 @@ struct vdc_s {
     current_x_pixel = pixels_per_line / (vdc.xsync_increment >> 16) * (current_cycle - vdc_line_start) */
 
     /* record register 27 in case of a change between raster updates */
+    /* FIXME - never used! */
     int old_reg27;
 
     /* Row counter (required for comparison with reg[6] - number of visible screen rows - to know if we are at the end of the visible data) */
@@ -209,25 +205,25 @@ struct vdc_s {
 
     /* offset into the attribute memory - used for emulating the 8x1 attribute VDC quirk */
     unsigned int attribute_offset;
-    
+
     /* flag as to whether the VDC is actually rendering active raster lines, or is idle (i.e in the top or bottom border) */
     unsigned int display_enable;
 
     /* flag as to whether the VDC is preparing to draw but hasn't actually started yet, usually when it's reset to internal row # 0 */
     unsigned int prime_draw;
-    
+
     /* flag as to whether the VDC is drawing (e.g. reading from screen memory) or if it is stopped. This is different to above, because the VDC can be drawing inside the top or bottom border */
     unsigned int draw_active;
 
     /* flag as to whether the VDC is finished drawing or not, to make sure end of frame stuff like video pointers is handled properly */
     unsigned int draw_finished;
-    
+
     /* flag as to whether the VDC is in VSYNC or not */
     unsigned int vsync;
-    
+
     /* internal VDC counter so the vsync is the correct height (in rows) */
     unsigned int vsync_counter;
-    
+
     /* height of the vsync pulse in raster lines, this varies by video standard/video mode */
     unsigned int vsync_height;
 
@@ -265,11 +261,11 @@ typedef struct vdc_s vdc_t;
 extern vdc_t vdc;
 
 /* Private function calls, used by the other VDC modules.  */
-extern int vdc_load_palette(const char *name);
-extern void vdc_fetch_matrix(int offs, int num);
-extern void vdc_update_memory_ptrs(unsigned int cycle);
-extern void vdc_update_video_mode(unsigned int cycle);
-extern void vdc_set_set_canvas_refresh(int enable);
-extern void vdc_calculate_xsync(void);
+int vdc_load_palette(const char *name);
+void vdc_fetch_matrix(int offs, int num);
+void vdc_update_memory_ptrs(unsigned int cycle);
+void vdc_update_video_mode(unsigned int cycle);
+void vdc_set_set_canvas_refresh(int enable);
+void vdc_calculate_xsync(void);
 
 #endif

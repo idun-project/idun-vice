@@ -42,7 +42,7 @@
 #include "palette.h"
 #include "types.h"
 
-/*#define DEBUG1520       1*/
+/*#define DEBUG1520       1 */
 /*#define DEBUG1520_A   1*/
 
 /*
@@ -233,7 +233,7 @@ static void eject(plot_t *mps)
  * every move or draw (pen up or down) or when setting the absolute
  * origin. Of course you see the effect only when the pen is down.
  * Therefore we can leave out the calls where there is only movement.
- * See 0e13  sta dash_counter  
+ * See 0e13  sta dash_counter
  *
  * The difference is what happens with lines drawn for letters.
  */
@@ -282,7 +282,7 @@ static void plot(plot_t *mps, int x, int y)
     if (mps->scribe) {
         if (mps->scribe_state < mps->scribe) {
             mix(&(*mps->sheet)[y][x], PIXEL_INDEX_BLACK + mps->colour);
-        } 
+        }
         mps->scribe_state++;
         if (mps->scribe_state >= 2 * mps->scribe) {
             mps->scribe_state = 0;
@@ -614,7 +614,7 @@ static void draw_char(plot_t *mps, const char *commands)
                 if (prev_command != command) {
                     reset_scribe_state(mps);
                 }
-                    
+
                 draw(mps, x, y, newx, newy);
             }
 
@@ -914,7 +914,7 @@ static void print_char_plot(plot_t *mps, const uint8_t c)
 
         /* TODO: Q: what if not enough numbers are given?
          * A: It seems that 0 is used.
-         * 
+         *
          * TODO: Q: what if the numbers are too large? >= 999
          * A1: x > 480: head tries to move there anyway; motor buzzes.
          */
@@ -1208,20 +1208,32 @@ static int drv_1520_formfeed(unsigned int prnr)
 
 int drv_1520_init_resources(void)
 {
-    driver_select_t driver_select;
+    driver_select_t driver;
 #if DEBUG1520
     log_message(drv1520_log, "drv_1520_init_resources");
 #endif
 
-    driver_select.drv_name = "1520";
-    driver_select.drv_open = drv_1520_open;
-    driver_select.drv_close = drv_1520_close;
-    driver_select.drv_putc = drv_1520_putc;
-    driver_select.drv_getc = drv_1520_getc;
-    driver_select.drv_flush = drv_1520_flush;
-    driver_select.drv_formfeed = drv_1520_formfeed;
+    driver = (driver_select_t){
+        .drv_name     = "1520",
+        .ui_name      = "Commodore 1520",
 
-    driver_select_register(&driver_select);
+        .drv_open     = drv_1520_open,
+        .drv_close    = drv_1520_close,
+        .drv_putc     = drv_1520_putc,
+        .drv_getc     = drv_1520_getc,
+        .drv_flush    = drv_1520_flush,
+        .drv_formfeed = drv_1520_formfeed,
+        .drv_select   = NULL,
+
+        .printer      = false,
+        .plotter      = true,
+        .iec          = true,
+        .ieee488      = false,
+        .userport     = false,
+        .text         = false,
+        .graphics     = true
+    };
+    driver_select_register(&driver);
 
     return 0;
 }
@@ -1245,9 +1257,9 @@ int drv_1520_init(void)
         return -1;
     }
 
-    if (palette_load("1520" FSDEV_EXT_SEP_STR "vpl", "PRINTER", palette) < 0) {
+    if (palette_load("1520.vpl", "PRINTER", palette) < 0) {
         log_error(drv1520_log, "Cannot load palette file `%s'.",
-                  "1520" FSDEV_EXT_SEP_STR "vpl");
+                  "1520.vpl");
         return -1;
     }
 

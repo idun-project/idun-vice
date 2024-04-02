@@ -47,13 +47,6 @@
 #define ARCHDEP_TED_DSIZE     1     /**< TED double size */
 #define ARCHDEP_TED_DSCAN     1     /**< TED double scan */
 
-/* Video chip double buffering.  */
-#define ARCHDEP_VICII_DBUF 0        /**< VICII double buffering */
-#define ARCHDEP_VDC_DBUF   0        /**< VDC double buffering */
-#define ARCHDEP_VIC_DBUF   0        /**< VIC double buffering */
-#define ARCHDEP_CRTC_DBUF  0        /**< CRTC double buffering */
-#define ARCHDEP_TED_DBUF   0        /**< TED double buffering */
-
 /* No key symcode.  */
 #define ARCHDEP_KEYBOARD_SYM_NONE 0 /**< no keyboard symcode (?) */
 
@@ -65,11 +58,21 @@
  */
 #define ARCHDEP_SEPERATE_MONITOR_WINDOW
 
+/** \brief  Default state of mouse grab
+ */
+#define ARCHDEP_MOUSE_ENABLE_DEFAULT    0
+
+/** \brief  Factory value of the CHIPShowStatusbar resource
+ *
+ * XXX: A bit silly since the headless UI doesn't have a status bar.
+ */
+#define ARCHDEP_SHOW_STATUSBAR_FACTORY  0
+
 #ifdef UNIX_COMPILE
 #include "archdep_unix.h"
 #endif
 
-#ifdef WIN32_COMPILE
+#ifdef WINDOWS_COMPILE
 #include "archdep_win32.h"
 #endif
 

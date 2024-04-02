@@ -112,7 +112,7 @@
 #define GMOD3_8MB_FLASH_SIZE (8*1024*1024)
 #define GMOD3_16MB_FLASH_SIZE (16*1024*1024)
 
-static uint8_t gmod3_rom[GMOD3_16MB_FLASH_SIZE];    /* FIXME, should not be static */
+static uint8_t *gmod3_rom = NULL;
 static uint32_t gmod3_flashsize = 0;
 
 static int gmod3_enabled = 0;
@@ -160,7 +160,8 @@ static io_source_t gmod3_io1_device = {
     gmod3_dump,            /* device state information dump function */
     CARTRIDGE_GMOD3,       /* cartridge ID */
     IO_PRIO_NORMAL,        /* normal priority, device read needs to be checked for collisions */
-    0                      /* insertion order, gets filled in by the registration function */
+    0,                     /* insertion order, gets filled in by the registration function */
+    IO_MIRROR_NONE         /* NO mirroring */
 };
 
 static io_source_list_t *gmod3_io1_list_item = NULL;
@@ -357,6 +358,10 @@ void gmod3_config_setup(uint8_t *rawcart)
 {
     gmod3_cmode = CMODE_8KGAME;
     cart_config_changed_slotmain((uint8_t)gmod3_cmode, (uint8_t)gmod3_cmode, CMODE_READ);
+
+    if (gmod3_rom == NULL) {
+        gmod3_rom = lib_malloc(GMOD3_16MB_FLASH_SIZE);
+    }
 
     spi_flash_set_image(gmod3_rom, gmod3_flashsize);
     memcpy(gmod3_rom, rawcart, GMOD3_16MB_FLASH_SIZE);
@@ -568,6 +573,11 @@ void gmod3_detach(void)
     gmod3_io1_list_item = NULL;
 
     gmod3_enabled = 0;
+
+    if (gmod3_rom) {
+        lib_free(gmod3_rom);
+        gmod3_rom = NULL;
+    }
 }
 
 /* ---------------------------------------------------------------------*/
@@ -621,6 +631,10 @@ int gmod3_snapshot_read_module(snapshot_t *s)
     if (snapshot_version_is_smaller(vmajor, vminor, SNAP_MAJOR, SNAP_MINOR)) {
         snapshot_set_error(SNAPSHOT_MODULE_INCOMPATIBLE);
         goto fail;
+    }
+
+    if (gmod3_rom == NULL) {
+        gmod3_rom = lib_malloc(GMOD3_16MB_FLASH_SIZE);
     }
 
     if (0

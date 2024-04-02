@@ -71,7 +71,7 @@ static void vdc_raster_draw_alarm_handler(CLOCK offset, void *data);
    so that means that the ratio is 12.2727 / 16 = 0.76704375
  * The article above compensates for the VIC-II's not quite standard line
    frequency but that is not necessary here as the VDC produces exact PAL & NTSC
-   line frequency of 64µs & 63.5µs respectively with default kernal values.
+   line frequency of 64us & 63.5us respectively with default kernal values.
  * NOTE if we were not using Stretch_Vertically by default we could be halving
    the value here to achieve the correct aspect naturally..
 */
@@ -94,7 +94,7 @@ static float vdc_get_pixel_aspect(void)
 /* return type of monitor used for current video mode */
 static int vdc_get_crt_type(void)
 {
-    return 2; /* RGB */
+    return VIDEO_CRT_TYPE_RGB;
 }
 
 static void vdc_set_geometry(void)
@@ -183,8 +183,6 @@ static int init_raster(void)
         log_error(vdc.log, "Cannot load palette.");
         return -1;
     }
-
-    raster_set_title(raster, machine_name);
 
     if (raster_realize(raster) < 0) {
         return -1;
@@ -433,20 +431,20 @@ static void vdc_increment_memory_pointer(void)
 {
     vdc.mem_counter_inc = vdc.screen_text_cols;
     if (vdc.raster.ycounter >= vdc.raster_ycounter_max) {
-        vdc.mem_counter += vdc.mem_counter_inc + vdc.regs[27];
+        vdc.mem_counter += vdc.mem_counter_inc + vdc.skip_after_line;
     }
 
     vdc.raster.ycounter = (vdc.raster.ycounter + 1)
                           % (vdc.raster_ycounter_max + 1);
 
-    vdc.bitmap_counter += vdc.mem_counter_inc + vdc.regs[27];
+    vdc.bitmap_counter += vdc.mem_counter_inc + vdc.skip_after_line;
 }
 
 static void vdc_increment_memory_pointer_interlace_bitmap(void)
 {   /* This is identical to above (and should remain so), we just don't increment the bitmap pointer */
     vdc.mem_counter_inc = vdc.screen_text_cols;
     if (vdc.raster.ycounter >= vdc.raster_ycounter_max) {
-        vdc.mem_counter += vdc.mem_counter_inc + vdc.regs[27];
+        vdc.mem_counter += vdc.mem_counter_inc + vdc.skip_after_line;
     }
     vdc.raster.ycounter = (vdc.raster.ycounter + 1)
                           % (vdc.raster_ycounter_max + 1);
@@ -490,22 +488,22 @@ static void vdc_raster_draw_alarm_handler(CLOCK offset, void *data)
         vdc_row_counter_latch = 0;
         vdc.row_counter_y = ~(vdc.row_counter_y ^ vdc.regs[9]);   /* XNOR */
         vdc.row_counter_y &= vdc.interlaced;    /* always 0 if non-interlaced, otherwise keep bottom bit of above */
-        
+
         /* Update the row counter because we are starting a new line */
         vdc.row_counter++;
         /* FIXME: not clamping to 8bits here so the "> vdc.regs[4]" case below catches reg#4=$FF and still shows an image. */
-        
+
         /* FIXME this seems a bit messy and/or is in the wrong spot */
         if (vdc.row_counter == 1) { /* we think anything visible starts on internal row 1 */
             vdc.display_enable = 1;
         }
-        
+
         /* check if we are at the end of the active area, e.g. after last visible row, normally #25 */
         if (vdc.row_counter > vdc.regs[6])  {
             vdc.display_enable = 0;
             /* FIXME handle prebuffering next line here and/or in draw section */
         }
-        
+
         /* Check if we've hit past the last char row and we should restart
             FIXME comparison looks wrong, probably not a > ?    */
         if (vdc.row_counter > (vdc.regs[4])) {
@@ -514,9 +512,9 @@ static void vdc_raster_draw_alarm_handler(CLOCK offset, void *data)
                 vdc_vert_fine_adj = 0;
                 vdc.row_counter = 0;
                 /* we reset the raster line counter to 0, except if we are interlaced (==1) and on an odd frame */
-                vdc.row_counter_y = vdc.interlaced & vdc.frame_counter; 
+                vdc.row_counter_y = vdc.interlaced & vdc.frame_counter;
                 vdc.prime_draw = 1;
-            
+
                 /* FIXME fall through catch in case the attribute pointers didn't latch. Probably not exactly what the chip does... */
                 if (!vdc.draw_finished) {
                     /* Reset address pointers */
@@ -614,7 +612,7 @@ static void vdc_raster_draw_alarm_handler(CLOCK offset, void *data)
             vdc_row_counter_latch = 1;
         }
     }
-    
+
     /* Handle if we are in vertical sync pulse */
     if (vdc.vsync) {
         vdc.vsync_counter++;
@@ -622,14 +620,14 @@ static void vdc_raster_draw_alarm_handler(CLOCK offset, void *data)
         if (vdc.vsync_counter > vdc.vsync_height) { /* 25 for PAL, 21 for NTSC seems to be about right # of raster lines the vsync consumes on a C= monitor, and is official PAL spec */
             vdc.vsync = 0;
             /* printf("vdc.raster.current_line: %03u vdc.canvas_height_old: %03u ", vdc.raster.current_line, vdc.canvas_height_old); */
-            
+
             /* This SEEMS to work to reset the raster to 0, based on ted.c, but maybe there is something else needed?
                 FIXME handle cleanup of remainder of visible raster lines below the reset point somewhere somehow */
             vdc.raster.current_line = 0;
             raster_canvas_handle_end_of_frame(&vdc.raster);
-        
+
             vdc.frame_counter++;    /* As far as the frame counter is concerned, we are now on a new frame */
-            
+
             if (vdc.interlaced) {
                 vdc.raster.canvas->videoconfig->interlace_field = vdc.frame_counter & 1;
             } else {
@@ -641,7 +639,7 @@ static void vdc_raster_draw_alarm_handler(CLOCK offset, void *data)
             } else {
                 vdc.attribute_blink = vdc.frame_counter & 8;
             }
-            
+
             /* FIXME I doubt all this is required any more: */
             if (vdc.update_geometry) {
                 vdc_update_geometry();
@@ -681,7 +679,7 @@ static void vdc_raster_draw_alarm_handler(CLOCK offset, void *data)
     if ((vdc.row_counter == vdc.regs[6] + 1) && ((vdc.row_counter_y == 1 ) || (vdc.interlaced && vdc.row_counter_y == 2))) {
         vdc.draw_active = 0;
         vdc.draw_finished = 1;
-        
+
         /* Reset address pointers */
         vdc.screen_adr = ((vdc.regs[12] << 8) | vdc.regs[13])
                          & vdc.vdc_address_mask;
@@ -697,7 +695,7 @@ static void vdc_raster_draw_alarm_handler(CLOCK offset, void *data)
             vdc.old_screen_adr = vdc.screen_adr;
             vdc.old_attribute_adr = vdc.attribute_adr;
         }
-        
+
         if (vdc.interlaced                  /* interlace and.. */
             && (vdc.regs[25] & 0x80)        /* bitmap mode and.. */
             && !(vdc.frame_counter & 1)) { /* even frame */
@@ -729,13 +727,13 @@ static void vdc_raster_draw_alarm_handler(CLOCK offset, void *data)
             if (vdc.interlaced & vdc.frame_counter) {
                 vdc.draw_counter_y = (vdc.draw_counter_y + 1)
                           % ((vdc.regs[9] & 0x1F) + 1); /* FIXME this is overly complex and definitely not what the chip does internally.. */
-                vdc.bitmap_counter += vdc.mem_counter_inc + vdc.regs[27];
+                vdc.bitmap_counter += vdc.mem_counter_inc + vdc.skip_after_line;
                 vdc.bitmap_counter &= vdc.vdc_address_mask;
             }
         } else {
             if (vdc.draw_counter_y == (vdc.regs[9] & 0x1F) || (vdc.draw_counter_y + vdc.interlaced) == (vdc.regs[9] & 0x1F)) {
                 /* we latch on now and start drawing on the next call, even if that's invisible because it's above the top border */
-                
+
                 /* we are trying to keep the bottom bit the same for the next character row, but only if interlaced */
                 vdc.draw_counter_y = ~(vdc.draw_counter_y ^ vdc.regs[9]); /* XNOR */
                 vdc.draw_counter_y &= vdc.interlaced;   /* always 0 if non-interlaced, otherwise keep bottom bit of above */
@@ -747,19 +745,19 @@ static void vdc_raster_draw_alarm_handler(CLOCK offset, void *data)
                         && (vdc.regs[25] & 0x80)    /* bitmap mode and.. */
                         && !(vdc.frame_counter & 1)) { /* even frame */
                     vdc.mem_counter_inc = vdc.screen_text_cols;
-                    vdc.mem_counter += vdc.mem_counter_inc + vdc.regs[27];
+                    vdc.mem_counter += vdc.mem_counter_inc + vdc.skip_after_line;
                     vdc.mem_counter &= vdc.vdc_address_mask;
                 }
             } else {
                 vdc.draw_counter_y += 1 + vdc.interlaced;
                 vdc.draw_counter_y &= 0x1F;
                 if (vdc.interlaced) {
-                    vdc.bitmap_counter += vdc.mem_counter_inc + vdc.regs[27];
+                    vdc.bitmap_counter += vdc.mem_counter_inc + vdc.skip_after_line;
                     vdc.bitmap_counter &= vdc.vdc_address_mask;
                 }
             }
         }
-    
+
     /* Handle the normal drawing case */
     } else if (vdc.draw_active) {
         if (vdc_draw_counter_latch) {    /* latch is set if the previous raster line was the last of its character row */
@@ -767,24 +765,24 @@ static void vdc_raster_draw_alarm_handler(CLOCK offset, void *data)
             vdc.draw_counter_y &= vdc.interlaced;   /* always 0 if non-interlaced, otherwise keep bottom bit of above */
             vdc.draw_counter++;
             vdc_draw_counter_latch = 0;
-            
+
             /* FIXME We've just drawn the last raster line of the current row, the buffer reading could/should be here? */
-            
+
             /* We're on the first line of the current character row, swap the buffers for reading vs drawing */
             vdc.scrnbufdraw ^= 0x100;
             vdc.attrbufdraw ^= 0x100;
-            
+
             /* increment memory pointers etc. for a new character row */
             vdc.mem_counter_inc = vdc.screen_text_cols;
-            vdc.mem_counter += vdc.mem_counter_inc + vdc.regs[27];
+            vdc.mem_counter += vdc.mem_counter_inc + vdc.skip_after_line;
             vdc.mem_counter &= vdc.vdc_address_mask;
-            vdc.bitmap_counter += vdc.mem_counter_inc + vdc.regs[27];
+            vdc.bitmap_counter += vdc.mem_counter_inc + vdc.skip_after_line;
             vdc.bitmap_counter &= vdc.vdc_address_mask;
         } else {
             /* increment memory pointers etc. for a new raster line */
             vdc.draw_counter_y += 1 + vdc.interlaced;
             vdc.draw_counter_y &= 0x1F;
-            vdc.bitmap_counter += vdc.mem_counter_inc + vdc.regs[27];
+            vdc.bitmap_counter += vdc.mem_counter_inc + vdc.skip_after_line;
             vdc.bitmap_counter &= vdc.vdc_address_mask;
         }
         if (vdc.draw_counter_y == (vdc.regs[9] & 0x1F) || (vdc.draw_counter_y + vdc.interlaced) == (vdc.regs[9] & 0x1F)) {
@@ -833,8 +831,8 @@ static void vdc_raster_draw_alarm_handler(CLOCK offset, void *data)
             if (j == 82) {
                 j = 41;
             }
-            vdc.attrbuf[(vdc.attrbufdraw ^ 0x100) | j] = vdc_ram_read(vdc.attribute_adr + vdc.mem_counter + vdc.mem_counter_inc + vdc.regs[27] + i);
-            vdc.scrnbuf[(vdc.scrnbufdraw ^ 0x100) | j] = vdc_ram_read(vdc.screen_adr + vdc.mem_counter + vdc.mem_counter_inc + vdc.regs[27] + i);
+            vdc.attrbuf[(vdc.attrbufdraw ^ 0x100) | j] = vdc_ram_read(vdc.attribute_adr + vdc.mem_counter + vdc.mem_counter_inc + vdc.skip_after_line + i);
+            vdc.scrnbuf[(vdc.scrnbufdraw ^ 0x100) | j] = vdc_ram_read(vdc.screen_adr + vdc.mem_counter + vdc.mem_counter_inc + vdc.skip_after_line + i);
         }
     }
 

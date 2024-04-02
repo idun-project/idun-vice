@@ -246,7 +246,8 @@ static io_source_t expert_io1_device = {
     expert_dump,           /* device state information dump function */
     CARTRIDGE_EXPERT,      /* cartridge ID */
     IO_PRIO_NORMAL,        /* normal priority, device read needs to be checked for collisions */
-    0                      /* insertion order, gets filled in by the registration function */
+    0,                     /* insertion order, gets filled in by the registration function */
+    IO_MIRROR_NONE         /* NO mirroring */
 };
 
 static const export_resource_t export_res = {
@@ -701,6 +702,7 @@ int expert_bin_attach(const char *filename, uint8_t *rawcart)
     if (expert_bin_load(filename, rawcart) < 0) {
         return -1;
     }
+    /* set the resource */
     if (set_expert_filename(filename, NULL) < 0) {
         return -1;
     }
@@ -759,6 +761,7 @@ int expert_crt_attach(FILE *fd, uint8_t *rawcart, const char *filename)
     if (expert_crt_load(fd, rawcart) < 0) {
         return -1;
     }
+    /* set the resource */
     if (set_expert_filename(filename, NULL) < 0) {
         return -1;
     }

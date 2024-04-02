@@ -27,25 +27,22 @@
  */
 
 #include "vice.h"
-
-#include "archdep.h"
 #include "archdep_defs.h"
 
 #include <stdio.h>
 #include <errno.h>
 
-#ifdef ARCHDEP_OS_WINDOWS
+#ifdef WINDOWS_COMPILE
 # include <windows.h>
 #endif
 
-#include "ioutil.h"
 #include "lib.h"
 #include "util.h"
 
 #include "archdep_default_logger.h"
 
 
-#ifdef ARCHDEP_OS_WINDOWS
+#ifdef WINDOWS_COMPILE
 
 /** \brief  Write message to Windows debugger/logger
  *
@@ -66,19 +63,18 @@ int archdep_default_logger(const char *level_string, const char *txt)
         out = lib_strdup(txt);
     }
 
-    /* If a console is attached, spit out the log entry */
-    if (!GetConsoleTitle(NULL, 0) && GetLastError() == ERROR_SUCCESS) {
-        puts(out);
-        fflush(stdout);
-    } else {
-        OutputDebugString(out);
-    }
+    /* first output to stdout as usual, and flush the output so it
+       shows up in the console immediately */
+    puts(out);
+    fflush(stdout);
+    /* also output to debug output, so it can be captured by Debugview etc */
+    OutputDebugString(out);
 
     lib_free(out);
     return 0;
 }
 
-#elif defined(ARCHDEP_OS_UNIX) || defined(ARCHEP_OS_BEOS)
+#elif defined(UNIX_COMPILE) || defined(ARCHEP_OS_BEOS)
 
 /** \brief  Write log message to stdout
  *

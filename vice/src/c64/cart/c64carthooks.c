@@ -82,6 +82,7 @@
 #include "digimax.h"
 #include "dinamic.h"
 #include "dqbb.h"
+#include "drean.h"
 #include "ds12c887rtc.h"
 #include "easycalc.h"
 #include "easyflash.h"
@@ -101,7 +102,7 @@
 #include "gs.h"
 #include "gmod2.h"
 #include "gmod3.h"
-#include "drean.h"
+#include "hyperbasic.h"
 #include "ide64.h"
 #include "idunio.h"
 #include "ieeeflash64.h"
@@ -123,6 +124,7 @@
 #include "sfx_soundsampler.h"
 #include "ocean.h"
 #include "pagefox.h"
+#include "partner64.h"
 #include "prophet64.h"
 #include "ramcart.h"
 #include "ramlink.h"
@@ -273,6 +275,9 @@ static const cmdline_option_t cmdline_options[] =
     { "-cartdqbb", CALL_FUNCTION, CMDLINE_ATTRIB_NEED_ARGS,
       cart_attach_cmdline, (void *)CARTRIDGE_DQBB, NULL, NULL,
       "<Name>", "Attach raw 16KiB Double Quick Brown Box cartridge image" },
+    { "-cartdrean", CALL_FUNCTION, CMDLINE_ATTRIB_NEED_ARGS,
+      cart_attach_cmdline, (void *)CARTRIDGE_DREAN, NULL, NULL,
+      "<Name>", "Attach raw 32KiB " CARTRIDGE_NAME_DREAN " cartridge image" },
     { "-carteasy", CALL_FUNCTION, CMDLINE_ATTRIB_NEED_ARGS,
       cart_attach_cmdline, (void *)CARTRIDGE_EASYFLASH, NULL, NULL,
       "<Name>", "Attach raw EasyFlash cartridge image" },
@@ -328,9 +333,9 @@ static const cmdline_option_t cmdline_options[] =
     { "-cartgs", CALL_FUNCTION, CMDLINE_ATTRIB_NEED_ARGS,
       cart_attach_cmdline, (void *)CARTRIDGE_GS, NULL, NULL,
       "<Name>", "Attach raw 512KiB Game System cartridge image" },
-    { "-cartdrean", CALL_FUNCTION, CMDLINE_ATTRIB_NEED_ARGS,
-      cart_attach_cmdline, (void *)CARTRIDGE_DREAN, NULL, NULL,
-      "<Name>", "Attach raw 32KiB Hero cartridge image" },
+    { "-carthyper", CALL_FUNCTION, CMDLINE_ATTRIB_NEED_ARGS,
+      cart_attach_cmdline, (void *)CARTRIDGE_HYPERBASIC, NULL, NULL,
+      "<Name>", "Attach raw 64KiB " CARTRIDGE_NAME_HYPERBASIC " cartridge image" },
     { "-cartide64", CALL_FUNCTION, CMDLINE_ATTRIB_NEED_ARGS,
       cart_attach_cmdline, (void *)CARTRIDGE_IDE64, NULL, NULL,
       "<Name>", "Attach raw 64KiB IDE64 cartridge image" },
@@ -388,6 +393,9 @@ static const cmdline_option_t cmdline_options[] =
     { "-cartp64", CALL_FUNCTION, CMDLINE_ATTRIB_NEED_ARGS,
       cart_attach_cmdline, (void *)CARTRIDGE_P64, NULL, NULL,
       "<Name>", "Attach raw 256KiB Prophet 64 cartridge image" },
+    { "-cartpartner64", CALL_FUNCTION, CMDLINE_ATTRIB_NEED_ARGS,
+      cart_attach_cmdline, (void *)CARTRIDGE_PARTNER64, NULL, NULL,
+      "<Name>", "Attach raw 16KiB " CARTRIDGE_NAME_PARTNER64 " cartridge image" },
     { "-cartramcart", CALL_FUNCTION, CMDLINE_ATTRIB_NEED_ARGS,
       cart_attach_cmdline, (void *)CARTRIDGE_RAMCART, NULL, NULL,
       "<Name>", "Attach raw RamCart cartridge image" },
@@ -793,29 +801,16 @@ int cart_type_enabled(int type)
 }
 
 /*
-    can the "main slot" cart handle get filename
-*/
-int cart_can_get_file_name(int type)
-{
-    switch (type) {
-        /* "Main Slot" */
-        case CARTRIDGE_RAMLINK:
-            return 1;
-    }
-    return 0;
-}
-
-/*
     get filename of cart with given type
 */
-const char *cart_get_file_name(int type)
+const char *cart_get_filename_by_type(int type)
 {
     switch (type) {
         /* "Slot 0" */
         case CARTRIDGE_IEEE488:
             return tpi_get_file_name();
         case CARTRIDGE_RAMLINK:
-            return ramlink_get_file_name();
+            return ramlink_get_ram_file_name();
         case CARTRIDGE_IEEEFLASH64:
             return ieeeflash64_get_file_name();
         case CARTRIDGE_MAGIC_VOICE:
@@ -830,7 +825,7 @@ const char *cart_get_file_name(int type)
         case CARTRIDGE_ISEPIC:
             return isepic_get_file_name();
         case CARTRIDGE_RAMCART:
-            return ramcart_get_file_name();
+            return ramcart_get_filename_by_type();
         /* "Main Slot" */
         /* "I/O Slot" */
         case CARTRIDGE_GEORAM:
@@ -858,7 +853,7 @@ const char *cart_get_file_name(int type)
         case CARTRIDGE_IDUNIO:
             break;
 
-            /* Main Slot handled in c64cart.c:cartridge_get_file_name */
+            /* Main Slot handled in c64cart.c:cartridge_get_filename_by_type */
     }
     return ""; /* FIXME: NULL or empty string? */
 }
@@ -882,6 +877,9 @@ void cartridge_setup_context(machine_context_t *context)
 
 /* ------------------------------------------------------------------------- */
 
+/* attach a binary image. note that for carts not in the main slot, the image
+   name is usually kept in a resource, and the cartridge is enabled via another
+   resource - the function called from here must also do this */
 int cart_bin_attach(int type, const char *filename, uint8_t *rawcart)
 {
     switch (type) {
@@ -945,6 +943,8 @@ int cart_bin_attach(int type, const char *filename, uint8_t *rawcart)
             return dsm_bin_attach(filename, rawcart);
         case CARTRIDGE_DINAMIC:
             return dinamic_bin_attach(filename, rawcart);
+        case CARTRIDGE_DREAN:
+            return drean_bin_attach(filename, rawcart);
         case CARTRIDGE_EASYCALC:
             return easycalc_bin_attach(filename, rawcart);
         case CARTRIDGE_EASYFLASH:
@@ -983,8 +983,8 @@ int cart_bin_attach(int type, const char *filename, uint8_t *rawcart)
             return gmod3_bin_attach(filename, rawcart);
         case CARTRIDGE_GS:
             return gs_bin_attach(filename, rawcart);
-        case CARTRIDGE_DREAN:
-            return drean_bin_attach(filename, rawcart);
+        case CARTRIDGE_HYPERBASIC:
+            return hyperbasic_bin_attach(filename, rawcart);
         case CARTRIDGE_IDE64:
             return ide64_bin_attach(filename, rawcart);
         case CARTRIDGE_KCS_POWER:
@@ -1013,6 +1013,8 @@ int cart_bin_attach(int type, const char *filename, uint8_t *rawcart)
             return p64_bin_attach(filename, rawcart);
         case CARTRIDGE_PAGEFOX:
             return pagefox_bin_attach(filename, rawcart);
+        case CARTRIDGE_PARTNER64:
+            return partner64_bin_attach(filename, rawcart);
         case CARTRIDGE_RETRO_REPLAY:
             return retroreplay_bin_attach(filename, rawcart);
         case CARTRIDGE_REX:
@@ -1073,6 +1075,15 @@ int cart_bin_attach(int type, const char *filename, uint8_t *rawcart)
 void cart_attach(int type, uint8_t *rawcart)
 {
     cart_detach_conflicting(type);
+
+    if ((machine_class == VICE_MACHINE_C128) && CARTRIDGE_C128_ISID(type)) {
+        c128cartridge->config_setup(type, rawcart);
+        return;
+    }
+
+    /* FIXME: cartridges that work in both c64 and c128 mode must explicitly
+              call c128cartridge->config_setup() below */
+
     switch (type) {
         /* "Slot 0" */
         case CARTRIDGE_IEEE488:
@@ -1162,6 +1173,9 @@ void cart_attach(int type, uint8_t *rawcart)
         case CARTRIDGE_DINAMIC:
             dinamic_config_setup(rawcart);
             break;
+        case CARTRIDGE_DREAN:
+            drean_config_setup(rawcart);
+            break;
         case CARTRIDGE_EASYCALC:
             easycalc_config_setup(rawcart);
             break;
@@ -1216,8 +1230,8 @@ void cart_attach(int type, uint8_t *rawcart)
         case CARTRIDGE_GS:
             gs_config_setup(rawcart);
             break;
-        case CARTRIDGE_DREAN:
-            drean_config_setup(rawcart);
+        case CARTRIDGE_HYPERBASIC:
+            hyperbasic_config_setup(rawcart);
             break;
         case CARTRIDGE_IDE64:
             ide64_config_setup(rawcart);
@@ -1260,6 +1274,9 @@ void cart_attach(int type, uint8_t *rawcart)
             break;
         case CARTRIDGE_PAGEFOX:
             pagefox_config_setup(rawcart);
+            break;
+        case CARTRIDGE_PARTNER64:
+            partner64_config_setup(rawcart);
             break;
         case CARTRIDGE_RETRO_REPLAY:
             retroreplay_config_setup(rawcart);
@@ -1757,6 +1774,9 @@ void cart_detach(int type)
         case CARTRIDGE_DINAMIC:
             dinamic_detach();
             break;
+        case CARTRIDGE_DREAN:
+            drean_detach();
+            break;
         case CARTRIDGE_EASYCALC:
             easycalc_detach();
             break;
@@ -1811,8 +1831,8 @@ void cart_detach(int type)
         case CARTRIDGE_GS:
             gs_detach();
             break;
-        case CARTRIDGE_DREAN:
-            drean_detach();
+        case CARTRIDGE_HYPERBASIC:
+            hyperbasic_detach();
             break;
         case CARTRIDGE_IDE64:
             ide64_detach();
@@ -1855,6 +1875,9 @@ void cart_detach(int type)
             break;
         case CARTRIDGE_PAGEFOX:
             pagefox_detach();
+            break;
+        case CARTRIDGE_PARTNER64:
+            partner64_detach();
             break;
         case CARTRIDGE_RETRO_REPLAY:
             retroreplay_detach();
@@ -1992,236 +2015,246 @@ void cartridge_shutdown(void)
 */
 void cartridge_init_config(void)
 {
-    /* "Main Slot" */
-    switch (mem_cartridge_type) {
-        case CARTRIDGE_ACTION_REPLAY:
-            actionreplay_config_init();
-            break;
-        case CARTRIDGE_ACTION_REPLAY2:
-            actionreplay2_config_init();
-            break;
-        case CARTRIDGE_ACTION_REPLAY3:
-            actionreplay3_config_init();
-            break;
-        case CARTRIDGE_ACTION_REPLAY4:
-            actionreplay4_config_init();
-            break;
-        case CARTRIDGE_ATOMIC_POWER:
-            atomicpower_config_init();
-            break;
-        case CARTRIDGE_BISPLUS:
-            bisplus_config_init();
-            break;
-        case CARTRIDGE_BLACKBOX3:
-            blackbox3_config_init();
-            break;
-        case CARTRIDGE_BLACKBOX4:
-            blackbox4_config_init();
-            break;
-        case CARTRIDGE_BLACKBOX8:
-            blackbox8_config_init();
-            break;
-        case CARTRIDGE_BLACKBOX9:
-            blackbox9_config_init();
-            break;
-        case CARTRIDGE_CAPTURE:
-            capture_config_init();
-            break;
-        case CARTRIDGE_COMAL80:
-            comal80_config_init();
-            break;
-        case CARTRIDGE_DELA_EP64:
-            delaep64_config_init();
-            break;
-        case CARTRIDGE_DELA_EP7x8:
-            delaep7x8_config_init();
-            break;
-        case CARTRIDGE_DELA_EP256:
-            delaep256_config_init();
-            break;
-        case CARTRIDGE_DIASHOW_MAKER:
-            dsm_config_init();
-            break;
-        case CARTRIDGE_DINAMIC:
-            dinamic_config_init();
-            break;
-        case CARTRIDGE_EASYCALC:
-            easycalc_config_init();
-            break;
-        case CARTRIDGE_EASYFLASH:
-            easyflash_config_init();
-            break;
-        case CARTRIDGE_EPYX_FASTLOAD:
-            epyxfastload_config_init();
-            break;
-        case CARTRIDGE_EXOS:
-            exos_config_init();
-            break;
-        case CARTRIDGE_FINAL_I:
-            final_v1_config_init();
-            break;
-        case CARTRIDGE_FINAL_PLUS:
-            final_plus_config_init();
-            break;
-        case CARTRIDGE_FINAL_III:
-            final_v3_config_init();
-            break;
-        case CARTRIDGE_FORMEL64:
-            formel64_config_init();
-            break;
-        case CARTRIDGE_FREEZE_FRAME:
-            freezeframe_config_init();
-            break;
-        case CARTRIDGE_FREEZE_FRAME_MK2:
-            freezeframe2_config_init();
-            break;
-        case CARTRIDGE_FREEZE_MACHINE:
-            freezemachine_config_init();
-            break;
-        case CARTRIDGE_FUNPLAY:
-            funplay_config_init();
-            break;
-        case CARTRIDGE_GAME_KILLER:
-            gamekiller_config_init();
-            break;
-        case CARTRIDGE_GENERIC_8KB:
-            generic_8kb_config_init();
-            break;
-        case CARTRIDGE_GENERIC_16KB:
-            generic_16kb_config_init();
-            break;
-        case CARTRIDGE_GMOD2:
-            gmod2_config_init();
-            break;
-        case CARTRIDGE_GMOD3:
-            gmod3_config_init();
-            break;
-        case CARTRIDGE_GS:
-            gs_config_init();
-            break;
-        case CARTRIDGE_DREAN:
-            drean_config_init();
-            break;
-        case CARTRIDGE_IDE64:
-            ide64_config_init();
-            break;
-        case CARTRIDGE_KCS_POWER:
-            kcs_config_init();
-            break;
-        case CARTRIDGE_KINGSOFT:
-            kingsoft_config_init();
-            break;
-        case CARTRIDGE_LT_KERNAL:
-            ltkernal_config_init();
-            break;
-        case CARTRIDGE_MACH5:
-            mach5_config_init();
-            break;
-        case CARTRIDGE_MAGIC_DESK:
-            magicdesk_config_init();
-            break;
-        case CARTRIDGE_MAGIC_FORMEL:
-            magicformel_config_init();
-            break;
-        case CARTRIDGE_MAX_BASIC:
-            maxbasic_config_init();
-            break;
-        case CARTRIDGE_MIKRO_ASSEMBLER:
-            mikroass_config_init();
-            break;
-        case CARTRIDGE_MMC_REPLAY:
-            mmcreplay_config_init();
-            break;
-        case CARTRIDGE_MULTIMAX:
-            multimax_config_init();
-            break;
-        case CARTRIDGE_OCEAN:
-            ocean_config_init();
-            break;
-        case CARTRIDGE_P64:
-            p64_config_init();
-            break;
-        case CARTRIDGE_PAGEFOX:
-            pagefox_config_init();
-            break;
-        case CARTRIDGE_RETRO_REPLAY:
-            retroreplay_config_init();
-            break;
-        case CARTRIDGE_REX:
-            rex_config_init();
-            break;
-        case CARTRIDGE_REX_EP256:
-            rexep256_config_init();
-            break;
-        case CARTRIDGE_REX_RAMFLOPPY:
-            rexramfloppy_config_init();
-            break;
-        case CARTRIDGE_RGCD:
-            rgcd_config_init();
-            break;
+    if ((machine_class == VICE_MACHINE_C128) && CARTRIDGE_C128_ISID(mem_cartridge_type)) {
+        c128cartridge->config_init(mem_cartridge_type);
+    } else {
+        /* "Main Slot" */
+        switch (mem_cartridge_type) {
+            case CARTRIDGE_ACTION_REPLAY:
+                actionreplay_config_init();
+                break;
+            case CARTRIDGE_ACTION_REPLAY2:
+                actionreplay2_config_init();
+                break;
+            case CARTRIDGE_ACTION_REPLAY3:
+                actionreplay3_config_init();
+                break;
+            case CARTRIDGE_ACTION_REPLAY4:
+                actionreplay4_config_init();
+                break;
+            case CARTRIDGE_ATOMIC_POWER:
+                atomicpower_config_init();
+                break;
+            case CARTRIDGE_BISPLUS:
+                bisplus_config_init();
+                break;
+            case CARTRIDGE_BLACKBOX3:
+                blackbox3_config_init();
+                break;
+            case CARTRIDGE_BLACKBOX4:
+                blackbox4_config_init();
+                break;
+            case CARTRIDGE_BLACKBOX8:
+                blackbox8_config_init();
+                break;
+            case CARTRIDGE_BLACKBOX9:
+                blackbox9_config_init();
+                break;
+            case CARTRIDGE_CAPTURE:
+                capture_config_init();
+                break;
+            case CARTRIDGE_COMAL80:
+                comal80_config_init();
+                break;
+            case CARTRIDGE_DELA_EP64:
+                delaep64_config_init();
+                break;
+            case CARTRIDGE_DELA_EP7x8:
+                delaep7x8_config_init();
+                break;
+            case CARTRIDGE_DELA_EP256:
+                delaep256_config_init();
+                break;
+            case CARTRIDGE_DIASHOW_MAKER:
+                dsm_config_init();
+                break;
+            case CARTRIDGE_DINAMIC:
+                dinamic_config_init();
+                break;
+            case CARTRIDGE_DREAN:
+                drean_config_init();
+                break;
+            case CARTRIDGE_EASYCALC:
+                easycalc_config_init();
+                break;
+            case CARTRIDGE_EASYFLASH:
+                easyflash_config_init();
+                break;
+            case CARTRIDGE_EPYX_FASTLOAD:
+                epyxfastload_config_init();
+                break;
+            case CARTRIDGE_EXOS:
+                exos_config_init();
+                break;
+            case CARTRIDGE_FINAL_I:
+                final_v1_config_init();
+                break;
+            case CARTRIDGE_FINAL_PLUS:
+                final_plus_config_init();
+                break;
+            case CARTRIDGE_FINAL_III:
+                final_v3_config_init();
+                break;
+            case CARTRIDGE_FORMEL64:
+                formel64_config_init();
+                break;
+            case CARTRIDGE_FREEZE_FRAME:
+                freezeframe_config_init();
+                break;
+            case CARTRIDGE_FREEZE_FRAME_MK2:
+                freezeframe2_config_init();
+                break;
+            case CARTRIDGE_FREEZE_MACHINE:
+                freezemachine_config_init();
+                break;
+            case CARTRIDGE_FUNPLAY:
+                funplay_config_init();
+                break;
+            case CARTRIDGE_GAME_KILLER:
+                gamekiller_config_init();
+                break;
+            case CARTRIDGE_GENERIC_8KB:
+                generic_8kb_config_init();
+                break;
+            case CARTRIDGE_GENERIC_16KB:
+                generic_16kb_config_init();
+                break;
+            case CARTRIDGE_GMOD2:
+                gmod2_config_init();
+                break;
+            case CARTRIDGE_GMOD3:
+                gmod3_config_init();
+                break;
+            case CARTRIDGE_GS:
+                gs_config_init();
+                break;
+            case CARTRIDGE_HYPERBASIC:
+                hyperbasic_config_init();
+                break;
+            case CARTRIDGE_IDE64:
+                ide64_config_init();
+                break;
+            case CARTRIDGE_KCS_POWER:
+                kcs_config_init();
+                break;
+            case CARTRIDGE_KINGSOFT:
+                kingsoft_config_init();
+                break;
+            case CARTRIDGE_LT_KERNAL:
+                ltkernal_config_init();
+                break;
+            case CARTRIDGE_MACH5:
+                mach5_config_init();
+                break;
+            case CARTRIDGE_MAGIC_DESK:
+                magicdesk_config_init();
+                break;
+            case CARTRIDGE_MAGIC_FORMEL:
+                magicformel_config_init();
+                break;
+            case CARTRIDGE_MAX_BASIC:
+                maxbasic_config_init();
+                break;
+            case CARTRIDGE_MIKRO_ASSEMBLER:
+                mikroass_config_init();
+                break;
+            case CARTRIDGE_MMC_REPLAY:
+                mmcreplay_config_init();
+                break;
+            case CARTRIDGE_MULTIMAX:
+                multimax_config_init();
+                break;
+            case CARTRIDGE_OCEAN:
+                ocean_config_init();
+                break;
+            case CARTRIDGE_P64:
+                p64_config_init();
+                break;
+            case CARTRIDGE_PAGEFOX:
+                pagefox_config_init();
+                break;
+            case CARTRIDGE_PARTNER64:
+                partner64_config_init();
+                break;
+            case CARTRIDGE_RETRO_REPLAY:
+                retroreplay_config_init();
+                break;
+            case CARTRIDGE_REX:
+                rex_config_init();
+                break;
+            case CARTRIDGE_REX_EP256:
+                rexep256_config_init();
+                break;
+            case CARTRIDGE_REX_RAMFLOPPY:
+                rexramfloppy_config_init();
+                break;
+            case CARTRIDGE_RGCD:
+                rgcd_config_init();
+                break;
 #ifdef HAVE_RAWNET
-        case CARTRIDGE_RRNETMK3:
-            rrnetmk3_config_init();
-            break;
+            case CARTRIDGE_RRNETMK3:
+                rrnetmk3_config_init();
+                break;
 #endif
-        case CARTRIDGE_ROSS:
-            ross_config_init();
-            break;
-        case CARTRIDGE_SDBOX:
-            sdbox_config_init();
-            break;
-        case CARTRIDGE_SILVERROCK_128:
-            silverrock128_config_init();
-            break;
-        case CARTRIDGE_SIMONS_BASIC:
-            simon_config_init();
-            break;
-        case CARTRIDGE_SNAPSHOT64:
-            snapshot64_config_init();
-            break;
-        case CARTRIDGE_STARDOS:
-            stardos_config_init();
-            break;
-        case CARTRIDGE_STRUCTURED_BASIC:
-            stb_config_init();
-            break;
-        case CARTRIDGE_SUPER_EXPLODE_V5:
-            se5_config_init();
-            break;
-        case CARTRIDGE_SUPER_SNAPSHOT:
-            supersnapshot_v4_config_init();
-            break;
-        case CARTRIDGE_SUPER_SNAPSHOT_V5:
-            supersnapshot_v5_config_init();
-            break;
-        case CARTRIDGE_SUPER_GAMES:
-            supergames_config_init();
-            break;
-        case CARTRIDGE_TURTLE_GRAPHICS_II:
-            turtlegraphics_config_init();
-            break;
-        case CARTRIDGE_ULTIMAX:
-            generic_ultimax_config_init();
-            break;
-        case CARTRIDGE_WARPSPEED:
-            warpspeed_config_init();
-            break;
-        case CARTRIDGE_WESTERMANN:
-            westermann_config_init();
-            break;
-        case CARTRIDGE_ZAXXON:
-            zaxxon_config_init();
-            break;
-        case CARTRIDGE_ZIPPCODE48:
-            zippcode48_config_init();
-            break;
-        /* FIXME: add all missing ones instead of using the default */
-        case CARTRIDGE_NONE:
-            break;
-        default:
-            DBG(("CART: no init hook ID: %d\n", mem_cartridge_type));
-            cart_config_changed_slotmain(CMODE_RAM, CMODE_RAM, CMODE_READ);
-            break;
+            case CARTRIDGE_ROSS:
+                ross_config_init();
+                break;
+            case CARTRIDGE_SDBOX:
+                sdbox_config_init();
+                break;
+            case CARTRIDGE_SILVERROCK_128:
+                silverrock128_config_init();
+                break;
+            case CARTRIDGE_SIMONS_BASIC:
+                simon_config_init();
+                break;
+            case CARTRIDGE_SNAPSHOT64:
+                snapshot64_config_init();
+                break;
+            case CARTRIDGE_STARDOS:
+                stardos_config_init();
+                break;
+            case CARTRIDGE_STRUCTURED_BASIC:
+                stb_config_init();
+                break;
+            case CARTRIDGE_SUPER_EXPLODE_V5:
+                se5_config_init();
+                break;
+            case CARTRIDGE_SUPER_SNAPSHOT:
+                supersnapshot_v4_config_init();
+                break;
+            case CARTRIDGE_SUPER_SNAPSHOT_V5:
+                supersnapshot_v5_config_init();
+                break;
+            case CARTRIDGE_SUPER_GAMES:
+                supergames_config_init();
+                break;
+            case CARTRIDGE_TURTLE_GRAPHICS_II:
+                turtlegraphics_config_init();
+                break;
+            case CARTRIDGE_ULTIMAX:
+                generic_ultimax_config_init();
+                break;
+            case CARTRIDGE_WARPSPEED:
+                warpspeed_config_init();
+                break;
+            case CARTRIDGE_WESTERMANN:
+                westermann_config_init();
+                break;
+            case CARTRIDGE_ZAXXON:
+                zaxxon_config_init();
+                break;
+            case CARTRIDGE_ZIPPCODE48:
+                zippcode48_config_init();
+                break;
+            /* FIXME: add all missing ones instead of using the default */
+            case CARTRIDGE_NONE:
+                break;
+            default:
+                DBG(("CART: no init hook ID: %d\n", mem_cartridge_type));
+                cart_config_changed_slotmain(CMODE_RAM, CMODE_RAM, CMODE_READ);
+                break;
+        }
     }
 
     /* "Slot 1" */
@@ -2342,6 +2375,9 @@ void cartridge_reset(void)
         case CARTRIDGE_GMOD3:
             gmod3_reset();
             break;
+        case CARTRIDGE_HYPERBASIC:
+            hyperbasic_reset();
+            break;
         case CARTRIDGE_IDE64:
             ide64_reset();
             break;
@@ -2350,6 +2386,9 @@ void cartridge_reset(void)
             break;
         case CARTRIDGE_MMC_REPLAY:
             mmcreplay_reset();
+            break;
+        case CARTRIDGE_PARTNER64:
+            partner64_reset();
             break;
         case CARTRIDGE_REX_RAMFLOPPY:
             rexramfloppy_reset();
@@ -2364,6 +2403,9 @@ void cartridge_reset(void)
             break;
         case CARTRIDGE_RETRO_REPLAY:
             retroreplay_reset();
+            break;
+        case CARTRIDGE_SUPER_EXPLODE_V5:
+            se5_reset();
             break;
         case CARTRIDGE_WARPSPEED:
             zippcode48_reset();
@@ -2401,6 +2443,10 @@ void cartridge_reset(void)
     if (cpmcart_cart_enabled()) {
         cpmcart_reset();
     }
+
+    if (machine_class == VICE_MACHINE_C128) {
+        c128cartridge->reset();
+    }
 }
 
 /*
@@ -2417,6 +2463,10 @@ void cartridge_powerup(void)
     }
     if (reu_cart_enabled()) {
         reu_powerup();
+    }
+
+    if (machine_class == VICE_MACHINE_C128) {
+        c128cartridge->powerup();
     }
 
     /* "Main Slot" */
@@ -2455,6 +2505,9 @@ void cartridge_powerup(void)
             break;
         case CARTRIDGE_PAGEFOX:
             pagefox_powerup();
+            break;
+        case CARTRIDGE_PARTNER64:
+            partner64_powerup();
             break;
         case CARTRIDGE_RETRO_REPLAY:
             retroreplay_powerup();
@@ -2553,6 +2606,9 @@ static void cart_freeze(int type)
         case CARTRIDGE_MMC_REPLAY:
             mmcreplay_freeze();
             break;
+        case CARTRIDGE_PARTNER64:
+            partner64_freeze();
+            break;
         case CARTRIDGE_RETRO_REPLAY:
             retroreplay_freeze();
             break;
@@ -2565,6 +2621,9 @@ static void cart_freeze(int type)
         case CARTRIDGE_SUPER_SNAPSHOT_V5:
             supersnapshot_v5_freeze();
             break;
+    }
+    if (machine_class == VICE_MACHINE_C128) {
+        c128cartridge->freeze();
     }
 }
 
@@ -2622,6 +2681,8 @@ int cart_freeze_allowed(void)
                 return 1;
             }
             break;
+        case CARTRIDGE_PARTNER64:
+            return 1;
         case CARTRIDGE_RETRO_REPLAY:
             if (retroreplay_freeze_allowed()) {
                 return 1;
@@ -2632,25 +2693,127 @@ int cart_freeze_allowed(void)
         case CARTRIDGE_SUPER_SNAPSHOT_V5:
             return 1;
     }
+
+    if (machine_class == VICE_MACHINE_C128) {
+        if (c128cartridge->freeze_allowed() == 1) {
+            return 1;
+        }
+    }
+
     /* "I/O Slot" (no freezer carts) */
     return 0;
 }
 
 /* ------------------------------------------------------------------------- */
 
+/* returns 1 when cartridge (ROM) image can be flushed */
+int cartridge_can_flush_image(int crtid)
+{
+    const char *p;
+
+    if ((machine_class == VICE_MACHINE_C128) && CARTRIDGE_C128_ISID(crtid)) {
+        return c128cartridge->can_flush_image(crtid);
+    }
+
+    if (!cartridge_type_enabled(crtid)) {
+        return 0;
+    }
+    p = cartridge_get_filename_by_type(crtid);
+    if ((p == NULL) || (*p == '\x0')) {
+        return 0;
+    }
+    return 1;
+}
+
+/* returns 1 when secondary cartridge image can be flushed */
+int cartridge_can_flush_secondary_image(int crtid)
+{
+    if ((machine_class == VICE_MACHINE_C128) && CARTRIDGE_C128_ISID(crtid)) {
+        return c128cartridge->can_flush_secondary_image(crtid);
+    }
+
+    if (!cartridge_type_enabled(crtid)) {
+        return 0;
+    }
+
+    switch (crtid) {
+        /* "Slot 0" */
+        case CARTRIDGE_RAMLINK:
+            return ramlink_can_flush_ram_image();
+        /* "Slot 1" */
+        /* "Main Slot" */
+        case CARTRIDGE_GMOD2:
+            return gmod2_can_flush_eeprom();
+        case CARTRIDGE_MMC_REPLAY:
+            return mmcreplay_can_flush_eeprom();
+        case CARTRIDGE_REX_RAMFLOPPY:
+            return rexramfloppy_can_flush_ram();
+    }
+
+    return 0;
+}
+
+/* returns 1 when cartridge (ROM) image can be saved */
+int cartridge_can_save_image(int crtid)
+{
+    if ((machine_class == VICE_MACHINE_C128) && CARTRIDGE_C128_ISID(crtid)) {
+        return c128cartridge->can_save_image(crtid);
+    }
+
+    if (!cartridge_type_enabled(crtid)) {
+        return 0;
+    }
+
+    return 1;
+}
+
+/* returns 1 when secondary cartridge image can be saved */
+int cartridge_can_save_secondary_image(int crtid)
+{
+    if ((machine_class == VICE_MACHINE_C128) && CARTRIDGE_C128_ISID(crtid)) {
+        return c128cartridge->can_save_secondary_image(crtid);
+    }
+
+    if (!cartridge_type_enabled(crtid)) {
+        return 0;
+    }
+
+    switch (crtid) {
+        /* "Slot 0" */
+        case CARTRIDGE_RAMLINK:
+            return 1;
+        /* "Slot 1" */
+        /* "Main Slot" */
+        case CARTRIDGE_GMOD2:
+            return 1;
+        case CARTRIDGE_MMC_REPLAY:
+            return 1;
+        case CARTRIDGE_REX_RAMFLOPPY:
+            return 1;
+    }
+
+    return 0;
+}
+
 /*
     flush cart image
 
     all carts whose image might be modified at runtime should be hooked up here.
+
+    CAUTION: this is only for the primary (usually ROM) image. If the cartridge
+             has a ROM and a second writeable chip, it should use
+             cartridge_flush_secondary_image() below for the second chip!
 */
 int cartridge_flush_image(int type)
 {
+    if ((machine_class == VICE_MACHINE_C128) && CARTRIDGE_C128_ISID(type)) {
+        return c128cartridge->flush_image(type);
+    }
+
     switch (type) {
         /* "Slot 0" */
         case CARTRIDGE_MMC64:
             return mmc64_flush_image();
-        case CARTRIDGE_RAMLINK:
-            return ramlink_flush_image();
         /* "Slot 1" */
         case CARTRIDGE_DQBB:
             return dqbb_flush_image();
@@ -2671,8 +2834,6 @@ int cartridge_flush_image(int type)
             return mmcreplay_flush_image();
         case CARTRIDGE_RETRO_REPLAY:
             return retroreplay_flush_image();
-        case CARTRIDGE_REX_RAMFLOPPY:
-            return rexramfloppy_flush_image();
 #ifdef HAVE_RAWNET
         case CARTRIDGE_RRNETMK3:
             return rrnetmk3_flush_image();
@@ -2683,7 +2844,30 @@ int cartridge_flush_image(int type)
         case CARTRIDGE_REU:
             return reu_flush_image();
     }
-    log_error(LOG_ERR, "Failed flushing cartridge image for cartridge ID %d.\n", type);
+    log_error(LOG_ERR, "Failed flushing cartridge image for cartridge ID %d.", type);
+    return -1;
+}
+
+int cartridge_flush_secondary_image(int type)
+{
+    if ((machine_class == VICE_MACHINE_C128) && CARTRIDGE_C128_ISID(type)) {
+        return c128cartridge->flush_secondary_image(type);
+    }
+
+    switch (type) {
+        /* "Slot 0" */
+        case CARTRIDGE_RAMLINK:
+            return ramlink_flush_ram_image();
+        /* "Slot 1" */
+        /* "Main Slot" */
+        case CARTRIDGE_GMOD2:
+            return gmod2_flush_eeprom();
+        case CARTRIDGE_MMC_REPLAY:
+            return mmcreplay_flush_eeprom();
+        case CARTRIDGE_REX_RAMFLOPPY:
+            return rexramfloppy_ram_flush();
+    }
+    log_error(LOG_ERR, "Failed flushing secondary image for cartridge ID %d.", type);
     return -1;
 }
 
@@ -2693,18 +2877,21 @@ int cartridge_flush_image(int type)
     *atleast* all carts whose image might be modified at runtime should be hooked up here.
 
     TODO: add bin save for all ROM carts also
+
+    CAUTION: this is only for the primary (usually ROM) image. If the cartridge
+             has a ROM and a second writeable chip, it should use
+             cartridge_save_secondary_image() below for the second chip!
 */
 int cartridge_bin_save(int type, const char *filename)
 {
+    if ((machine_class == VICE_MACHINE_C128) && CARTRIDGE_C128_ISID(type)) {
+        return c128cartridge->bin_save(type, filename);
+    }
+
     switch (type) {
         /* "Slot 0" */
         case CARTRIDGE_MMC64:
             return mmc64_bin_save(filename);
-        case CARTRIDGE_RAMLINK:
-            /* HACK: this will save the RAMlinks RAM - not the actual cartridge
-                     image. since we have no API for this special case (yet?)
-                     we leave it here */
-            return ramlink_bin_save(filename);
         /* "Slot 1" */
         case CARTRIDGE_DQBB:
             return dqbb_bin_save(filename);
@@ -2725,8 +2912,6 @@ int cartridge_bin_save(int type, const char *filename)
             return mmcreplay_bin_save(filename);
         case CARTRIDGE_RETRO_REPLAY:
             return retroreplay_bin_save(filename);
-        case CARTRIDGE_REX_RAMFLOPPY:
-            return rexramfloppy_bin_save(filename);
 #ifdef HAVE_RAWNET
         case CARTRIDGE_RRNETMK3:
             return rrnetmk3_bin_save(filename);
@@ -2741,6 +2926,29 @@ int cartridge_bin_save(int type, const char *filename)
     return -1;
 }
 
+int cartridge_save_secondary_image(int type, const char *filename)
+{
+    if ((machine_class == VICE_MACHINE_C128) && CARTRIDGE_C128_ISID(type)) {
+        return c128cartridge->save_secondary_image(type, filename);
+    }
+
+    switch (type) {
+        /* "Slot 0" */
+        /* "Slot 1" */
+        case CARTRIDGE_RAMLINK:
+            return ramlink_ram_save(filename);
+        /* "Main Slot" */
+        case CARTRIDGE_GMOD2:
+            return gmod2_eeprom_save(filename);
+        case CARTRIDGE_MMC_REPLAY:
+            return mmcreplay_save_eeprom(filename);
+        case CARTRIDGE_REX_RAMFLOPPY:
+            return rexramfloppy_ram_save(filename);
+    }
+    log_error(LOG_ERR, "Failed saving secondary image for cartridge ID %d.\n", type);
+    return -1;
+}
+
 /*
     save cartridge to crt file
 
@@ -2751,6 +2959,10 @@ int cartridge_bin_save(int type, const char *filename)
 */
 int cartridge_crt_save(int type, const char *filename)
 {
+    if ((machine_class == VICE_MACHINE_C128) && CARTRIDGE_C128_ISID(type)) {
+        return c128cartridge->crt_save(type, filename);
+    }
+
     switch (type) {
         /* "Slot 0" */
         case CARTRIDGE_MMC64:
@@ -2913,6 +3125,9 @@ void cartridge_mmu_translate(unsigned int addr, uint8_t **base, int *start, int 
             return;
         case CARTRIDGE_IDE64:
             ide64_mmu_translate(addr, base, start, limit);
+            return;
+        case CARTRIDGE_LT_KERNAL:
+            ltkernal_mmu_translate(addr, base, start, limit);
             return;
         case CARTRIDGE_RETRO_REPLAY:
             retroreplay_mmu_translate(addr, base, start, limit);
@@ -3171,6 +3386,11 @@ int cartridge_snapshot_write_modules(struct snapshot_s *s)
                     return -1;
                 }
                 break;
+            case CARTRIDGE_DREAN:
+                if (drean_snapshot_write_module(s) < 0) {
+                    return -1;
+                }
+                break;
             case CARTRIDGE_EASYCALC:
                 if (easycalc_snapshot_write_module(s) < 0) {
                     return -1;
@@ -3258,8 +3478,8 @@ int cartridge_snapshot_write_modules(struct snapshot_s *s)
                     return -1;
                 }
                 break;
-            case CARTRIDGE_DREAN:
-                if (drean_snapshot_write_module(s) < 0) {
+            case CARTRIDGE_HYPERBASIC:
+                if (hyperbasic_snapshot_write_module(s) < 0) {
                     return -1;
                 }
                 break;
@@ -3330,6 +3550,11 @@ int cartridge_snapshot_write_modules(struct snapshot_s *s)
                 break;
             case CARTRIDGE_PAGEFOX:
                 if (pagefox_snapshot_write_module(s) < 0) {
+                    return -1;
+                }
+                break;
+            case CARTRIDGE_PARTNER64:
+                if (partner64_snapshot_write_module(s) < 0) {
                     return -1;
                 }
                 break;
@@ -3747,6 +3972,11 @@ int cartridge_snapshot_read_modules(struct snapshot_s *s)
                     goto fail2;
                 }
                 break;
+            case CARTRIDGE_DREAN:
+                if (drean_snapshot_read_module(s) < 0) {
+                    goto fail2;
+                }
+                break;
             case CARTRIDGE_EASYCALC:
                 if (easycalc_snapshot_read_module(s) < 0) {
                     goto fail2;
@@ -3834,8 +4064,8 @@ int cartridge_snapshot_read_modules(struct snapshot_s *s)
                     goto fail2;
                 }
                 break;
-            case CARTRIDGE_DREAN:
-                if (drean_snapshot_read_module(s) < 0) {
+            case CARTRIDGE_HYPERBASIC:
+                if (hyperbasic_snapshot_read_module(s) < 0) {
                     goto fail2;
                 }
                 break;
@@ -3906,6 +4136,11 @@ int cartridge_snapshot_read_modules(struct snapshot_s *s)
                 break;
             case CARTRIDGE_PAGEFOX:
                 if (pagefox_snapshot_read_module(s) < 0) {
+                    goto fail2;
+                }
+                break;
+            case CARTRIDGE_PARTNER64:
+                if (partner64_snapshot_read_module(s) < 0) {
                     goto fail2;
                 }
                 break;

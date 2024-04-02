@@ -28,6 +28,10 @@
 
 #include <string.h>
 
+/* in case cartridge_detect() gets uncommented remove the #if 0/#endif */
+#if 0
+#include "archdep.h"
+#endif
 #include "cartridge.h"
 #include "cmdline.h"
 #include "cbm2cart.h"
@@ -299,7 +303,7 @@ void cart_power_off(void)
 {
     if (cbm2cartridge_reset) {
         /* "Turn off machine before removing cartridge" */
-        machine_trigger_reset(MACHINE_RESET_MODE_HARD);
+        machine_trigger_reset(MACHINE_RESET_MODE_POWER_CYCLE);
     }
 }
 /* ---------------------------------------------------------------------*/
@@ -335,13 +339,13 @@ int cartridge_detect(const char *filename)
 {
     int type = CARTRIDGE_NONE;
     FILE *fd;
-    size_t len;
+    off_t len;
 
     fd = fopen(filename, "rb");
     if (fd == NULL) {
         return CARTRIDGE_NONE;
     }
-    len = util_file_length(fd);
+    len = archdep_file_size(fd);
 
     /* FIXME: add cartridge detection */
 
@@ -381,7 +385,98 @@ int cartridge_attach_image(int type, const char *filename)
     return -1;
 }
 
+
+int cartridge_save_image(int type, const char *filename)
+{
+    return -1;
+}
+
+int cartridge_save_secondary_image(int type, const char *filename)
+{
+    return -1;
+}
+
+int cartridge_flush_image(int type)
+{
+    return -1;
+}
+
+int cartridge_flush_secondary_image(int type)
+{
+    return -1;
+}
+
+int cartridge_can_save_image(int crtid)
+{
+    return 0;
+}
+
+int cartridge_can_flush_image(int crtid)
+{
+    return 0;
+}
+
+int cartridge_can_save_secondary_image(int crtid)
+{
+    return 0;
+}
+
+int cartridge_can_flush_secondary_image(int crtid)
+{
+    return 0;
+}
+
+int cartridge_enable(int crtid)
+{
+    return -1;
+}
+
+int cartridge_disable(int crtid)
+{
+    return -1;
+}
+
+int cartridge_type_enabled(int crtid)
+{
+    return 0;
+}
+
+void cartridge_set_default(void)
+{
+}
+
 void cartridge_unset_default(void)
 {
 }
 
+cartridge_info_t *cartridge_get_info_list(void)
+{
+    return NULL;
+}
+
+/* return cartridge type of main slot
+   returns 0 (CARTRIDGE_CRT) if crt file */
+int cartridge_get_id(int slot)
+{
+    return CARTRIDGE_NONE;
+}
+
+/* FIXME: slot arg is ignored right now.
+   this should return a pointer to a filename, or NULL
+*/
+char *cartridge_get_filename_by_slot(int slot)
+{
+    return NULL;
+}
+
+/* FIXME: slot arg is ignored right now.
+   this should return a pointer to a filename, or NULL
+*/
+char *cartridge_get_secondary_filename_by_slot(int slot)
+{
+    return NULL;
+}
+
+void cartridge_trigger_freeze(void)
+{
+}

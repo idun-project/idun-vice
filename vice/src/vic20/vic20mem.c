@@ -95,7 +95,7 @@ store_func_ptr_t *_mem_write_tab_ptr_dummy;
 static uint8_t **_mem_read_base_tab_ptr;
 static int *mem_read_limit_tab_ptr;
 
-/* Current watchpoint state. 
+/* Current watchpoint state.
           0 = no watchpoints
     bit0; 1 = watchpoints active
     bit1; 2 = watchpoints trigger on dummy accesses
@@ -150,8 +150,6 @@ static uint8_t ram_peek(uint16_t addr)
 }
 
 /* ------------------------------------------------------------------------- */
-
-extern int vic20_vflihack_userport;
 
 static uint8_t colorram_read(uint16_t addr)
 {
@@ -579,7 +577,7 @@ int mem_rom_trap_allowed(uint16_t addr)
 }
 
 /* this function should always read from the screen currently used by the kernal
-   for output, normally this does just return system ram - except when the 
+   for output, normally this does just return system ram - except when the
    videoram is not memory mapped.
    used by autostart to "read" the kernal messages
 */
@@ -680,6 +678,14 @@ uint8_t mem_bank_peek(int bank, uint16_t addr, void *context)
     return mem_peek(addr);
 }
 
+int mem_get_current_bank_config(void) {
+    return 0;
+}
+
+uint8_t mem_peek_with_config(int config, uint16_t addr, void *context) {
+    return mem_bank_peek(0 /* current */, addr, context);
+}
+
 void mem_bank_write(int bank, uint16_t addr, uint8_t byte, void *context)
 {
     mem_store(addr, byte);
@@ -710,7 +716,7 @@ void mem_get_screen_parameter(uint16_t *base, uint8_t *rows, uint8_t *columns, i
 
 /* used by autostart to locate and "read" kernal output on the current screen
  * this function should return whatever the kernal currently uses, regardless
- * what is currently visible/active in the UI 
+ * what is currently visible/active in the UI
  */
 void mem_get_cursor_parameter(uint16_t *screen_addr, uint8_t *cursor_column, uint8_t *line_length, int *blinking)
 {

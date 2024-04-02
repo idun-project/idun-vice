@@ -92,7 +92,7 @@ static void set_ca2(via_context_t *via_context, int state)
 #endif
 }
 
-static void set_cb2(via_context_t *via_context, int state)
+static void set_cb2(via_context_t *via_context, int state, int offset)
 {
 #if !OLDCODE
     int curr;
@@ -131,12 +131,13 @@ static void restore_int(via_context_t *via_context, unsigned int int_num, int va
 
 void via2d_store(diskunit_context_t *ctxptr, uint16_t addr, uint8_t data)
 {
+    ctxptr->cpu->cpu_last_data = data;
     viacore_store(ctxptr->via2, addr, data);
 }
 
 uint8_t via2d_read(diskunit_context_t *ctxptr, uint16_t addr)
 {
-    return viacore_read(ctxptr->via2, addr);
+    return ctxptr->cpu->cpu_last_data = viacore_read(ctxptr->via2, addr);
 }
 
 uint8_t via2d_peek(diskunit_context_t *ctxptr, uint16_t addr)
@@ -153,7 +154,7 @@ int via2d_dump(diskunit_context_t *ctxptr, uint16_t addr)
     int zone = (ctxptr->via2->via[VIA_PRB] >> 5) & 3;
 
     viacore_dump(ctxptr->via2);
-    mon_out("\nHead is on track: %d.%d (%s at %dbps, speed zone %d)\n", 
+    mon_out("\nHead is on track: %d.%d (%s at %dbps, speed zone %d)\n",
             track_number / 2, (track_number & 1) * 5,
             ((ctxptr->via2->via[VIA_PCR] & 0xe0) == 0xe0) ? "reading" : "writing",
             speeds[zone], zone
@@ -184,6 +185,7 @@ static void store_pra(via_context_t *via_context, uint8_t byte, uint8_t oldpa_va
     via2p = (drivevia2_context_t *)(via_context->prv);
     rotation_rotate_disk(via2p->drive);
 
+    /* See comments about Port A latching at read_pra() */
     via2p->drive->GCR_write_value = byte;
 
     via2p->drive->byte_ready_level = 0;
@@ -222,7 +224,7 @@ static void store_prb(via_context_t *via_context, uint8_t byte, uint8_t poldpb,
        suggests a binary counter circuitry, but that is not the case, the similarity is just a side effect.
        Note, how switching the drive motor on/off may move the stepper motor as well.
     */
-    
+
     /* vice track numbering starts with 2... we need the real, physical track number */
     track_number = drv->current_half_track - 2;
 
@@ -244,17 +246,17 @@ static void store_prb(via_context_t *via_context, uint8_t byte, uint8_t poldpb,
 
     /* the steps travelled and the direction */
     /* int step_count = (drv->stepper_new_position - old_stepper_position) & 3; */
-    step_count = (new_stepper_position - old_stepper_position) & 3;    
+    step_count = (new_stepper_position - old_stepper_position) & 3;
     if (step_count == 3) {
         step_count = -1;
     }
-    
+
     /* Process stepper motor if the drive motor is on */
     if (byte & 0x4) {
 #ifdef DEBUG_STEP
         if (new_stepper_position != old_stepper_position) {
-            DBGSTEP(("trk: %d.%d, old: %d new: %d steps: %d", 
-                   (track_number+1) / 2, (track_number+1) & 1, 
+            DBGSTEP(("trk: %d.%d, old: %d new: %d steps: %d",
+                   (track_number+1) / 2, (track_number+1) & 1,
                    old_stepper_position, new_stepper_position,
                    step_count
                   ));
@@ -276,7 +278,7 @@ static void store_prb(via_context_t *via_context, uint8_t byte, uint8_t poldpb,
             - startup time, the time it takes from changing the coils to when
               the head starts moving.
             - seek time, the time it takes the head to move from track to track
-            - settle time, the time it takes from stopping the head to being 
+            - settle time, the time it takes from stopping the head to being
               able to read reliably.
 
             the simplified emulation here only simulates startup time, and then
@@ -289,7 +291,7 @@ static void store_prb(via_context_t *via_context, uint8_t byte, uint8_t poldpb,
         /*
             Action Replay 6:                                     8333 = 8.3ms
             Cauldron/The Dreams:                                 7734 = 7.7ms
-            fastest usable stepping speed seems to be around     4096 = 4.1ms 
+            fastest usable stepping speed seems to be around     4096 = 4.1ms
             min delay so we dont get a step at reset              700 = 0.7ms
          */
         /* if ((*(via_context->clk_ptr) - drv->stepper_last_change_clk) >= 2000) */ {
@@ -303,8 +305,8 @@ static void store_prb(via_context_t *via_context, uint8_t byte, uint8_t poldpb,
                     allowing it always does more harm than good, so we should simply ignore
                     this condition for the time being. */
             if ((step_count == 1) || (step_count == -1)) {
-                DBG(("VIA2: store_prb drive_move_head(%d) (%02x to %02x) clk:%d delay:%d", 
-                     step_count, poldpb, byte, *(via_context->clk_ptr), 
+                DBG(("VIA2: store_prb drive_move_head(%d) (%02x to %02x) clk:%d delay:%d",
+                     step_count, poldpb, byte, *(via_context->clk_ptr),
                      (*(via_context->clk_ptr) - drv->stepper_last_change_clk)));
                 drive_move_head(step_count, drv);
             }
@@ -340,7 +342,7 @@ static void store_prb(via_context_t *via_context, uint8_t byte, uint8_t poldpb,
             if ((byte & 0x04) != 0) {
 #ifdef DEBUG_STEP
                 DBGSTEP(("motor: %d trk: %d.%d, old: %d new: %d steps: %d",
-                    byte & 0x04, (track_number+1) / 2, (track_number+1) & 1, 
+                    byte & 0x04, (track_number+1) / 2, (track_number+1) & 1,
                     old_stepper_position, new_stepper_position, step_count));
 #endif
                 drive_move_head(step_count, drv);
@@ -428,8 +430,37 @@ static void reset(via_context_t *via_context)
     drive_update_ui_status();
 }
 
-static uint8_t read_pra(via_context_t *via_context, uint16_t addr)
-{
+/*
+ * Read the byte from the disk's read head as it has gone through a serial
+ * to parallel shift register.
+ *
+ * The 1541 DOS code enables latching of the VIA's Port A, but this is
+ * currently not emulated.  Effectively, the drive-dependent code handles
+ * latching this value (GCR_read), which in hardware happens in the VIA (port
+ * A), and the handshake signal that it has been read (effectively, calling
+ * this function which clears byte_ready_level).
+ *
+ * The BYTE READY output from the PLA, that is connected to the SO (Set
+ * Overflow) pin on the CPU, also connects to the VIA's CA1 handshake / latch
+ * pin. This would activate the latch.  When the CPU reads from port A, CA2
+ * signals back to the drive hardware that it has been read (that line is
+ * labeled SOE, possibly SO Enable, enabling output to Set Overflow / CA1
+ * again). This corresponds to clearing byte_ready_level as below.
+ *
+ * "UC2 is a VIA also. [...] During a read operation serial data is received
+ * from the read amplifier circuits on D-IN input on pin 24 of the PLA. The PLA
+ * shift register converts serial data into parallel data that is latched at
+ * the parallel port (YB0-YB7). The microprocessor reads the parallel PLA
+ * output by reading Port A of UC2 when BYTE READY on pin 39 goes "low"."
+ * (1540-1541_Disk_Drive_Service_Manual_Preliminary_314002-01_(1985_Apr).pdf
+ * p.14)
+ *
+ * This wording suggests that the PLA latches so latching in the VIA again
+ * would not really be needed. However the schematic on the next page, for
+ * pre-PLA hardware, shows a 74LS164 (8-Bit Serial In/Parallel Out Shift Register)
+ * and it would not be latched. SOE indeed affects BYTE READY.
+ */
+static uint8_t read_pra(via_context_t *via_context, uint16_t addr) {
     /* GCR data port */
     uint8_t byte;
     drivevia2_context_t *via2p;
@@ -471,6 +502,10 @@ static uint8_t read_prb(via_context_t *via_context)
 
     DBG(("read_prb %02x pb:%02x ddr:%02x",byte,via_context->via[VIA_PRB],via_context->via[VIA_DDRB]));
 
+    /*
+     * See comments about port A latching at read_pra();
+     * clearing byte_ready_level here may be wrong.
+     */
     via2p->drive->byte_ready_level = 0;
 
     return byte;
@@ -502,8 +537,8 @@ void via2d_setup_context(diskunit_context_t *ctxptr)
     via->rmw_flag = &(ctxptr->cpu->rmw_flag);
     via->clk_ptr = ctxptr->clk_ptr;
 
-    via->myname = lib_msprintf("Drive%dVia2", via2p->number);
-    via->my_module_name = lib_msprintf("VIA2D%d", via2p->number);
+    via->myname = lib_msprintf("Drive%uVia2", via2p->number);
+    via->my_module_name = lib_msprintf("VIA2D%u", via2p->number);
 
     viacore_setup_context(via);
 

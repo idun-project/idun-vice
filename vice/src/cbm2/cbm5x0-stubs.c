@@ -27,11 +27,62 @@
 #include "vice.h"
 
 #include <stdio.h>
+#include <stdbool.h>
 
+#include "c64/cart/clockport.h"
+#include "cartridge.h"
+#include "mididrv.h"
+#include "pet/petpia.h"
 #include "types.h"
+#include "userport.h"
 #include "userport_io_sim.h"
+#ifdef HAVE_LIBCURL
+#include "userport_wic64.h"
+#endif
 
 
 void userport_io_sim_set_pbx_out_lines(uint8_t val)
 {
 }
+
+#ifdef WINDOWS_COMPILE
+void mididrv_ui_reset_device_list(int device)
+{
+}
+
+char *mididrv_ui_get_next_device_name(int device, int *id)
+{
+    return NULL;
+}
+#endif
+
+/*******************************************************************************
+    clockport
+*******************************************************************************/
+
+clockport_supported_devices_t clockport_supported_devices[] = { { 0, NULL } };
+
+bool pia1_get_diagnostic_pin(void)
+{
+    return false;
+}
+
+/******************************************************************************
+ *                                   Userport                                 *
+ *****************************************************************************/
+
+int userport_device_register(int id, userport_device_t *device)
+{
+    return -1;
+}
+
+#ifdef HAVE_LIBCURL
+const tzones_t *userport_wic64_get_timezones(size_t *num_zones)
+{
+    return NULL;
+}
+
+void userport_wic64_factory_reset(void)
+{
+}
+#endif

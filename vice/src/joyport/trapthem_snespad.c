@@ -48,14 +48,8 @@
      6   |   LATCH    |  O
 
    Works on:
-   - native joystick port(s) (x64/x64sc/xscpu64/x128/x64dtv/xcbm5x0/xvic)
-   - hit userport joystick adapter port 1 (x64/x64sc/xscpu64/x128)
-   - kingsoft userport joystick adapter port 1 (x64/x64sc/xscpu64/x128)
-   - starbyte userport joystick adapter port 2 (x64/x64sc/xscpu64/x128)
-   - hummer userport joystick adapter port (x64dtv)
-   - oem userport joystick adapter port (xvic)
+   - native joystick port(s) (x64/x64sc/xscpu64/x128/xvic/xcbm5x0)
    - sidcart joystick adapter port (xplus4)
-
  */
 
 static int snespad_enabled[JOYPORT_MAX_PORTS] = {0};
@@ -69,22 +63,25 @@ static uint8_t latch_line[JOYPORT_MAX_PORTS] = {0};
 
 static joyport_t joyport_snespad_device;
 
-static int joyport_snespad_enable(int port, int value)
+static int joyport_snespad_set_enabled(int port, int enabled)
 {
-    int val = value ? 1 : 0;
+    int new_state = enabled ? 1 : 0;
 
-    if (val == snespad_enabled[port]) {
+    if (new_state == snespad_enabled[port]) {
         return 0;
     }
 
-    if (val) {
+    if (new_state) {
+        /* enabled, set counter to 0 and enable snes mapping instead of joystick mapping */
         counter[port] = 0;
         joystick_set_snes_mapping(port);
     } else {
+        /* disabled, disable snes mapping */
         joyport_clear_mapping(port);
     }
 
-    snespad_enabled[port] = val;
+    /* set current state */
+    snespad_enabled[port] = new_state;
 
     return 0;
 }
@@ -181,10 +178,11 @@ static joyport_t joyport_snespad_device = {
     JOYPORT_RES_ID_NONE,               /* device can be used in multiple ports at the same time */
     JOYPORT_IS_NOT_LIGHTPEN,           /* device is NOT a lightpen */
     JOYPORT_POT_OPTIONAL,              /* device does NOT use the potentiometer lines */
+    JOYPORT_5VDC_REQUIRED,             /* device NEEDS +5VDC to work */
     JOYSTICK_ADAPTER_ID_NONE,          /* device is NOT a joystick adapter */
     JOYPORT_DEVICE_SNES_ADAPTER,       /* device is a SNES adapter */
     0x1C,                              /* bits 4 and 3 are output bits */
-    joyport_snespad_enable,            /* device enable function */
+    joyport_snespad_set_enabled,       /* device enable/disable function */
     snespad_read,                      /* digital line read function */
     snespad_store,                     /* digital line store function */
     NULL,                              /* NO pot-x read function */
@@ -228,7 +226,7 @@ static int trapthem_snespad_write_snapshot(struct snapshot_s *s, int p)
         return -1;
     }
 
-    if (0 
+    if (0
         || SMW_B(m, counter[p]) < 0
         || SMW_B(m, latch_line[p]) < 0
         || SMW_B(m, clock_line[p]) < 0) {

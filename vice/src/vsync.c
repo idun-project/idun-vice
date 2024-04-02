@@ -49,7 +49,7 @@
 #include <limits.h>
 #endif
 
-#include "archdep_exit.h"
+#include "archdep.h"
 #include "cmdline.h"
 #include "debug.h"
 #include "joystick.h"
@@ -66,21 +66,19 @@
 #include "resources.h"
 #include "sound.h"
 #include "types.h"
-#include "tick.h"
 #include "videoarch.h"
 #include "vsync.h"
 #include "vsyncapi.h"
 
 #include "ui.h"
 
-#ifdef MACOSX_SUPPORT
+#ifdef MACOS_COMPILE
 #include "macOS-util.h"
 #endif
 
 /* public metrics, updated every vsync */
 static double vsync_metric_cpu_percent;
 static double vsync_metric_emulated_fps;
-static int    vsync_metric_warp_enabled;
 
 #ifdef USE_VICE_THREAD
 #   include <pthread.h>
@@ -124,20 +122,20 @@ static void execute_vsync_callbacks(void)
 {
     int i;
     callback_queue_t *executing_queue;
-    
+
     while (callback_queue->size) {
-        
+
         /* We'll iterate over this queue */
         executing_queue = callback_queue;
-        
+
         /* Flip to the other queue to collect any new callbacks queued within these callbacks */
         callback_queue_index = 1 - callback_queue_index;
         callback_queue = &callback_queues[callback_queue_index];
-        
+
         for (i = 0; i < executing_queue->size; i++) {
             executing_queue->queue[i].callback(executing_queue->queue[i].param);
         }
-        
+
         executing_queue->size = 0;
     }
 }
@@ -196,7 +194,7 @@ int vsync_get_warp_mode(void)
 static int set_initial_warp_mode_resource(int val, void *param)
 {
     initial_warp_mode_resource = val ? 1 : 0;
-    
+
     return 0;
 }
 
@@ -223,7 +221,7 @@ static int set_initial_warp_mode_cmdline(const char *param, void *extra_param)
      * We don't want -warp / +warp to end up in the config file,
      * so we don't use a resource.
      */
-    
+
     initial_warp_mode_cmdline = vice_ptr_to_int(extra_param) ? 1 : 0;
 
     return 0;
@@ -333,7 +331,7 @@ void vsync_init(void (*hook)(void))
     } else {
         vsync_set_warp_mode(initial_warp_mode_resource);
     }
-    
+
     /* Limit warp rendering to 10fps */
     warp_render_tick_interval = tick_per_second() / 10.0;
 
@@ -376,7 +374,7 @@ void vsyncarch_get_metrics(double *cpu_percent, double *emulated_fps, int *is_wa
 
     *cpu_percent = vsync_metric_cpu_percent;
     *emulated_fps = vsync_metric_emulated_fps;
-    *is_warp_enabled = vsync_metric_warp_enabled;
+    *is_warp_enabled = warp_enabled;
 
     METRIC_UNLOCK();
 }
@@ -413,7 +411,7 @@ static void reset_performance_metrics(tick_t frame_tick)
 
     measurement_count = 0;
     next_measurement_index = 0;
-    
+
     cumulative_tick_delta = 0;
     cumulative_clock_delta = 0;
 
@@ -474,7 +472,6 @@ static void update_performance_metrics(tick_t frame_tick)
     /* smooth and make public */
     vsync_metric_cpu_percent  = (MEASUREMENT_SMOOTH_FACTOR * vsync_metric_cpu_percent)  + (1.0 - MEASUREMENT_SMOOTH_FACTOR) * (clock_delta_seconds / frame_timespan_seconds * 100.0);
     vsync_metric_emulated_fps = (MEASUREMENT_SMOOTH_FACTOR * vsync_metric_emulated_fps) + (1.0 - MEASUREMENT_SMOOTH_FACTOR) * ((double)measurement_count / frame_timespan_seconds);
-    vsync_metric_warp_enabled = warp_enabled;
 
     /* printf("%.3f seconds - %0.3f%% cpu, %.3f fps (CLOCK delta: %u)\n", frame_timespan_seconds, vsync_metric_cpu_percent, vsync_metric_emulated_fps, clock_deltas[next_measurement_index]); fflush(stdout); */
 
@@ -510,7 +507,11 @@ void vsync_do_end_of_line(void)
      */
 
     if (archdep_is_exiting()) {
-        mainlock_yield();
+        /* UI thread shutdown code can end up here ... :( */
+        if (mainlock_is_vice_thread()) {
+            mainlock_yield();
+        }
+
         return;
     }
 
@@ -537,10 +538,10 @@ void vsync_do_end_of_line(void)
 
     /* is it time to consider keyboard, joystick ? */
     if (tick_delta >= tick_between_sync) {
-        
+
         if (warp_enabled) {
             /* During warp we need to periodically allow the UI a chance with the mainlock */
-            mainlock_yield_and_sleep(1);
+            mainlock_yield();
         } else {
             /*
              * Compare the emulated time vs host time.
@@ -555,7 +556,7 @@ void vsync_do_end_of_line(void)
 
             /* combine with leftover offset from last sync */
             sync_emulated_ticks += sync_emulated_ticks_offset;
-            
+
             /* calculate the ideal host tick representing the emulated tick */
             sync_target_tick += sync_emulated_ticks;
 
@@ -571,27 +572,26 @@ void vsync_do_end_of_line(void)
             ticks_until_target = sync_target_tick - tick_now;
 
             if (ticks_until_target < tick_per_second()) {
-
-                /*
-                 * Emulation timing / sync is OK.
-                 */
+                /* Emulation timing / sync is OK. */
 
                 /* If we can't rely on the audio device for timing, slow down here. */
                 if (tick_based_sync_timing) {
                     mainlock_yield_and_sleep(ticks_until_target);
                 }
-
             } else if ((tick_t)0 - ticks_until_target > tick_per_second()) {
+                /* We are more than a second behind, reset sync and accept that we're not running at full speed. */
 
-                /*
-                 * We are more than a second behind, reset sync and accept that we're not running at full speed.
-                 */
+                mainlock_yield();
 
                 log_warning(LOG_DEFAULT, "Sync is %.3f ms behind", (double)TICK_TO_MICRO((tick_t)0 - ticks_until_target) / 1000);
                 sync_reset = true;
+            } else {
+                /* We are running slow - make sure we still yield to the UI thread if it's waiting */
+
+                mainlock_yield();
             }
         }
-        
+
         /* deal with pending user input */
         joystick();
 
@@ -603,9 +603,9 @@ void vsync_do_end_of_line(void)
     if (update_thread_priority) {
         update_thread_priority = 0;
 
-#if defined(MACOSX_SUPPORT)
+#if defined(MACOS_COMPILE)
         vice_macos_set_vice_thread_priority(warp_enabled);
-#elif defined(__linux__)
+#elif defined(LINUX_COMPILE)
         /* TODO: Linux thread prio stuff, need root or some 'capability' though */
 #else
         /* TODO: BSD thread prio stuff */
@@ -636,7 +636,7 @@ bool vsync_should_skip_frame(struct video_canvas_s *canvas)
         if (now < canvas->warp_next_render_tick) {
             if (now < canvas->warp_next_render_tick - warp_render_tick_interval) {
                 /* next render tick is further ahead than it should be */
-                canvas->warp_next_render_tick = now + warp_render_tick_interval;    
+                canvas->warp_next_render_tick = now + warp_render_tick_interval;
             }
             /* skip this frame */
             return true;
@@ -651,7 +651,7 @@ bool vsync_should_skip_frame(struct video_canvas_s *canvas)
             return false;
         }
     }
-    
+
     /* render this frame */
     return false;
 }

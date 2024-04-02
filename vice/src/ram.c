@@ -38,21 +38,21 @@
 #include "resources.h"
 #include "types.h"
 
-#define RANDOM_CHANCE_MAX   0x1000
-
 static RAMINITPARAM mainramparam = {
-    .start_value = 255,
-    .value_invert = 128,
-    .value_offset = 0,
+    .start_value = 255,         /* RAMInitStartValue - first value of the base pattern (byte value) */
+    .value_invert = 128,        /* RAMInitValueInvert - number of bytes until start value is inverted */
+    .value_offset = 0,          /* RAMInitValueOffset - offset of first pattern in bytes */
 
-    .pattern_invert = 0,
-    .pattern_invert_value = 0,
+    .pattern_invert = 0,        /* RAMInitPatternInvert - invert base pattern after this many bytes */
+    .pattern_invert_value = 0,  /* RAMInitPatternInvertValue - invert base pattern with this byte */
 
-    .random_start = 0,
-    .random_repeat = 0,
-    .random_chance = 0,
+    .random_start = 0,          /* RAMInitStartRandom - length of random pattern in bytes */
+    .random_repeat = 0,         /* RAMInitRepeatRandom - repeat random pattern after this many bytes */
+
+    .random_chance = 0,         /* RAMInitRandomChance - global random chance */
 };
 
+/* first value of the base pattern (byte value) */
 static int set_start_value(int val, void *param)
 {
     mainramparam.start_value = val;
@@ -65,24 +65,28 @@ static int set_start_value(int val, void *param)
     return 0;
 }
 
+/* number of bytes until start value is inverted */
 static int set_value_invert(int val, void *param)
 {
     mainramparam.value_invert = val;
     return 0;
 }
 
+/* offset of first pattern in bytes  */
 static int set_value_offset(int val, void *param)
 {
     mainramparam.value_offset = val;
     return 0;
 }
 
+/* invert base pattern after this many bytes */
 static int set_pattern_invert(int val, void *param)
 {
     mainramparam.pattern_invert = val;
     return 0;
 }
 
+/* invert base pattern with this byte */
 static int set_pattern_invert_value(int val, void *param)
 {
     mainramparam.pattern_invert_value = val;
@@ -95,29 +99,25 @@ static int set_pattern_invert_value(int val, void *param)
     return 0;
 }
 
-
+/* offset where the random pattern starts */
 static int set_random_start(int val, void *param)
 {
     mainramparam.random_start = val;
-    if (mainramparam.random_start < 0) {
-        mainramparam.random_start = 0;
-    }
-    if (mainramparam.random_start > 0xff) {
-        mainramparam.random_start = 0xff;
-    }
     return 0;
 }
 
+/* repeat random pattern every "val" bytes */
 static int set_random_repeat(int val, void *param)
 {
     mainramparam.random_repeat = val;
     return 0;
 }
 
+/* global random chance */
 static int set_random_chance(int val, void *param)
 {
-    if (val > RANDOM_CHANCE_MAX) {
-        val = RANDOM_CHANCE_MAX;
+    if (val > RAM_INIT_RANDOM_CHANCE_MAX) {
+        val = RAM_INIT_RANDOM_CHANCE_MAX;
     } else if (val < 0) {
         val = 0;
     }
@@ -126,7 +126,7 @@ static int set_random_chance(int val, void *param)
 }
 
 /* FIXME: the defaults have been choosen so the result matches a real reported
-          pattern in x64sc, AND from those one was picked so all raminitvalue 
+          pattern in x64sc, AND from those one was picked so all raminitvalue
           tests pass.
 
           however, the respective defaults should probably be different per
@@ -144,11 +144,12 @@ static const resource_int_t resources_int[] = {
       &mainramparam.pattern_invert, set_pattern_invert, NULL },
     { "RAMInitPatternInvertValue", 255, RES_EVENT_SAME, NULL,
       &mainramparam.pattern_invert_value, set_pattern_invert_value, NULL },
+    /* RAMInitStartRandom - length of random pattern in bytes */ /* FIXME: bad name */
     { "RAMInitStartRandom", 0, RES_EVENT_SAME, NULL,
       &mainramparam.random_start, set_random_start, NULL },
     { "RAMInitRepeatRandom", 0, RES_EVENT_SAME, NULL,
       &mainramparam.random_repeat, set_random_repeat, NULL },
-    { "RAMInitRandomChance", 1, RES_EVENT_SAME, NULL,
+    { "RAMInitRandomChance", RAM_INIT_RANDOM_CHANCE_DEFAULT, RES_EVENT_SAME, NULL,
       &mainramparam.random_chance, set_random_chance, NULL },
     RESOURCE_INT_LIST_END
 };
@@ -178,6 +179,7 @@ static const cmdline_option_t cmdline_options[] =
     { "-raminitpatterninvertvalue", SET_RESOURCE, CMDLINE_ATTRIB_NEED_ARGS,
       NULL, NULL, "RAMInitPatternInvertValue", NULL,
       "<value>", "Value to invert with in second pattern" },
+    /* FIXME: bad name */
     { "-raminitstartrandom", SET_RESOURCE, CMDLINE_ATTRIB_NEED_ARGS,
       NULL, NULL, "RAMInitStartRandom", NULL,
       "<num of bytes>", "Number of random bytes in random pattern" },
@@ -236,27 +238,27 @@ void ram_init_with_pattern(uint8_t *memram, unsigned int ramsize, RAMINITPARAM *
         /* flipping no bits */
         random_method = RANDOM_METHOD_NONE;
         random_mask_initial = 0x00;
-    } else if (ramparam->random_chance >= RANDOM_CHANCE_MAX) {
+    } else if (ramparam->random_chance >= RAM_INIT_RANDOM_CHANCE_MAX) {
         /* flipping all bits; same as no bits, but with the opposite mask */
         random_method = RANDOM_METHOD_NONE;
         random_mask_initial = 0xff;
-    } else if (ramparam->random_chance == (RANDOM_CHANCE_MAX / 2)) {
+    } else if (ramparam->random_chance == (RAM_INIT_RANDOM_CHANCE_MAX / 2)) {
         /* flipping bits or not with equal probability; worst-case for the
          * geometric spacing method, so handle separately */
         random_method = RANDOM_METHOD_UNIFORM;
-    } else if (ramparam->random_chance < (RANDOM_CHANCE_MAX / 2)) {
+    } else if (ramparam->random_chance < (RAM_INIT_RANDOM_CHANCE_MAX / 2)) {
         /* some other probability less than 0.5; generate the number of bits
          * un-flipped between each flipped bit. */
         random_method = RANDOM_METHOD_GEOM;
         random_mask_initial = 0x00;
-        log_1mp = log1p((double)-ramparam->random_chance / RANDOM_CHANCE_MAX);
+        log_1mp = log1p((double)-ramparam->random_chance / RAM_INIT_RANDOM_CHANCE_MAX);
         random_next = random_method_geom_next(log_1mp);
     } else {
         /* some other probability greater than 0.5; generate the number of bits
          * flipped between each un-flipped bit. */
         random_method = RANDOM_METHOD_GEOM;
         random_mask_initial = 0xff;
-        log_1mp = log((double)ramparam->random_chance / RANDOM_CHANCE_MAX);
+        log_1mp = log((double)ramparam->random_chance / RAM_INIT_RANDOM_CHANCE_MAX);
         random_next = random_method_geom_next(log_1mp);
     }
 

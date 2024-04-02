@@ -88,7 +88,7 @@ console_t *uimon_window_open(bool display_now)
 
     if (using_ui_monitor) {
         sdl_ui_activate_pre_action();
-        sdl_ui_init_draw_params();
+        sdl_ui_init_draw_params(sdl_active_canvas);
         sdl_ui_clear();
         menu_draw = sdl_ui_get_menu_param();
         mon_console.console_xres = menu_draw->max_text_x;
@@ -206,8 +206,8 @@ int console_init(void)
     }
 #endif
     return native_console_init();
-}    
-    
+}
+
 int console_close_all(void)
 {
 #if 0
@@ -219,4 +219,4 @@ int console_close_all(void)
     native_console_close_all();
     console_log_local = NULL;
     return 0;
-}    
+}

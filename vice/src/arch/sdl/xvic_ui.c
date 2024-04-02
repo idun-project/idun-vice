@@ -31,6 +31,8 @@
 #include <stdlib.h>
 
 #include "debug.h"
+#include "actions-display.h"
+#include "actions-speed.h"
 #include "lib.h"
 #include "machine.h"
 #include "menu_common.h"
@@ -63,144 +65,152 @@
 #include "menu_video.h"
 #include "resources.h"
 #include "ui.h"
+#include "uiactions.h"
 #include "uifonts.h"
 #include "uimenu.h"
+#include "uistatusbar.h"
 #include "vic.h"
 #include "victypes.h"
+#include "vic20rom.h"
 #include "vic20ui.h"
 #include "vic20memrom.h"
 #include "videoarch.h"
 #include "vkbd.h"
 
-static UI_MENU_CALLBACK(pause_callback_wrapper);
 
 static ui_menu_entry_t xvic_main_menu[] = {
-    { "Autostart image",
-      MENU_ENTRY_DIALOG,
-      autostart_callback,
-      NULL },
-    { "Drive",
-      MENU_ENTRY_SUBMENU,
-      submenu_callback,
-      (ui_callback_data_t)drive_menu },
-    { "Tape",
-      MENU_ENTRY_SUBMENU,
-      submenu_callback,
-      (ui_callback_data_t)tape_menu },
-    { "Cartridge",
-      MENU_ENTRY_SUBMENU,
-      submenu_callback,
-      (ui_callback_data_t)vic20cart_menu },
-    { "Printer",
-      MENU_ENTRY_SUBMENU,
-      submenu_callback,
-      (ui_callback_data_t)printer_iec_menu },
-    { "Machine settings",
-      MENU_ENTRY_SUBMENU,
-      submenu_callback,
-      (ui_callback_data_t)vic20_hardware_menu },
-    { "Video settings",
-      MENU_ENTRY_SUBMENU,
-      submenu_callback,
-      (ui_callback_data_t)vic20_video_menu },
-    { "Sound settings",
-      MENU_ENTRY_SUBMENU,
-      submenu_callback,
-      (ui_callback_data_t)sound_output_menu },
-    { "Sampler settings",
-      MENU_ENTRY_SUBMENU,
-      submenu_callback,
-      (ui_callback_data_t)sampler_menu },
-    { "Snapshot",
-      MENU_ENTRY_SUBMENU,
-      submenu_callback,
-      (ui_callback_data_t)snapshot_menu },
-    { "Save media file",
-      MENU_ENTRY_SUBMENU,
-      submenu_callback,
-      (ui_callback_data_t)media_menu },
-    { "Speed settings",
-      MENU_ENTRY_SUBMENU,
-      submenu_callback,
-      (ui_callback_data_t)speed_menu },
-    { "Reset",
-      MENU_ENTRY_SUBMENU,
-      submenu_callback,
-      (ui_callback_data_t)reset_menu },
-    { "Action on CPU JAM",
-      MENU_ENTRY_SUBMENU,
-      submenu_callback,
-      (ui_callback_data_t)jam_menu },
+    {   .action    = ACTION_SMART_ATTACH,
+        .string    = "Autostart image",
+        .type      = MENU_ENTRY_DIALOG,
+        .callback  = autostart_callback,
+        .activated = MENU_EXIT_UI_STRING
+    },
+    {   .string   = "Drive",
+        .type     = MENU_ENTRY_SUBMENU,
+        .callback = submenu_callback,
+        .data     = (ui_callback_data_t)drive_menu
+    },
+    {   .string   = "Tape",
+        .type     = MENU_ENTRY_SUBMENU,
+        .callback = submenu_callback,
+        .data     = (ui_callback_data_t)tape_menu
+    },
+    {   .string   = "Cartridge",
+        .type     = MENU_ENTRY_SUBMENU,
+        .callback = submenu_callback,
+        .data     = (ui_callback_data_t)vic20cart_menu
+    },
+    {   .string   = "Printer",
+        .type     = MENU_ENTRY_SUBMENU,
+        .callback = submenu_callback,
+        .data     = (ui_callback_data_t)printer_iec_menu
+    },
+    {   .string   = "Machine settings",
+        .type     = MENU_ENTRY_SUBMENU,
+        .callback = submenu_callback,
+        .data     = (ui_callback_data_t)vic20_hardware_menu
+    },
+    {   .string   = "Video settings",
+        .type     = MENU_ENTRY_SUBMENU,
+        .callback = submenu_callback,
+        .data     = (ui_callback_data_t)vic20_video_menu
+    },
+    {   .string   = "Sound settings",
+        .type     = MENU_ENTRY_SUBMENU,
+        .callback = submenu_callback,
+        .data     = (ui_callback_data_t)sound_output_menu
+    },
+    {   .string   = "Sampler settings",
+        .type     = MENU_ENTRY_SUBMENU,
+        .callback = submenu_callback,
+        .data     = (ui_callback_data_t)sampler_menu
+    },
+    {   .string   = "Snapshot",
+        .type     = MENU_ENTRY_SUBMENU,
+        .callback = submenu_callback,
+        .data     = (ui_callback_data_t)snapshot_menu
+    },
+    {   .string   = "Save media file",
+        .type     = MENU_ENTRY_SUBMENU,
+        .callback = submenu_callback,
+        .data     = (ui_callback_data_t)media_menu
+    },
+    {   .string   = "Speed settings",
+        .type     = MENU_ENTRY_SUBMENU,
+        .callback = submenu_callback,
+        .data     = (ui_callback_data_t)speed_menu
+    },
+    {   .string   = "Reset",
+        .type     = MENU_ENTRY_SUBMENU,
+        .callback = submenu_callback,
+        .data     = (ui_callback_data_t)reset_menu
+    },
+    {   .string   = "Action on CPU JAM",
+        .type     = MENU_ENTRY_SUBMENU,
+        .callback = submenu_callback,
+        .data     = (ui_callback_data_t)jam_menu
+    },
 #ifdef HAVE_NETWORK
-    { "Network",
-      MENU_ENTRY_SUBMENU,
-      submenu_callback,
-      (ui_callback_data_t)network_menu },
+    {   .string   = "Network",
+        .type     = MENU_ENTRY_SUBMENU,
+        .callback = submenu_callback,
+        .data     = (ui_callback_data_t)network_menu
+    },
 #endif
-    { "Pause",
-      MENU_ENTRY_OTHER_TOGGLE,
-      pause_callback_wrapper,
-      NULL },
-    /* Caution: index is hardcoded below */
-    { "Advance Frame",
-      MENU_ENTRY_OTHER,
-      advance_frame_callback,
-      NULL },
-    { "Monitor",
-      MENU_ENTRY_SUBMENU,
-      submenu_callback,
-      (ui_callback_data_t)monitor_menu },
-    /* Caution: index is hardcoded below */
-    { "Virtual keyboard",
-      MENU_ENTRY_OTHER,
-      vkbd_callback,
-      NULL },
-    { "Statusbar",
-      MENU_ENTRY_OTHER_TOGGLE,
-      statusbar_callback,
-      NULL },
+    {   .action    = ACTION_PAUSE_TOGGLE,
+        .string    = "Pause",
+        .type      = MENU_ENTRY_OTHER_TOGGLE,
+        .displayed = pause_toggle_display
+    },
+    {   .action   = ACTION_ADVANCE_FRAME,
+        .string   = "Advance Frame",
+        .type     = MENU_ENTRY_OTHER,
+    },
+    {   .string   = "Monitor",
+        .type     = MENU_ENTRY_SUBMENU,
+        .callback = submenu_callback,
+        .data     = (ui_callback_data_t)monitor_menu
+    },
+    {   .action    = ACTION_VIRTUAL_KEYBOARD,
+        .string    = "Virtual keyboard",
+        .type      = MENU_ENTRY_OTHER,
+        .activated = MENU_EXIT_UI_STRING
+    },
+    {   .action    = ACTION_SHOW_STATUSBAR_TOGGLE,
+        .string    = "Statusbar",
+        .type      = MENU_ENTRY_OTHER_TOGGLE,
+        .displayed = show_statusbar_toggle_display
+    },
 #ifdef DEBUG
-    { "Debug",
-      MENU_ENTRY_SUBMENU,
-      submenu_callback,
-      (ui_callback_data_t)debug_menu },
+    {   .string   = "Debug",
+        .type     = MENU_ENTRY_SUBMENU,
+        .callback = submenu_callback,
+        .data     = (ui_callback_data_t)debug_menu
+    },
 #endif
-    { "Help",
-      MENU_ENTRY_SUBMENU,
-      submenu_callback,
-      (ui_callback_data_t)help_menu },
-    { "Settings management",
-      MENU_ENTRY_SUBMENU,
-      submenu_callback,
-      (ui_callback_data_t)settings_manager_menu },
-#ifdef USE_SDLUI2
-    { "Edit",
-      MENU_ENTRY_SUBMENU,
-      submenu_callback,
-      (ui_callback_data_t)edit_menu },
+    {   .string   = "Help",
+        .type     = MENU_ENTRY_SUBMENU,
+        .callback = submenu_callback,
+        .data     = (ui_callback_data_t)help_menu
+    },
+    {   .string   = "Settings management",
+        .type     = MENU_ENTRY_SUBMENU,
+        .callback = submenu_callback,
+        .data     = (ui_callback_data_t)settings_manager_menu
+    },
+#ifdef USE_SDL2UI
+    {   .string   = "Edit",
+        .type     = MENU_ENTRY_SUBMENU,
+        .callback = submenu_callback,
+        .data     = (ui_callback_data_t)edit_menu
+    },
 #endif
-    { "Quit emulator",
-      MENU_ENTRY_OTHER,
-      quit_callback,
-      NULL },
+    {   .action   = ACTION_QUIT,
+        .string   = "Quit emulator",
+        .type     = MENU_ENTRY_OTHER,
+    },
     SDL_MENU_LIST_END
 };
-
-#ifdef HAVE_NETWORK
-# define MENU_ADVANCE_FRAME_IDX      16
-# define MENU_VIRTUAL_KEYBOARD_IDX   18
-#else
-# define MENU_ADVANCE_FRAME_IDX      15
-# define MENU_VIRTUAL_KEYBOARD_IDX   17
-#endif
-static UI_MENU_CALLBACK(pause_callback_wrapper)
-{
-    xvic_main_menu[MENU_ADVANCE_FRAME_IDX].status = 
-        sdl_pause_state || !sdl_menu_state ? MENU_STATUS_ACTIVE : MENU_STATUS_INACTIVE;
-    xvic_main_menu[MENU_VIRTUAL_KEYBOARD_IDX].status =
-        sdl_pause_state ? MENU_STATUS_INACTIVE : MENU_STATUS_ACTIVE;
-    return pause_callback(activated, param);
-}
 
 static void vic20ui_set_menu_params(int index, menu_draw_t *menu_draw)
 {
@@ -224,7 +234,7 @@ static void vic20ui_set_menu_params(int index, menu_draw_t *menu_draw)
     menu_draw->extra_x += (videostandard == MACHINE_SYNC_PAL) ? 36 : 8;
 #endif
     menu_draw->extra_y += (videostandard == MACHINE_SYNC_PAL) ? 40 : 24;
-    
+
     menu_draw->color_front = menu_draw->color_default_front = 1;
     menu_draw->color_back = menu_draw->color_default_back = 0;
     menu_draw->color_cursor_back = 6;
@@ -255,29 +265,29 @@ int vic20ui_init(void)
 #endif
 
     sdl_ui_set_menu_params = vic20ui_set_menu_params;
-    uijoyport_menu_create(1, 0, 1, 1, 1);
-    uijoystick_menu_create(1, 0, 1, 1, 1);
+    uijoyport_menu_create(1, 0, 1, 1, 1, 0);
     uiuserport_menu_create(1);
     uisampler_menu_create();
-    uidrive_menu_create();
+    uidrive_menu_create(1);
+    uitape_menu_create(1);
     uikeyboard_menu_create();
     uipalette_menu_create("VIC", NULL);
     uisid_menu_create();
     uimedia_menu_create();
 
     sdl_ui_set_main_menu(xvic_main_menu);
-    sdl_ui_font_init("chargen", 0, 0x800, 0);
+    sdl_ui_font_init(VIC20_CHARGEN_NAME, 0, 0x800, 0);
     sdl_vkbd_set_vkbd(&vkbd_vic20);
 
-#ifdef HAVE_FFMPEG
     sdl_menu_ffmpeg_init();
-#endif
 
+    uistatusbar_realize();
     return 0;
 }
 
 void vic20ui_shutdown(void)
 {
+    uisound_output_menu_shutdown();
     uisid_menu_shutdown();
     uikeyboard_menu_shutdown();
     uipalette_menu_shutdown();
@@ -295,9 +305,7 @@ void vic20ui_shutdown(void)
     sdl_menu_ethernet_interface_free();
 #endif
 
-#ifdef HAVE_FFMPEG
     sdl_menu_ffmpeg_shutdown();
-#endif
 
     sdl_ui_font_shutdown();
 }

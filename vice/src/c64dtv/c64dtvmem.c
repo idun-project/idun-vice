@@ -136,7 +136,7 @@ static int vbank;
 /* Current memory configuration.  */
 static int mem_config;
 
-/* Current watchpoint state. 
+/* Current watchpoint state.
           0 = no watchpoints
     bit0; 1 = watchpoints active
     bit1; 2 = watchpoints trigger on dummy accesses
@@ -525,7 +525,7 @@ void mem_set_basic_text(uint16_t start, uint16_t end)
 }
 
 /* this function should always read from the screen currently used by the kernal
-   for output, normally this does just return system ram - except when the 
+   for output, normally this does just return system ram - except when the
    videoram is not memory mapped.
    used by autostart to "read" the kernal messages
 */
@@ -587,6 +587,8 @@ void store_bank_io(uint16_t addr, uint8_t byte)
         case 0xd400:
         case 0xd500:
         case 0xd600:
+            sid_store(addr, byte);
+            break;
         case 0xd700:
             sid_store(addr, byte);
             debugcart_store(addr, byte);
@@ -715,7 +717,7 @@ void mem_get_screen_parameter(uint16_t *base, uint8_t *rows, uint8_t *columns, i
 
 /* used by autostart to locate and "read" kernal output on the current screen
  * this function should return whatever the kernal currently uses, regardless
- * what is currently visible/active in the UI 
+ * what is currently visible/active in the UI
  */
 void mem_get_cursor_parameter(uint16_t *screen_addr, uint8_t *cursor_column, uint8_t *line_length, int *blinking)
 {
@@ -1340,6 +1342,15 @@ uint8_t mem_bank_peek(int bank, uint16_t addr, void *context)
             break; /* yes, this could be flash as well */
     }
     return access_rom(addr) ? c64dtvflash_mem[paddr] : mem_ram[paddr];
+}
+
+int mem_get_current_bank_config(void) {
+    return 0; /* TODO: not implemented yet */
+}
+
+uint8_t mem_peek_with_config(int config, uint16_t addr, void *context) {
+    /* TODO, config not implemented yet */
+    return mem_bank_peek(0 /* current */, addr, context);
 }
 
 void mem_bank_write(int bank, uint16_t addr, uint8_t byte, void *context)

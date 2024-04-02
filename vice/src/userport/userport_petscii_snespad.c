@@ -107,7 +107,9 @@ static int userport_petscii_enable(int value)
         }
         counter = 0;
         joystick_adapter_activate(JOYSTICK_ADAPTER_ID_USERPORT_PETSCII_SNES, userport_snespad_device.name);
-        joystick_adapter_set_ports(1);
+
+        /* Enable 1 extra joystick port, without +5VDC support */
+        joystick_adapter_set_ports(1, 0);
         joystick_set_snes_mapping(JOYPORT_3);
     } else {
         joystick_adapter_deactivate();
@@ -206,7 +208,7 @@ static uint8_t userport_snespad_read_pbx(uint8_t orig)
         default:
             retval = 0;
     }
-    
+
     retval <<= 6;
 
     return (~retval);
@@ -232,7 +234,7 @@ static int userport_petscii_write_snapshot_module(snapshot_t *s)
     snapshot_module_t *m;
 
     m = snapshot_module_create(s, snap_module_name, SNAP_MAJOR, SNAP_MINOR);
- 
+
     if (m == NULL) {
         return -1;
     }

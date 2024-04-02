@@ -27,9 +27,9 @@
 #ifndef VICE_DRIVEDOSWIDGET_H
 #define VICE_DRIVEDOSWIDGET_H
 
-#include "vice.h"
 #include <gtk/gtk.h>
 
-GtkWidget *drive_dos_widget_create(int unit);
+GtkWidget * drive_dos_widget_create_combo(int unit);
+void        drive_dos_widget_sync_combo(GtkWidget *widget);
 
 #endif

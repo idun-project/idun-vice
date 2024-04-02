@@ -42,6 +42,7 @@
 #include "resources.h"
 #include "snapshot.h"
 #include "types.h"
+#include "uiapi.h"
 
 /*
  * A HRE board consists of a few 74LS-type chips, and is plugged
@@ -70,7 +71,7 @@
  * The value written there ($02) is calculated such that after
  * shuffling it as above, the first byte of screen memory is at $A000.
  *
- * For ROM support code, you want -rom9 324992-02.bin -romA 324993-02.bin 
+ * For ROM support code, you want -rom9 324992-02.bin -romA 324993-02.bin
  */
 
 #define HRE_DEBUG_GFX       0
@@ -167,6 +168,7 @@ void pethre_reset(void)
 static int pethre_activate(void)
 {
     if (petres.map != PET_MAP_8296) {
+        ui_error("Cannot enable HRE: requires PET model 8296.");
         log_message(pethre_log, "Cannot enable HRE: requires PET model 8296.");
         return -1;
     }
@@ -257,8 +259,6 @@ void crtc_store_hre(uint16_t addr, uint8_t value)
 
 /* ------------------------------------------------------------------------- */
 /* Raster drawing */
-
-extern uint32_t dwg_table[16];
 
 #define MA_WIDTH        64
 #define MA_LO           (MA_WIDTH - 1)          /* 6 bits */

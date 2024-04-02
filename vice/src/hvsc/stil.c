@@ -6,7 +6,7 @@
 
 /*
  *  HVSClib - a library to work with High Voltage SID Collection files
- *  Copyright (C) 2018-2021  Bas Wassink <b.wassink@ziggo.nl>
+ *  Copyright (C) 2018-2022  Bas Wassink <b.wassink@ziggo.nl>
  *
  *  This program is free software; you can redistribute it and/or modify
  *  it under the terms of the GNU General Public License as published by
@@ -23,19 +23,28 @@
  *  51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA.*
  */
 
+#undef HVSC_DEBUG
+
+#ifndef HVSC_STANDALONE
+# include "vice.h"
+#endif
+
 #include <stdio.h>
 #include <stdlib.h>
+#include <stdbool.h>
 #include <inttypes.h>
 #include <string.h>
 #include <ctype.h>
-#include "log.h"
 
+#ifndef HVSC_STANDALONE
+# include "log.h"
+#endif
 #include "hvsc.h"
-
 #include "hvsc_defs.h"
 #include "base.h"
 
 #include "stil.h"
+
 
 
 /*
@@ -44,24 +53,25 @@
 
 static void                 stil_field_init(hvsc_stil_field_t *field);
 static hvsc_stil_field_t *  stil_field_new(int type,
-                                           const char *text, size_t tlen,
-                                           long ts_from, long ts_to,
-                                           const char *album, size_t alen);
+                                           const char *text,
+                                           size_t      tlen,
+                                           long        ts_from,
+                                           long        ts_to,
+                                           const char *album,
+                                           size_t      alen);
 static void                 stil_field_free(hvsc_stil_field_t *field);
 static hvsc_stil_field_t *  stil_field_dup(const hvsc_stil_field_t *field);
 
 static void                 stil_block_init(hvsc_stil_block_t *block);
 static hvsc_stil_block_t *  stil_block_new(void);
 static void                 stil_block_free(hvsc_stil_block_t *block);
-static int                  stil_block_add_field(hvsc_stil_block_t *block,
+static void                 stil_block_add_field(hvsc_stil_block_t *block,
                                                  hvsc_stil_field_t *field);
 static hvsc_stil_block_t *  stil_block_dup(const hvsc_stil_block_t *block);
 
-static int                  stil_parse_timestamp(char *s,
-                                                 hvsc_stil_timestamp_t *ts,
-                                                 char **endptr);
-
-
+static int                  stil_parse_timestamp(char                   *s,
+                                                 hvsc_stil_timestamp_t  *ts,
+                                                 char                  **endptr);
 
 
 /** \brief  Parse tune number from string \a s
@@ -75,12 +85,12 @@ static int                  stil_parse_timestamp(char *s,
  */
 static int stil_parse_tune_number(const char *s)
 {
-    while (*s != '\0' && isspace((int)*s)) {
+    while (*s != '\0' && isspace((unsigned char)*s)) {
         s++;
     }
     if (*s == '(' && *(s + 1) == '#') {
         char *endptr;
-        long result;
+        long  result;
 
         result = strtol(s + 2, &endptr, 10);
         if (*endptr == ')') {
@@ -89,7 +99,6 @@ static int stil_parse_tune_number(const char *s)
     }
     return -1;
 }
-
 
 /** \brief  Parse a STIL timestamp
  *
@@ -105,11 +114,12 @@ static int stil_parse_tune_number(const char *s)
  *
  * \return  bool
  */
-static int stil_parse_timestamp(char *s, hvsc_stil_timestamp_t *ts,
-                                char **endptr)
+static int stil_parse_timestamp(char                   *s,
+                                hvsc_stil_timestamp_t  *ts,
+                                char                  **endptr)
 {
     char *p;
-    long result;
+    long  result;
 
     /* get first/only entry */
     result = hvsc_parse_simple_timestamp(s, &p);
@@ -122,7 +132,7 @@ static int stil_parse_timestamp(char *s, hvsc_stil_timestamp_t *ts,
     /* do we have a range? */
     if (*p != '-') {
         /* nope, single entry */
-        ts->to = -1;
+        ts->to  = -1;
         *endptr = p;
         return 1;
     }
@@ -136,7 +146,6 @@ static int stil_parse_timestamp(char *s, hvsc_stil_timestamp_t *ts,
     return 1;
 }
 
-
 /** \brief  Parse Album sub field
  *
  * \param[in]   s   string to parse for Album sub field
@@ -147,10 +156,9 @@ static int stil_parse_timestamp(char *s, hvsc_stil_timestamp_t *ts,
 static char *stil_parse_album(const char *s, size_t len)
 {
     /* put p at the char before ']' */
-    const char *p = s + len - 2;
-    const char *end = s + len -2;
-
-    char *album = NULL;
+    const char *p   = s + len - 2;
+    const char *end = s + len - 2;
+    char       *album = NULL;
 
     while (p >= s && *p != '[') {
         p--;
@@ -173,13 +181,12 @@ static char *stil_parse_album(const char *s, size_t len)
  */
 static void stil_field_init(hvsc_stil_field_t *field)
 {
-    field->type = HVSC_FIELD_INVALID;
-    field->text = NULL;
+    field->type           = HVSC_FIELD_INVALID;
+    field->text           = NULL;
     field->timestamp.from = -1;
-    field->timestamp.to = -1;
-    field->album = NULL;
+    field->timestamp.to   = -1;
+    field->album          = NULL;
 }
-
 
 /** \brief  Allocate a new STIL field object
  *
@@ -195,37 +202,26 @@ static void stil_field_init(hvsc_stil_field_t *field)
  *
  * \return  new STIL field object or `NULL` on failure
  */
-static hvsc_stil_field_t *stil_field_new(int type,
-                                         const char *text, size_t tlen,
-                                         long ts_from, long ts_to,
-                                         const char *album, size_t alen)
+static hvsc_stil_field_t *stil_field_new(int         type,
+                                         const char *text,
+                                         size_t      tlen,
+                                         long        ts_from,
+                                         long        ts_to,
+                                         const char *album,
+                                         size_t      alen)
 {
-    hvsc_stil_field_t *field = malloc(sizeof *field);
+    hvsc_stil_field_t *field = hvsc_malloc(sizeof *field);
 
-    if (field == NULL) {
-        hvsc_errno = HVSC_ERR_OOM;
-    } else {
-        stil_field_init(field);
-        field->type = type;
-        field->timestamp.from = ts_from;
-        field->timestamp.to = ts_to;
-        field->text = hvsc_strndup(text, tlen);
-        if (field->text == NULL) {
-            stil_field_free(field);
-            return NULL;
-        }
-        if (album != NULL && *album != '\0') {
-            field->album = hvsc_strndup(album, alen);
-            if (field->album == NULL) {
-                stil_field_free(field);
-                return NULL;
-            }
-        }
-
+    stil_field_init(field);
+    field->type           = type;
+    field->timestamp.from = ts_from;
+    field->timestamp.to   = ts_to;
+    field->text = hvsc_strndup(text, tlen);
+    if (album != NULL && *album != '\0') {
+        field->album = hvsc_strndup(album, alen);
     }
     return field;
 }
-
 
 /** \brief  Free memory used by member of \a field and \a field itself
  *
@@ -234,12 +230,12 @@ static hvsc_stil_field_t *stil_field_new(int type,
 static void stil_field_free(hvsc_stil_field_t *field)
 {
     if (field->text != NULL) {
-        free(field->text);
+        hvsc_free(field->text);
     }
     if (field->album != NULL) {
-        free(field->album);
+        hvsc_free(field->album);
     }
-    free(field);
+    hvsc_free(field);
 }
 
 
@@ -255,12 +251,11 @@ static void stil_field_free(hvsc_stil_field_t *field)
  */
 static void stil_block_init(hvsc_stil_block_t *block)
 {
-    block->tune = 0;
-    block->fields = NULL;
-    block->fields_max = 0;
+    block->tune        = 0;
+    block->fields      = NULL;
+    block->fields_max  = 0;
     block->fields_used = 0;
 }
-
 
 /** \brief  Allocate and intialize a new STIL block
  *
@@ -269,21 +264,12 @@ static void stil_block_init(hvsc_stil_block_t *block)
 static hvsc_stil_block_t *stil_block_new(void)
 {
     hvsc_stil_block_t *block;
-    size_t i;
+    size_t             i;
 
-    block = malloc(sizeof *block);
-    if (block == NULL) {
-        hvsc_errno = HVSC_ERR_OOM;
-        return NULL;
-    }
+    block = hvsc_malloc(sizeof *block);
     stil_block_init(block);
 
-    block->fields = malloc(HVSC_STIL_BLOCK_FIELDS_INIT * sizeof *(block->fields));
-    if (block->fields == NULL) {
-        hvsc_errno = HVSC_ERR_OOM;
-        stil_block_free(block);
-        return NULL;
-    }
+    block->fields = hvsc_malloc(HVSC_STIL_BLOCK_FIELDS_INIT * sizeof *(block->fields));
     block->fields_max = HVSC_STIL_BLOCK_FIELDS_INIT;
     for (i = 0; i < HVSC_STIL_BLOCK_FIELDS_INIT; i++) {
         block->fields[i] = NULL;
@@ -291,52 +277,46 @@ static hvsc_stil_block_t *stil_block_new(void)
     return block;
 }
 
-
 /** \brief  Make a deep copy of \a field
  *
  * \param[in]   field   STIL field
  *
- * \return  copy of \a field or `NULL` on error
+ * \return  copy of \a field
  */
 static hvsc_stil_field_t *stil_field_dup(const hvsc_stil_field_t *field)
 {
-    return stil_field_new(field->type, field->text, strlen(field->text),
-            field->timestamp.from, field->timestamp.to,
-            field->album, field->album != NULL ? strlen(field->album) : 0);
+    return stil_field_new(field->type,
+                          field->text,
+                          strlen(field->text),
+                          field->timestamp.from,
+                          field->timestamp.to,
+                          field->album,
+                          field->album != NULL ? strlen(field->album) : 0);
 }
-
 
 /** \brief  Make a deep copy of \a block
  *
  * \param[in]   block   STIL block
  *
- * \return  copy of \a block or `NULL` or error
+ * \return  copy of \a block
  */
 static hvsc_stil_block_t *stil_block_dup(const hvsc_stil_block_t *block)
 {
     hvsc_stil_block_t *copy;
-    size_t i;
+    size_t             i;
 
-    copy = malloc(sizeof *copy);
-    if (copy == NULL) {
-        return 0;
-    }
+    copy = hvsc_malloc(sizeof *copy);
     stil_block_init(copy);
 
-    copy->tune = block->tune;
-    copy->fields_max = block->fields_max;
+    copy->tune        = block->tune;
+    copy->fields_max  = block->fields_max;
     copy->fields_used = block->fields_used;
-    copy->fields = malloc(block->fields_max * sizeof *(copy->fields));
+    copy->fields      = hvsc_malloc(block->fields_max * sizeof *(copy->fields));
     for (i = 0; i < copy->fields_used; i++) {
         copy->fields[i] = stil_field_dup(block->fields[i]);
-        if (copy->fields[i] == NULL) {
-            stil_block_free(copy);
-            return 0;
-        }
     }
     return copy;
 }
-
 
 /** \brief  Free STIL block and its members
  *
@@ -349,43 +329,29 @@ static void stil_block_free(hvsc_stil_block_t *block)
     for (i = 0; i < block->fields_used; i++) {
         stil_field_free(block->fields[i]);
     }
-    free(block->fields);
-    free(block);
+    hvsc_free(block->fields);
+    hvsc_free(block);
 }
-
 
 /** \brief  Add STIL \a field to STIL \a block
  *
  * \param[in,out]   block   STIL block
  * \param[in]       field   STIL field
- *
- * \return  bool
  */
-static int stil_block_add_field(hvsc_stil_block_t *block,
+static void stil_block_add_field(hvsc_stil_block_t *block,
                                  hvsc_stil_field_t *field)
 {
     hvsc_dbg("max = %" PRI_SIZE_T ", used = %" PRI_SIZE_T "\n",
-            `block->fields_max, block->fields_used);
+             block->fields_max, block->fields_used);
     /* do we need to resize the array? */
     if (block->fields_max == block->fields_used) {
         /* yep */
-        hvsc_stil_field_t **tmp;
-
-        tmp = realloc(block->fields,
-                block->fields_max * 2 * sizeof *(block->fields));
-        if (tmp == NULL) {
-            hvsc_errno = HVSC_ERR_OOM;
-            return 0;
-        }
-        block->fields = tmp;
         block->fields_max *= 2;
+        block->fields = hvsc_realloc(block->fields,
+                                     block->fields_max * sizeof *(block->fields));
     }
     block->fields[block->fields_used++] = field;
-    return 1;
 }
-
-
-
 
 /** \brief  Initialize STIL \a handle for use
  *
@@ -394,42 +360,33 @@ static int stil_block_add_field(hvsc_stil_block_t *block,
 static void stil_init_handle(hvsc_stil_t *handle)
 {
     hvsc_text_file_init_handle(&(handle->stil));
-    handle->psid_path = NULL;
-    handle->entry_buffer = NULL;
-    handle->entry_bufmax = 0;
+    handle->psid_path     = NULL;
+    handle->entry_buffer  = NULL;
+    handle->entry_bufmax  = 0;
     handle->entry_bufused = 0;
-    handle->sid_comment = NULL;
-    handle->blocks = NULL;
-    handle->blocks_max = 0;
-    handle->blocks_used = 0;
+    handle->sid_comment   = NULL;
+    handle->blocks        = NULL;
+    handle->blocks_max    = 0;
+    handle->blocks_used   = 0;
 }
-
 
 /** \brief  Allocate initial 'blocks' array
  *
  * All block pointers are initialized to `NULL`
  *
  * \param[in,out]   handle  STIL handle
- *
- * \return  bool
  */
-static int stil_handle_init_blocks(hvsc_stil_t *handle)
+static void stil_handle_init_blocks(hvsc_stil_t *handle)
 {
     size_t i;
 
-    handle->blocks = malloc(HVSC_HANDLE_BLOCKS_INIT * sizeof *(handle->blocks));
-    if (handle->blocks == NULL) {
-        hvsc_errno = HVSC_ERR_OOM;
-        return 0;
-    }
+    handle->blocks = hvsc_malloc(HVSC_HANDLE_BLOCKS_INIT * sizeof *(handle->blocks));
     for (i = 0; i < HVSC_HANDLE_BLOCKS_INIT; i++) {
         handle->blocks[i] = NULL;
     }
     handle->blocks_used = 0;
-    handle->blocks_max = HVSC_HANDLE_BLOCKS_INIT;
-    return 1;
+    handle->blocks_max  = HVSC_HANDLE_BLOCKS_INIT;
 }
-
 
 /** \brief  Free STIL blocks (entries + array)
  *
@@ -443,119 +400,171 @@ static void stil_handle_free_blocks(hvsc_stil_t *handle)
         for (i = 0; i < handle->blocks_used; i++) {
             stil_block_free(handle->blocks[i]);
         }
-        free(handle->blocks);
+        hvsc_free(handle->blocks);
         handle->blocks = NULL;
     }
 }
-
 
 /** \brief  Add STIL \a block to STIL \a handle
  *
  * \param[in,out]   handle  STIL handle
  * \param[in]       block   STIL block
- *
- * \return  bool
  */
-static int stil_handle_add_block(hvsc_stil_t *handle, hvsc_stil_block_t *block)
+static void stil_handle_add_block(hvsc_stil_t *handle, hvsc_stil_block_t *block)
 {
-    hvsc_stil_block_t *copy;
-
     /* do we need to resize the array? */
     if (handle->blocks_max == handle->blocks_used) {
         /* yep */
-        hvsc_stil_block_t **tmp;
-
-        tmp = realloc(handle->blocks,
-                handle->blocks_max * 2 * sizeof *(handle->blocks));
-        if (tmp == NULL) {
-            hvsc_errno = HVSC_ERR_OOM;
-            return 0;
-        }
-        handle->blocks = tmp;
         handle->blocks_max *= 2;
+        handle->blocks = hvsc_realloc(handle->blocks,
+                                      handle->blocks_max * sizeof *(handle->blocks));
     }
-
     /* make a copy */
-    copy = stil_block_dup(block);
-    if (copy == NULL) {
-        return 0;
-    }
-    handle->blocks[handle->blocks_used++] = copy;
-    return 1;
+    handle->blocks[handle->blocks_used++] = stil_block_dup(block);
 }
-
 
 
 /** \brief  Open STIL and look for PSID file \a psid
  *
- * \param[in]       psid    path to PSID file
- * \param[in,out]   handle  STIL handle
+ * \param[in]   psid    path to PSID file
+ * \param[out]  handle  STIL handle
  *
  * \return  bool
  */
-int hvsc_stil_open(const char *psid, hvsc_stil_t *handle)
+bool hvsc_stil_open(const char *psid, hvsc_stil_t *handle)
 {
     const char *line;
 
     stil_init_handle(handle);
-
-    handle->entry_buffer = malloc(HVSC_STIL_BUFFER_INIT *
-            sizeof *(handle->entry_buffer));
-    if (handle->entry_buffer == NULL) {
-        hvsc_errno = HVSC_ERR_OOM;
-        return 0;
-    }
-    handle->entry_bufmax = HVSC_STIL_BUFFER_INIT;
+    handle->entry_buffer = hvsc_malloc(HVSC_STIL_BUFFER_INIT *
+                                       sizeof *(handle->entry_buffer));
+    handle->entry_bufmax  = HVSC_STIL_BUFFER_INIT;
     handle->entry_bufused = 0;
 
-    log_message(LOG_DEFAULT, "Vsid: Opening '%s'.", hvsc_stil_path);
+#ifndef HVSC_STANDALONE
+    log_message(LOG_DEFAULT, "VSID: Opening '%s'.", hvsc_stil_path);
+#endif
     if (!hvsc_text_file_open(hvsc_stil_path, &(handle->stil))) {
-        log_warning(LOG_DEFAULT, "Vsid: Failed to open STIL.");
+#ifndef HVSC_STANDALONE
+        log_warning(LOG_DEFAULT, "VSID: Failed to open STIL.");
+#endif
         hvsc_stil_close(handle);
-        return 0;
+        return false;
     }
 
+    /* get MD5 sum for the given file */
+    memset(handle->md5sum, 0, sizeof handle->md5sum);
+    if (hvsc_md5_digest(psid, handle->md5sum)) {
+        hvsc_dbg("got MD5 sum: %s\n", handle->md5sum);
+    } else {
+        hvsc_dbg("failed to get MD5 sum for file '%s'\n", psid);
+    }
 
-    /* make copy of psid, ripping off the HVSC root directory */
-    handle->psid_path = hvsc_path_strip_root(psid);
-#if defined(_WIN32) || defined(_WIN64)
+    /* make copy of psid path, ripping off the HVSC root directory */
+    if (hvsc_path_is_hvsc(psid)) {
+        hvsc_dbg("path %s is in HVSC base directory\n", psid);
+        handle->psid_path = hvsc_path_strip_root(psid);
+    } else {
+        /* not a HVSC base path, look up HVSC base-relative path in SLDB */
+        char *path;
+
+        hvsc_dbg("path %s is NOT in HVSC base directory or base directory not set\n",
+                 psid);
+        path = hvsc_sldb_get_path_for_md5(handle->md5sum);
+        if (path != NULL) {
+            hvsc_dbg("path for md5 hash %s is %s\n", handle->md5sum, path);
+            handle->psid_path = path;
+        } else {
+            hvsc_dbg("couldn't find path for md5 hash %s\n", handle->md5sum);
+            handle->psid_path = hvsc_strdup(psid);
+        }
+    }
+#ifdef WINDOWS_COMPILE
     /* fix directory separators */
     hvsc_path_fix_separators(handle->psid_path);
 #endif
-
     hvsc_dbg("stripped path is '%s'\n", handle->psid_path);
-    if (handle->psid_path == NULL) {
-        hvsc_stil_close(handle);
-        return 0;
-    }
 
     /* find the entry */
-    while (1) {
+    while (true) {
         line = hvsc_text_file_read(&(handle->stil));
         if (line == NULL) {
             if (feof(handle->stil.fp)) {
                 /* EOF, so simply not found */
                 hvsc_errno = HVSC_ERR_NOT_FOUND;
-                log_message(LOG_DEFAULT, "Vsid: No STIL entry found.");
+#ifndef HVSC_STANDALONE
+                log_message(LOG_DEFAULT, "VSID: No STIL entry found.");
+#endif
             }
             hvsc_stil_close(handle);
             /* I/O error is already set */
-            return 0;
+            return false;
         }
 
         if (strcmp(line, handle->psid_path) == 0) {
+#ifndef HVSC_STANDALONE
             log_message(LOG_DEFAULT,
-                    "Vsid: Found '%s' at line %ld.", line, handle->stil.lineno);
-            return 1;
+                    "VSID: Found '%s' at line %ld.", line, handle->stil.lineno);
+#endif
+            return true;
         }
     }
+}
 
-#if 0 /* above loop never breaks - following code can never execute */
-    /* not found */
-    hvsc_errno = HVSC_ERR_NOT_FOUND;
-    hvsc_stil_close(handle);
-    return 1;
+
+bool hvsc_stil_open_md5(const char *digest, hvsc_stil_t *handle)
+{
+    char *path;
+
+    stil_init_handle(handle);
+    handle->entry_bufmax  = HVSC_STIL_BUFFER_INIT;
+    handle->entry_bufused = 0;
+    handle->entry_buffer  = hvsc_malloc(handle->entry_bufmax *
+                                        sizeof *(handle->entry_buffer));
+    memcpy(handle->md5sum, digest, sizeof handle->md5sum);
+
+    if (!hvsc_text_file_open(hvsc_stil_path, &(handle->stil))) {
+        hvsc_dbg("failed to open STIL.");
+        return false;
+    }
+
+    /* we need to look up the HVSC-relative path for the md5 digest in the SLDB
+     * in order to find the STIL entry by filename (yeah...) */
+    hvsc_dbg("looking up filename in SLDB for digest %s\n", digest);
+    path = hvsc_sldb_get_path_for_md5(handle->md5sum);
+    if (path != NULL) {
+        hvsc_dbg("OK: found %s.", path);
+        handle->psid_path = path;
+    } else {
+        hvsc_dbg("FAIL.\n");
+        hvsc_stil_close(handle);
+        return false;
+    }
+
+    /* look up entry */
+    while (true) {
+        const char *line = hvsc_text_file_read(&(handle->stil));
+
+        if (line == NULL) {
+            if (feof(handle->stil.fp)) {
+                /* EOF, OK */
+                hvsc_errno = HVSC_ERR_NOT_FOUND;
+#ifndef HVSC_STANDALONE
+                log_message(LOG_DEFAULT, "VSID: No STIL entry found.");
 #endif
+            }
+            hvsc_stil_close(handle);
+            return false;
+        }
+
+        if (strcmp(line, handle->psid_path) == 0) {
+#ifndef HVSC_STANDALONE
+            log_message(LOG_DEFAULT,
+                    "VSID: Found '%s' at line %ld.", line, handle->stil.lineno);
+#endif
+            return true;
+        }
+    }
 }
 
 
@@ -568,18 +577,18 @@ int hvsc_stil_open(const char *psid, hvsc_stil_t *handle)
 void hvsc_stil_close(hvsc_stil_t *handle)
 {
     hvsc_text_file_close(&(handle->stil));
-    free(handle->psid_path);
+    hvsc_free(handle->psid_path);
 
     if (handle->entry_buffer != NULL) {
         size_t i;
         for (i = 0; i < handle->entry_bufused; i++){
-            free(handle->entry_buffer[i]);
+            hvsc_free(handle->entry_buffer[i]);
         }
-        free(handle->entry_buffer);
+        hvsc_free(handle->entry_buffer);
     }
 
     if (handle->sid_comment != NULL) {
-        free(handle->sid_comment);
+        hvsc_free(handle->sid_comment);
     }
     if (handle->blocks != NULL) {
         stil_handle_free_blocks(handle);
@@ -596,31 +605,16 @@ void hvsc_stil_close(hvsc_stil_t *handle)
  *
  * \return  bool
  */
-static int hvsc_stil_entry_add_line(hvsc_stil_t *handle, const char *line)
+static void hvsc_stil_entry_add_line(hvsc_stil_t *handle, const char *line)
 {
-    char **buffer;
-    char *tmp;
-
     if (handle->entry_bufmax == handle->entry_bufused) {
-        hvsc_dbg("resizing line buffer to %" PRI_SIZE_T " entries\n",
-                handle->entry_bufmax * 2);
-        buffer = realloc(handle->entry_buffer,
-                (handle->entry_bufmax * 2) * sizeof *(handle->entry_buffer));
-        if (buffer == NULL) {
-            hvsc_errno = HVSC_ERR_OOM;
-            return 0;
-        }
-        handle->entry_buffer = buffer;
         handle->entry_bufmax *= 2;
+        hvsc_dbg("resizing line buffer to %" PRI_SIZE_T " entries\n",
+                  handle->entry_bufmax);
+        handle->entry_buffer = hvsc_realloc(handle->entry_buffer,
+                handle->entry_bufmax * sizeof *(handle->entry_buffer));
     }
-
-    tmp = hvsc_strdup(line);
-    if (tmp == NULL) {
-        return 0;
-    }
-
-    handle->entry_buffer[handle->entry_bufused++] = tmp;
-    return 1;
+    handle->entry_buffer[handle->entry_bufused++] = hvsc_strdup(line);
 }
 
 
@@ -632,33 +626,30 @@ static int hvsc_stil_entry_add_line(hvsc_stil_t *handle, const char *line)
  *
  * \return  bool
  */
-int hvsc_stil_read_entry(hvsc_stil_t *handle)
+bool hvsc_stil_read_entry(hvsc_stil_t *handle)
 {
     const char *line;
 
-
-    while (1) {
+    while (true) {
         line = hvsc_text_file_read(&(handle->stil));
         if (line == NULL) {
             /* EOF ? */
             if (feof(handle->stil.fp)) {
                 /* EOF, so end of entry */
-                return 1;
+                return true;
             }
             /* I/O error is already set */
-            return 0;
+            return false;
         }
 
         /* check for end of entry */
         if (hvsc_string_is_empty(line)) {
             hvsc_dbg("got empty line -> end-of-entry\n");
-            return 1;
+            return true;
         }
 
         hvsc_dbg("line %ld: '%s'\n", handle->stil.lineno, line);
-        if (!hvsc_stil_entry_add_line(handle, line)) {
-            return 0;
-        }
+        hvsc_stil_entry_add_line(handle, line);
     }
 }
 
@@ -682,7 +673,6 @@ void hvsc_stil_dump_entry(hvsc_stil_t *handle)
  * Functions to parse the STIL entry text into a structured representation
  */
 
-
 /** \brief  Parse the STIL entry text for a comment
  *
  * Parses a comment from the lines of text in the parser's stil entry. The
@@ -691,23 +681,18 @@ void hvsc_stil_dump_entry(hvsc_stil_t *handle)
  *
  * \param[in]   state   parser state
  *
- * \return  comment, or `NULL` on failure
+ * \return  comment
  */
 static char *stil_parse_comment(hvsc_stil_parser_state_t *state)
 {
-    char *comment;
-    char *tmp;
-    size_t len;     /* len per line, excluding '\0' */
-    size_t total;   /* total line of comment, excluding '\0' */
+    char       *comment;
+    size_t      len;    /* len per line, excluding '\0' */
+    size_t      total;  /* total line of comment, excluding '\0' */
     const char *line = state->handle->entry_buffer[state->lineno];
 
     /* first line is 'COMMENT: <text>' */
     comment = hvsc_strdup(line + 9);
-    if (comment == NULL) {
-        /* error */
-        return NULL;
-    }
-    total = strlen(line) - 9;
+    total   = strlen(line) - 9;
     state->lineno++;
 
     while (state->lineno < state->handle->entry_bufused) {
@@ -718,24 +703,15 @@ static char *stil_parse_comment(hvsc_stil_parser_state_t *state)
             return comment;
         }
         /* realloc to add new line */
-        tmp = realloc(comment, total + len - 8 + 1);
-        if (tmp == NULL) {
-            hvsc_errno = HVSC_ERR_OOM;
-            free(comment);
-            return NULL;
-        }
-        comment = tmp;
+        comment = hvsc_realloc(comment, total + len - 8 + 1);
         /* add line to comment, adding a space from the nine spaces indent to
          * get a proper separating space in the final comment text */
         memcpy(comment + total, line + 8, len - 8 + 1);
         total += (len - 8);
-
         state->lineno++;
     }
-
     return comment;
 }
-
 
 /** \brief  Initialize parser
  *
@@ -744,30 +720,23 @@ static char *stil_parse_comment(hvsc_stil_parser_state_t *state)
  *
  * \param[in,out]   parser  STIL parser state
  * \param[in]       handle  STIL handle
- *
- * \return  bool
  */
-static int stil_parser_init(hvsc_stil_parser_state_t *parser,
-                             hvsc_stil_t *handle)
+static void stil_parser_init(hvsc_stil_parser_state_t *parser,
+                             hvsc_stil_t              *handle)
 {
-    parser->handle = handle;
-    parser->tune = 0;
-    parser->lineno = 0;
-    parser->field = NULL;
-    parser->ts.from = -1;
-    parser->ts.to = -1;
-    parser->linelen = 0;
-    parser->album = NULL;
+    parser->handle    = handle;
+    parser->tune      = 0;
+    parser->lineno    = 0;
+    parser->field     = NULL;
+    parser->ts.from   = -1;
+    parser->ts.to     = -1;
+    parser->linelen   = 0;
+    parser->album     = NULL;
     parser->album_len = 0;
 
     /* add block for tune #1 */
     parser->block = stil_block_new();
-    if (parser->block == NULL) {
-        return 0;
-    }
-    return 1;
 }
-
 
 /** \brief  Free memory used by the parser's members
  *
@@ -783,46 +752,38 @@ static void stil_parser_free(hvsc_stil_parser_state_t *parser)
         stil_block_free(parser->block);
     }
     if (parser->album != NULL) {
-        free(parser->album);
+        hvsc_free(parser->album);
         parser->album = NULL;
     }
 }
-
-
 
 
 /** \brief  Parse textual content of \a handle into a structured representation
  *
  * \param[in,out]   handle  STIL entry handle
  *
- * \return  bool
- *
  * \todo    Refactor, this function is too long and complex
  */
-int hvsc_stil_parse_entry(hvsc_stil_t *handle)
+void hvsc_stil_parse_entry(hvsc_stil_t *handle)
 {
     hvsc_stil_parser_state_t state;
 
     /* init parser state */
-    if (!stil_parser_init(&state, handle)) {
-        return 0;
-    }
+    stil_parser_init(&state, handle);
 
     /* allocate array for STIL blocks */
-    if (!stil_handle_init_blocks(handle)) {
-        return 0;
-    }
+    stil_handle_init_blocks(handle);
 
     while (state.lineno < state.handle->entry_bufused) {
-        char *line = handle->entry_buffer[state.lineno];
         char *comment;
-        int type;
-        int num;
+        int   type;
+        int   num;
         char *t;
+        char *line = handle->entry_buffer[state.lineno];
 
         state.ts.from = -1;
-        state.ts.to = -1;
-        state.album = NULL;
+        state.ts.to   = -1;
+        state.album   = NULL;
 
         /* to avoid unitialized warning later on (it isn't uinitialized) */
         comment = NULL;
@@ -841,14 +802,9 @@ int hvsc_stil_parse_entry(hvsc_stil_t *handle)
              * have a block)
              */
             if (state.tune > 1) {
-                if (!stil_handle_add_block(state.handle, state.block)) {
-                    return 0;
-                }
+                stil_handle_add_block(state.handle, state.block);
                 stil_block_free(state.block);
-                state.block = stil_block_new();
-                if (state.block == NULL) {
-                    return 0;
-                }
+                state.block       = stil_block_new();
                 state.block->tune = num;
             }
 
@@ -865,15 +821,12 @@ int hvsc_stil_parse_entry(hvsc_stil_t *handle)
                 /* COMMENT: field */
                 case HVSC_FIELD_COMMENT:
                     comment = stil_parse_comment(&state);
-                    if (comment == NULL) {
-                        return 0;
-                    }
                     if (state.tune == 0) {
                         /* SID-wide comment */
                         state.handle->sid_comment = comment;
                     } else {
                         /* normal per-tune comment */
-                        line = comment;
+                        line          = comment;
                         state.linelen = strlen(comment);
                     }
                     /* comment parsing 'ate' the first non-comment line, so
@@ -883,7 +836,7 @@ int hvsc_stil_parse_entry(hvsc_stil_t *handle)
 
                 /* TITLE: field */
                 case HVSC_FIELD_TITLE:
-                    line += 9;
+                    line          += 9;
                     state.linelen -= 9;
                     /* check for timestamp */
                     /* find closing ')' at end of line */
@@ -925,34 +878,24 @@ int hvsc_stil_parse_entry(hvsc_stil_t *handle)
                     /* check for 'Album' field: [from ...] */
                     if (line[state.linelen - 1] == ']') {
                         char *album;
+
                         hvsc_dbg("found possible album\n");
-
-                        /*
-                         * stil_parse_album() can return NULL on OOM, so set
-                         * err code to 0 here to catch it later
-                         * (Yes, I know, it's a design flaw, I'll fix that)
-                         */
-                        hvsc_errno = 0;
-
                         album = stil_parse_album(line, state.linelen);
                         if (album != NULL) {
                             hvsc_dbg("got album: '%s'\n", album);
-                            state.album = album;
+                            state.album     = album;
                             state.album_len = strlen(album);
 
                             /* adjust line len (+3 for '[', ']' and space */
                             state.linelen -= (state.album_len + 3);
-                        } else if (hvsc_errno != 0) {
-                            return 0;
                         }
                     }
-
                     break;
 
                 /* Other fields without special meaning/sub fields */
                 default:
                     /* don't copy the first nine chars (field ident + space) */
-                    line += 9;
+                    line          += 9;
                     state.linelen -= 9;
                     break;
             }
@@ -963,41 +906,32 @@ int hvsc_stil_parse_entry(hvsc_stil_t *handle)
 
             /* fix the tune number */
             if (state.tune == 0 && type != HVSC_FIELD_COMMENT) {
-                state.tune = 1;
+                state.tune        = 1;
                 state.block->tune = 1;
             }
 
             if (state.tune > 0) {
                 hvsc_dbg("Adding '%s'\n", line);
-                state.field = stil_field_new(
-                        type,
-                        line, state.linelen,
-                        state.ts.from, state.ts.to,
-                        state.album, state.album_len);
-                if (state.field == NULL) {
-                    hvsc_dbg("failed to allocate field object\n");
-                    return 0;
-                }
-                if (!stil_block_add_field(state.block, state.field)) {
-                    hvsc_dbg("failed to add field to block\n");
-                    free(state.field);
-                    return 0;
-                }
+                state.field = stil_field_new(type,
+                                             line, state.linelen,
+                                             state.ts.from, state.ts.to,
+                                             state.album, state.album_len);
+                stil_block_add_field(state.block, state.field);
 
                 /* if the line was a comment, free the comment */
                 if (type == HVSC_FIELD_COMMENT) {
-                    free(comment);
+                    hvsc_free(comment);
                     comment = NULL;
                 }
                 /* free album, if present */
                 if (state.album != NULL) {
-                    free(state.album);
+                    hvsc_free(state.album);
                     state.album = NULL;
                 }
             } else {
                 /* got all the SID-wide stuff, now add the rest to per-tune
                  * STIL blocks */
-                state.tune = 1;
+                state.tune        = 1;
                 state.block->tune = 1;
             }
         }
@@ -1005,14 +939,10 @@ int hvsc_stil_parse_entry(hvsc_stil_t *handle)
     }
 
     /* add last block */
-    if (!stil_handle_add_block(state.handle, state.block)) {
-        return 0;
-    }
+    stil_handle_add_block(state.handle, state.block);
 
     stil_parser_free(&state);
-    return 1;
 }
-
 
 
 /** \brief  Temp: dump parsed entries
@@ -1040,14 +970,14 @@ void hvsc_stil_dump(hvsc_stil_t *handle)
             /* do we have a valid timestamp ? */
             if (block->fields[f]->timestamp.from >= 0) {
                 long from = block->fields[f]->timestamp.from;
-                long to = block->fields[f]->timestamp.to;
+                long to   = block->fields[f]->timestamp.to;
 
                 if (to < 0) {
                     printf("      {timestamp} %ld:%02ld\n",
-                            from / 60, from % 60);
+                           from / 60, from % 60);
                 } else {
                     printf("      {timestamp} %ld:%02ld-%ld:%02ld\n",
-                            from / 60, from % 60, to / 60, to % 60);
+                           from / 60, from % 60, to / 60, to % 60);
                 }
             }
             /* do we have an album? */
@@ -1063,7 +993,7 @@ void hvsc_stil_dump(hvsc_stil_t *handle)
 /** \brief  Get a STIL entry for \a tune
  *
  * Gets a STIL entry for \a tune from \a handle and store it in \a entry.
- * Please note that both hvsc_read_entry() and hvsc_parse_entry() need yo have
+ * Please note that both hvsc_read_entry() and hvsc_parse_entry() need to have
  * been successfully called in order for this function to succeed.
  * The data in \a entry should not be manipulated or freed.
  *
@@ -1073,30 +1003,31 @@ void hvsc_stil_dump(hvsc_stil_t *handle)
  *
  * \return  bool
  */
-int hvsc_stil_get_tune_entry(const hvsc_stil_t *handle,
+bool hvsc_stil_get_tune_entry(const hvsc_stil_t     *handle,
                              hvsc_stil_tune_entry_t *entry,
-                             int tune)
+                             int                     tune)
 {
     size_t n = 0;
 
     if (handle->blocks == NULL) {
         hvsc_errno = HVSC_ERR_INVALID;
-        return 0;
+        return false;
     }
 
     for (n = 0; n < handle->blocks_used; n++) {
         if (handle->blocks[n]->tune == tune) {
             const hvsc_stil_block_t *block = handle->blocks[n];
+
             hvsc_dbg("Got entry for tune #%d\n", tune);
-            entry->tune = block->tune;
-            entry->fields = block->fields;
+            entry->tune        = block->tune;
+            entry->fields      = block->fields;
             entry->field_count = block->fields_used;
-            return 1;
+            return true;
         }
     }
     hvsc_dbg("Could not find entry for tune #%d\n", tune);
     hvsc_errno = HVSC_ERR_NOT_FOUND;
-    return 0;
+    return false;
 }
 
 
@@ -1124,10 +1055,10 @@ void hvsc_stil_dump_tune_entry(const hvsc_stil_tune_entry_t *entry)
             hvsc_stil_timestamp_t ts = field->timestamp;
             if (ts.to < 0) {
                 printf("  {timestamp} %ld:%02ld\n",
-                        ts.from / 60, ts.from % 60);
+                       ts.from / 60, ts.from % 60);
             } else {
                 printf("  {timestamp} %ld:%02ld-%ld:%02ld\n",
-                        ts.from / 60, ts.from % 60, ts.to / 60, ts.to % 60);
+                       ts.from / 60, ts.from % 60, ts.to / 60, ts.to % 60);
             }
         }
 
@@ -1143,31 +1074,41 @@ void hvsc_stil_dump_tune_entry(const hvsc_stil_tune_entry_t *entry)
  *
  * Get full STIL info PSID file \a path.
  *
- * \param[in,out]   stil    STIL handle
- * \param[in]       path    absolute path to PSID file
+ * \param[out]  stil    STIL handle
+ * \param[in]   path    absolute path to PSID file
  *
  * \return  true if STIL info found and parsed
  */
-int hvsc_stil_get(hvsc_stil_t *stil, const char *path)
+bool hvsc_stil_get(hvsc_stil_t *stil, const char *path)
 {
     /* find STIL.txt entry */
     if (!hvsc_stil_open(path, stil)) {
-        return 0;
+        return false;
     }
 
     /* read all text lines related to the entry */
     if (!hvsc_stil_read_entry(stil)) {
         hvsc_stil_close(stil);
-        return 0;
+        return false;
     }
 
     /* parse text */
-    if (!hvsc_stil_parse_entry(stil)) {
-        hvsc_stil_close(stil);
-        return 0;
-    }
-
-    return 1;
+    hvsc_stil_parse_entry(stil);
+    return true;
 }
 
 
+bool hvsc_stil_get_md5(hvsc_stil_t *stil, const char *digest)
+{
+    if (!hvsc_stil_open_md5(digest, stil)) {
+        return false;
+    }
+
+    if (!hvsc_stil_read_entry(stil)) {
+        hvsc_stil_close(stil);
+        return false;
+    }
+
+    hvsc_stil_parse_entry(stil);
+    return true;
+}

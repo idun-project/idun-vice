@@ -5,7 +5,7 @@ AM_CPPFLAGS = \
 	-I$(top_srcdir)/src \
 	-I$(top_srcdir)/src/core \
 	-I$(top_srcdir)/src/drive \
-	-I$(top_srcdir)/src/rtc \
+	-I$(top_srcdir)/src/core/rtc \
 	-I$(top_srcdir)/src/c64 \
 	-I$(top_srcdir)/src/sid \
 	-I$(top_srcdir)/src/lib/p64 \
@@ -122,6 +122,8 @@ libc64cart_a_SOURCES = \
 	gmod3.h \
 	gs.c \
 	gs.h \
+	hyperbasic.c \
+	hyperbasic.h \
 	ide64.c \
 	ide64.h \
 	ieeeflash64.c \
@@ -156,6 +158,8 @@ libc64cart_a_SOURCES = \
 	ocean.h \
 	pagefox.c \
 	pagefox.h \
+	partner64.c \
+	partner64.h \
 	prophet64.c \
 	prophet64.h \
 	ramcart.c \

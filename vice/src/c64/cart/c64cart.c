@@ -76,6 +76,7 @@
 #include "delaep7x8.h"
 #include "diashowmaker.h"
 #include "dinamic.h"
+#include "drean.h"
 #include "easycalc.h"
 #include "easyflash.h"
 #include "epyxfastload.h"
@@ -93,7 +94,7 @@
 #include "gmod2.h"
 #include "gmod3.h"
 #include "gs.h"
-#include "drean.h"
+#include "hyperbasic.h"
 #include "ide64.h"
 #include "ieeeflash64.h"
 #include "isepic.h"
@@ -111,6 +112,7 @@
 #include "multimax.h"
 #include "ocean.h"
 #include "pagefox.h"
+#include "partner64.h"
 #include "prophet64.h"
 #include "ramlink.h"
 #include "retroreplay.h"
@@ -207,6 +209,9 @@
         cartridge.
 */
 
+/* pointer to access c128 specific functions in x128 */
+c128cartridge_interface_t *c128cartridge = NULL;
+
 /* global options for the cart system */
 static int c64cartridge_reset; /* (resource) hardreset system after cart was attached/detached */
 
@@ -228,6 +233,7 @@ CLOCK cart_freeze_alarm_time = CLOCK_MAX; /* cartridge freeze button alarm time 
 /* Type of the cartridge attached. ("Main Slot") */
 int mem_cartridge_type = CARTRIDGE_NONE;
 
+/* CAUTION: keep in sync with the list in c128/c128cart.c */
 static cartridge_info_t cartlist[] = {
     /* standard cartridges with CRT ID = 0 */
     { CARTRIDGE_NAME_GENERIC_8KB,         CARTRIDGE_GENERIC_8KB,         CARTRIDGE_GROUP_GENERIC },
@@ -252,6 +258,7 @@ static cartridge_info_t cartlist[] = {
     { CARTRIDGE_NAME_DELA_EP7x8,          CARTRIDGE_DELA_EP7x8,          CARTRIDGE_GROUP_UTIL },
     { CARTRIDGE_NAME_DIASHOW_MAKER,       CARTRIDGE_DIASHOW_MAKER,       CARTRIDGE_GROUP_FREEZER },
     { CARTRIDGE_NAME_DINAMIC,             CARTRIDGE_DINAMIC,             CARTRIDGE_GROUP_GAME },
+    { CARTRIDGE_NAME_DREAN,               CARTRIDGE_DREAN,               CARTRIDGE_GROUP_GAME },
     { CARTRIDGE_NAME_EASYCALC,            CARTRIDGE_EASYCALC,            CARTRIDGE_GROUP_UTIL },
     { CARTRIDGE_NAME_EASYFLASH,           CARTRIDGE_EASYFLASH,           CARTRIDGE_GROUP_UTIL },
     { CARTRIDGE_NAME_EPYX_FASTLOAD,       CARTRIDGE_EPYX_FASTLOAD,       CARTRIDGE_GROUP_UTIL },
@@ -269,7 +276,7 @@ static cartridge_info_t cartlist[] = {
     { CARTRIDGE_NAME_GMOD2,               CARTRIDGE_GMOD2,               CARTRIDGE_GROUP_GAME },
     { CARTRIDGE_NAME_GMOD3,               CARTRIDGE_GMOD3,               CARTRIDGE_GROUP_GAME },
     { CARTRIDGE_NAME_GS,                  CARTRIDGE_GS,                  CARTRIDGE_GROUP_GAME },
-    { CARTRIDGE_NAME_DREAN,               CARTRIDGE_DREAN,               CARTRIDGE_GROUP_GAME },
+    { CARTRIDGE_NAME_HYPERBASIC,          CARTRIDGE_HYPERBASIC,          CARTRIDGE_GROUP_UTIL },
     { CARTRIDGE_NAME_IDE64,               CARTRIDGE_IDE64,               CARTRIDGE_GROUP_UTIL },
     { CARTRIDGE_NAME_IEEE488,             CARTRIDGE_IEEE488,             CARTRIDGE_GROUP_UTIL },
     { CARTRIDGE_NAME_IEEEFLASH64,         CARTRIDGE_IEEEFLASH64,         CARTRIDGE_GROUP_UTIL },
@@ -288,6 +295,7 @@ static cartridge_info_t cartlist[] = {
     { CARTRIDGE_NAME_OCEAN,               CARTRIDGE_OCEAN,               CARTRIDGE_GROUP_GAME },
     { CARTRIDGE_NAME_P64,                 CARTRIDGE_P64,                 CARTRIDGE_GROUP_UTIL },
     { CARTRIDGE_NAME_PAGEFOX,             CARTRIDGE_PAGEFOX,             CARTRIDGE_GROUP_UTIL },
+    { CARTRIDGE_NAME_PARTNER64,           CARTRIDGE_PARTNER64,           CARTRIDGE_GROUP_UTIL },
     { CARTRIDGE_NAME_RAMLINK,             CARTRIDGE_RAMLINK,             CARTRIDGE_GROUP_UTIL },
     { CARTRIDGE_NAME_RETRO_REPLAY,        CARTRIDGE_RETRO_REPLAY,        CARTRIDGE_GROUP_FREEZER },
     { CARTRIDGE_NAME_REX,                 CARTRIDGE_REX,                 CARTRIDGE_GROUP_UTIL },
@@ -326,7 +334,46 @@ static cartridge_info_t cartlist[] = {
 
 cartridge_info_t *cartridge_get_info_list(void)
 {
+    if (machine_class == VICE_MACHINE_C128) {
+        return &c128cartridge->get_info_list()[0];
+    }
     return &cartlist[0];
+}
+
+/* FIXME: this only works in slot 0 right now */
+int cartridge_get_id(int slot)
+{
+    int type = cart_getid_slotmain();
+    /*DBG(("cartridge_get_id(slot:%d): type:%d\n", slot, type));*/
+    return type;
+}
+
+/* FIXME: slot arg is ignored right now.
+   this should return a pointer to a filename, or NULL
+*/
+char *cartridge_get_filename_by_slot(int slot)
+{
+    DBG(("cartridge_get_filename_by_slot(slot:%d)\n", slot));
+/*    return cart_get_filename_by_type(mem_cartridge_type); */
+    int type = cart_getid_slotmain();
+    if (cart_getid_slotmain() == type) {
+        return cartfile;
+    }
+    log_error(LOG_DEFAULT, "FIXME: cartridge_get_filename_by_slot only works with main-slot");
+    return NULL;
+#if 0
+    /* FIXME: this can not work right! */
+    return (char*)cart_get_filename_by_type(type);
+#endif
+}
+
+/* FIXME: slot arg is ignored right now.
+   this should return a pointer to a filename, or NULL
+*/
+char *cartridge_get_secondary_filename_by_slot(int slot)
+{
+    log_error(LOG_DEFAULT, "FIXME: cartridge_get_secondary_filename_by_slot not implemented yet");
+    return NULL;
 }
 
 /*
@@ -337,7 +384,7 @@ cartridge_info_t *cartridge_get_info_list(void)
     - cartridge change reset behaviour
 
     the following functions try to deal with this in a hopefully sane way... however,
-    do _NOT_ change the used resources from the (G)UI directly. (used the set_default
+    do _NOT_ change the used resources from the (G)UI directly. (use the set_default
     function instead)
 */
 
@@ -345,7 +392,7 @@ static int try_cartridge_attach(int type, const char *filename)
 {
     if (filename) {
         if (util_file_exists(filename)) {
-            if (crt_getid(filename) > 0) {
+            if (crt_getid(filename) >= 0) {
                 cartridge_type = CARTRIDGE_CRT; /* resource value modified */
                 return cartridge_attach_image(CARTRIDGE_CRT, filename);
             } else if ((type != CARTRIDGE_NONE) && (type != CARTRIDGE_CRT)) {
@@ -362,6 +409,7 @@ static int try_cartridge_attach(int type, const char *filename)
 
 static int set_cartridge_type(int val, void *param)
 {
+    DBG(("set_cartridge_type: %d\n", val));
     switch (val) {
         case CARTRIDGE_ULTIMAX:
         case CARTRIDGE_GENERIC_8KB:
@@ -386,6 +434,7 @@ static int set_cartridge_type(int val, void *param)
         case CARTRIDGE_DELA_EP256:
         case CARTRIDGE_DIASHOW_MAKER:
         case CARTRIDGE_DINAMIC:
+        case CARTRIDGE_DREAN:
         case CARTRIDGE_EASYCALC:
         case CARTRIDGE_EASYFLASH:
         case CARTRIDGE_EASYFLASH_XBANK:
@@ -404,7 +453,7 @@ static int set_cartridge_type(int val, void *param)
         case CARTRIDGE_GMOD2:
         case CARTRIDGE_GMOD3:
         case CARTRIDGE_GS:
-        case CARTRIDGE_DREAN:
+        case CARTRIDGE_HYPERBASIC:
         case CARTRIDGE_IEEE488:
         case CARTRIDGE_IEEEFLASH64:
         case CARTRIDGE_IDE64:
@@ -422,6 +471,7 @@ static int set_cartridge_type(int val, void *param)
         case CARTRIDGE_OCEAN:
         case CARTRIDGE_P64:
         case CARTRIDGE_PAGEFOX:
+        case CARTRIDGE_PARTNER64:
         case CARTRIDGE_RAMLINK:
         case CARTRIDGE_RETRO_REPLAY:
         case CARTRIDGE_REX:
@@ -446,10 +496,19 @@ static int set_cartridge_type(int val, void *param)
         case CARTRIDGE_ZAXXON:
             break;
         default:
-            return -1;
+            /* FIXME: perhaps make this a call via the c128cartridge interface */
+            if ((machine_class == VICE_MACHINE_C128) && (
+                (val == CARTRIDGE_C128_MAKEID(CARTRIDGE_C128_GENERIC)) ||
+                (val == CARTRIDGE_C128_MAKEID(CARTRIDGE_C128_WARPSPEED128)) ||
+                (val == CARTRIDGE_C128_MAKEID(CARTRIDGE_C128_PARTNER128)) ||
+                (val == CARTRIDGE_C128_MAKEID(CARTRIDGE_C128_COMAL80))
+                )) {
+                break;
+            } else {
+                return -1;
+            }
     }
 
-/*    DBG(("cartridge_type: %d\n", val)); */
     if (cartridge_type != val) {
         DBG(("cartridge_type changed: %d\n", val));
         cartridge_type = val;
@@ -613,12 +672,12 @@ int cart_getid_slotmain(void)
 /*
     get filename of cart with given type
 */
-const char *cartridge_get_file_name(int type)
+const char *cartridge_get_filename_by_type(int type)
 {
-    if (cart_getid_slotmain() == type && !cart_can_get_file_name(type)) {
+    if (cart_getid_slotmain() == type) {
         return cartfile;
     }
-    return cart_get_file_name(type);
+    return cart_get_filename_by_type(type);
 }
 
 /*
@@ -643,20 +702,26 @@ int cartridge_type_enabled(int type)
 static int crt_attach(const char *filename, uint8_t *rawcart)
 {
     crt_header_t header;
-    int rc, new_crttype;
+    int rc = -1, new_crttype;
     FILE *fd;
 
     DBG(("crt_attach: %s\n", filename));
 
     fd = crt_open(filename, &header);
-
     if (fd == NULL) {
         return -1;
     }
 
     new_crttype = header.type;
+
+    /* if we have loaded a C128 cartridge, convert the C128 crt id to something
+       else (that can coexist with C64 crt ids) */
+    if (header.machine == VICE_MACHINE_C128) {
+        new_crttype = CARTRIDGE_C128_MAKEID(new_crttype);
+    }
+
+    /* handle our negative test IDs */
     if (new_crttype & 0x8000) {
-        /* handle our negative test IDs */
         new_crttype -= 0x10000;
     }
     DBG(("crt_attach ID: %d\n", new_crttype));
@@ -670,250 +735,275 @@ static int crt_attach(const char *filename, uint8_t *rawcart)
 
     cartridge_detach_image(new_crttype);
 
-    switch (new_crttype) {
-        case CARTRIDGE_CRT:
-            rc = generic_crt_attach(fd, rawcart);
-            if (rc != CARTRIDGE_NONE) {
-                new_crttype = rc;
-            }
-            break;
-        case CARTRIDGE_ACTION_REPLAY:
-            rc = actionreplay_crt_attach(fd, rawcart);
-            break;
-        case CARTRIDGE_ACTION_REPLAY2:
-            rc = actionreplay2_crt_attach(fd, rawcart);
-            break;
-        case CARTRIDGE_ACTION_REPLAY3:
-            rc = actionreplay3_crt_attach(fd, rawcart);
-            break;
-        case CARTRIDGE_ACTION_REPLAY4:
-            rc = actionreplay4_crt_attach(fd, rawcart);
-            break;
-        case CARTRIDGE_ATOMIC_POWER:
-            rc = atomicpower_crt_attach(fd, rawcart);
-            break;
-        case CARTRIDGE_BISPLUS:
-            rc = bisplus_crt_attach(fd, rawcart);
-            break;
-        case CARTRIDGE_BLACKBOX3:
-            rc = blackbox3_crt_attach(fd, rawcart);
-            break;
-        case CARTRIDGE_BLACKBOX4:
-            rc = blackbox4_crt_attach(fd, rawcart);
-            break;
-        case CARTRIDGE_BLACKBOX8:
-            rc = blackbox8_crt_attach(fd, rawcart);
-            break;
-        case CARTRIDGE_BLACKBOX9:
-            rc = blackbox9_crt_attach(fd, rawcart);
-            break;
-        case CARTRIDGE_CAPTURE:
-            rc = capture_crt_attach(fd, rawcart);
-            break;
-        case CARTRIDGE_COMAL80:
-            rc = comal80_crt_attach(fd, rawcart);
-            break;
-        case CARTRIDGE_DELA_EP256:
-            rc = delaep256_crt_attach(fd, rawcart);
-            break;
-        case CARTRIDGE_DELA_EP64:
-            rc = delaep64_crt_attach(fd, rawcart);
-            break;
-        case CARTRIDGE_DELA_EP7x8:
-            rc = delaep7x8_crt_attach(fd, rawcart);
-            break;
-        case CARTRIDGE_DIASHOW_MAKER:
-            rc = dsm_crt_attach(fd, rawcart);
-            break;
-        case CARTRIDGE_DINAMIC:
-            rc = dinamic_crt_attach(fd, rawcart);
-            break;
-        case CARTRIDGE_EASYCALC:
-            rc = easycalc_crt_attach(fd, rawcart);
-            break;
-        case CARTRIDGE_EASYFLASH:
-            rc = easyflash_crt_attach(fd, rawcart, filename);
-            break;
-        case CARTRIDGE_EPYX_FASTLOAD:
-            rc = epyxfastload_crt_attach(fd, rawcart);
-            break;
-        case CARTRIDGE_EXOS:
-            rc = exos_crt_attach(fd, rawcart);
-            break;
-        case CARTRIDGE_EXPERT:
-            rc = expert_crt_attach(fd, rawcart, filename);
-            break;
-        case CARTRIDGE_FINAL_I:
-            rc = final_v1_crt_attach(fd, rawcart);
-            break;
-        case CARTRIDGE_FINAL_III:
-            rc = final_v3_crt_attach(fd, rawcart);
-            break;
-        case CARTRIDGE_FINAL_PLUS:
-            rc = final_plus_crt_attach(fd, rawcart);
-            break;
-        case CARTRIDGE_FORMEL64:
-            rc = formel64_crt_attach(fd, rawcart);
-            break;
-        case CARTRIDGE_FREEZE_FRAME:
-            rc = freezeframe_crt_attach(fd, rawcart);
-            break;
-        case CARTRIDGE_FREEZE_FRAME_MK2:
-            rc = freezeframe2_crt_attach(fd, rawcart);
-            break;
-        case CARTRIDGE_FREEZE_MACHINE:
-            rc = freezemachine_crt_attach(fd, rawcart);
-            break;
-        case CARTRIDGE_FUNPLAY:
-            rc = funplay_crt_attach(fd, rawcart);
-            break;
-        case CARTRIDGE_GAME_KILLER:
-            rc = gamekiller_crt_attach(fd, rawcart);
-            break;
-        case CARTRIDGE_GMOD2:
-            rc = gmod2_crt_attach(fd, rawcart, filename);
-            break;
-        case CARTRIDGE_GMOD3:
-            rc = gmod3_crt_attach(fd, rawcart, filename);
-            break;
-        case CARTRIDGE_GS:
-            rc = gs_crt_attach(fd, rawcart);
-            break;
-        case CARTRIDGE_DREAN:
-            rc = drean_crt_attach(fd, rawcart);
-            break;
-        case CARTRIDGE_IDE64:
-            rc = ide64_crt_attach(fd, rawcart);
-            break;
-        case CARTRIDGE_IEEE488:
-            rc = tpi_crt_attach(fd, rawcart);
-            break;
-        case CARTRIDGE_IEEEFLASH64:
-            rc = ieeeflash64_crt_attach(fd, rawcart);
-            break;
-        case CARTRIDGE_ISEPIC:
-            rc = isepic_crt_attach(fd, rawcart, filename);
-            break;
-        case CARTRIDGE_KCS_POWER:
-            rc = kcs_crt_attach(fd, rawcart);
-            break;
-        case CARTRIDGE_KINGSOFT:
-            rc = kingsoft_crt_attach(fd, rawcart);
-            break;
-        case CARTRIDGE_LT_KERNAL:
-            rc = ltkernal_crt_attach(fd, rawcart);
-            break;
-        case CARTRIDGE_MACH5:
-            rc = mach5_crt_attach(fd, rawcart);
-            break;
-        case CARTRIDGE_MAGIC_DESK:
-            rc = magicdesk_crt_attach(fd, rawcart);
-            break;
-        case CARTRIDGE_MAGIC_FORMEL:
-            rc = magicformel_crt_attach(fd, rawcart);
-            break;
-        case CARTRIDGE_MAGIC_VOICE:
-            rc = magicvoice_crt_attach(fd, rawcart);
-            break;
-        case CARTRIDGE_MAX_BASIC:
-            rc = maxbasic_crt_attach(fd, rawcart);
-            break;
-        case CARTRIDGE_MIKRO_ASSEMBLER:
-            rc = mikroass_crt_attach(fd, rawcart);
-            break;
-        case CARTRIDGE_MMC64:
-            rc = mmc64_crt_attach(fd, rawcart);
-            break;
-        case CARTRIDGE_MMC_REPLAY:
-            rc = mmcreplay_crt_attach(fd, rawcart, filename);
-            break;
-        case CARTRIDGE_MULTIMAX:
-            rc = multimax_crt_attach(fd, rawcart);
-            break;
-        case CARTRIDGE_OCEAN:
-            rc = ocean_crt_attach(fd, rawcart);
-            break;
-        case CARTRIDGE_P64:
-            rc = p64_crt_attach(fd, rawcart);
-            break;
-        case CARTRIDGE_PAGEFOX:
-            rc = pagefox_crt_attach(fd, rawcart);
-            break;
-        case CARTRIDGE_RAMLINK:
-            rc = ramlink_crt_attach(fd, rawcart);
-            break;
-        case CARTRIDGE_RETRO_REPLAY:
-            rc = retroreplay_crt_attach(fd, rawcart, filename, header.subtype);
-            break;
-        case CARTRIDGE_REX_EP256:
-            rc = rexep256_crt_attach(fd, rawcart);
-            break;
-        case CARTRIDGE_REX:
-            rc = rex_crt_attach(fd, rawcart);
-            break;
-        case CARTRIDGE_REX_RAMFLOPPY:
-            rc = rexramfloppy_crt_attach(fd, rawcart);
-            break;
-        case CARTRIDGE_RGCD:
-            rc = rgcd_crt_attach(fd, rawcart, header.subtype);
-            break;
-#ifdef HAVE_RAWNET
-        case CARTRIDGE_RRNETMK3:
-            rc = rrnetmk3_crt_attach(fd, rawcart, filename);
-            break;
+    /* now attach a crt image. note that for carts not in the main slot, the image
+       name is usually kept in a resource, and the cartridge is enabled via another
+       resource - the function called from here must also do this */
+    if ((machine_class == VICE_MACHINE_C128) && (header.machine == VICE_MACHINE_C128)) {
+        DBG(("attaching as C128 cartridge id: %d\n", new_crttype));
+        rc = c128cartridge->attach_crt(new_crttype, fd, filename, rawcart);
+    } else {
+
+        switch (new_crttype) {
+            case CARTRIDGE_CRT:
+                rc = generic_crt_attach(fd, rawcart);
+                if (rc != CARTRIDGE_NONE) {
+                    new_crttype = rc;
+                }
+                break;
+            case CARTRIDGE_ACTION_REPLAY:
+                rc = actionreplay_crt_attach(fd, rawcart);
+                break;
+            case CARTRIDGE_ACTION_REPLAY2:
+                rc = actionreplay2_crt_attach(fd, rawcart);
+                break;
+            case CARTRIDGE_ACTION_REPLAY3:
+                rc = actionreplay3_crt_attach(fd, rawcart);
+                break;
+            case CARTRIDGE_ACTION_REPLAY4:
+                rc = actionreplay4_crt_attach(fd, rawcart);
+                break;
+            case CARTRIDGE_ATOMIC_POWER:
+                rc = atomicpower_crt_attach(fd, rawcart);
+                break;
+            case CARTRIDGE_BISPLUS:
+                rc = bisplus_crt_attach(fd, rawcart);
+                break;
+            case CARTRIDGE_BLACKBOX3:
+                rc = blackbox3_crt_attach(fd, rawcart);
+                break;
+            case CARTRIDGE_BLACKBOX4:
+                rc = blackbox4_crt_attach(fd, rawcart);
+                break;
+            case CARTRIDGE_BLACKBOX8:
+                rc = blackbox8_crt_attach(fd, rawcart);
+                break;
+            case CARTRIDGE_BLACKBOX9:
+                rc = blackbox9_crt_attach(fd, rawcart);
+                break;
+            case CARTRIDGE_CAPTURE:
+                rc = capture_crt_attach(fd, rawcart);
+                break;
+            case CARTRIDGE_COMAL80:
+                rc = comal80_crt_attach(fd, rawcart);
+                break;
+            case CARTRIDGE_DELA_EP256:
+                rc = delaep256_crt_attach(fd, rawcart);
+                break;
+            case CARTRIDGE_DELA_EP64:
+                rc = delaep64_crt_attach(fd, rawcart);
+                break;
+            case CARTRIDGE_DELA_EP7x8:
+                rc = delaep7x8_crt_attach(fd, rawcart);
+                break;
+            case CARTRIDGE_DIASHOW_MAKER:
+                rc = dsm_crt_attach(fd, rawcart);
+                break;
+            case CARTRIDGE_DINAMIC:
+                rc = dinamic_crt_attach(fd, rawcart);
+                break;
+#if 0
+            case CARTRIDGE_DQBB: /* slot 1 */
+                rc = dqbb_crt_attach(fd, rawcart, filename);
+                break;
 #endif
-        case CARTRIDGE_ROSS:
-            rc = ross_crt_attach(fd, rawcart);
-            break;
-        case CARTRIDGE_SDBOX:
-            rc = sdbox_crt_attach(fd, rawcart);
-            break;
-        case CARTRIDGE_SILVERROCK_128:
-            rc = silverrock128_crt_attach(fd, rawcart);
-            break;
-        case CARTRIDGE_SIMONS_BASIC:
-            rc = simon_crt_attach(fd, rawcart);
-            break;
-        case CARTRIDGE_STARDOS:
-            rc = stardos_crt_attach(fd, rawcart);
-            break;
-        case CARTRIDGE_SNAPSHOT64:
-            rc = snapshot64_crt_attach(fd, rawcart);
-            break;
-        case CARTRIDGE_STRUCTURED_BASIC:
-            rc = stb_crt_attach(fd, rawcart);
-            break;
-        case CARTRIDGE_SUPER_GAMES:
-            rc = supergames_crt_attach(fd, rawcart);
-            break;
-        case CARTRIDGE_SUPER_SNAPSHOT:
-            rc = supersnapshot_v4_crt_attach(fd, rawcart);
-            break;
-        case CARTRIDGE_SUPER_SNAPSHOT_V5:
-            rc = supersnapshot_v5_crt_attach(fd, rawcart);
-            break;
-        case CARTRIDGE_SUPER_EXPLODE_V5:
-            rc = se5_crt_attach(fd, rawcart);
-            break;
-        case CARTRIDGE_TURTLE_GRAPHICS_II:
-            rc = turtlegraphics_crt_attach(fd, rawcart);
-            break;
-        case CARTRIDGE_WARPSPEED:
-            rc = warpspeed_crt_attach(fd, rawcart);
-            break;
-        case CARTRIDGE_WESTERMANN:
-            rc = westermann_crt_attach(fd, rawcart);
-            break;
-        case CARTRIDGE_ZAXXON:
-            rc = zaxxon_crt_attach(fd, rawcart);
-            break;
-        case CARTRIDGE_ZIPPCODE48:
-            rc = zippcode48_crt_attach(fd, rawcart);
-            break;
-        default:
-            archdep_startup_log_error("unknown CRT ID: %d\n", new_crttype);
-            rc = -1;
-            break;
+            case CARTRIDGE_DREAN:
+                rc = drean_crt_attach(fd, rawcart);
+                break;
+            case CARTRIDGE_EASYCALC:
+                rc = easycalc_crt_attach(fd, rawcart);
+                break;
+            case CARTRIDGE_EASYFLASH:
+                rc = easyflash_crt_attach(fd, rawcart, filename);
+                break;
+            case CARTRIDGE_EPYX_FASTLOAD:
+                rc = epyxfastload_crt_attach(fd, rawcart);
+                break;
+            case CARTRIDGE_EXOS:
+                rc = exos_crt_attach(fd, rawcart);
+                break;
+            case CARTRIDGE_EXPERT: /* slot 1 */
+                rc = expert_crt_attach(fd, rawcart, filename);
+                break;
+            case CARTRIDGE_FINAL_I:
+                rc = final_v1_crt_attach(fd, rawcart);
+                break;
+            case CARTRIDGE_FINAL_III:
+                rc = final_v3_crt_attach(fd, rawcart);
+                break;
+            case CARTRIDGE_FINAL_PLUS:
+                rc = final_plus_crt_attach(fd, rawcart);
+                break;
+            case CARTRIDGE_FORMEL64:
+                rc = formel64_crt_attach(fd, rawcart);
+                break;
+            case CARTRIDGE_FREEZE_FRAME:
+                rc = freezeframe_crt_attach(fd, rawcart);
+                break;
+            case CARTRIDGE_FREEZE_FRAME_MK2:
+                rc = freezeframe2_crt_attach(fd, rawcart);
+                break;
+            case CARTRIDGE_FREEZE_MACHINE:
+                rc = freezemachine_crt_attach(fd, rawcart);
+                break;
+            case CARTRIDGE_FUNPLAY:
+                rc = funplay_crt_attach(fd, rawcart);
+                break;
+            case CARTRIDGE_GAME_KILLER:
+                rc = gamekiller_crt_attach(fd, rawcart);
+                break;
+            case CARTRIDGE_GMOD2:
+                rc = gmod2_crt_attach(fd, rawcart, filename);
+                break;
+            case CARTRIDGE_GMOD3:
+                rc = gmod3_crt_attach(fd, rawcart, filename);
+                break;
+            case CARTRIDGE_GS:
+                rc = gs_crt_attach(fd, rawcart);
+                break;
+            case CARTRIDGE_HYPERBASIC:
+                rc = hyperbasic_crt_attach(fd, rawcart);
+                break;
+            case CARTRIDGE_IDE64:
+                rc = ide64_crt_attach(fd, rawcart);
+                break;
+            case CARTRIDGE_IEEE488: /* slot 0 */
+                rc = tpi_crt_attach(fd, rawcart, filename);
+                break;
+            case CARTRIDGE_IEEEFLASH64: /* slot 0 */
+                rc = ieeeflash64_crt_attach(fd, rawcart, filename);
+                break;
+            case CARTRIDGE_ISEPIC: /* slot 1 */
+                rc = isepic_crt_attach(fd, rawcart, filename);
+                break;
+            case CARTRIDGE_KCS_POWER:
+                rc = kcs_crt_attach(fd, rawcart);
+                break;
+            case CARTRIDGE_KINGSOFT:
+                rc = kingsoft_crt_attach(fd, rawcart);
+                break;
+            case CARTRIDGE_LT_KERNAL:
+                rc = ltkernal_crt_attach(fd, rawcart);
+                break;
+            case CARTRIDGE_MACH5:
+                rc = mach5_crt_attach(fd, rawcart);
+                break;
+            case CARTRIDGE_MAGIC_DESK:
+                rc = magicdesk_crt_attach(fd, rawcart);
+                break;
+            case CARTRIDGE_MAGIC_FORMEL:
+                rc = magicformel_crt_attach(fd, rawcart);
+                break;
+            case CARTRIDGE_MAGIC_VOICE: /* slot 0 */
+                rc = magicvoice_crt_attach(fd, rawcart, filename);
+                break;
+            case CARTRIDGE_MAX_BASIC:
+                rc = maxbasic_crt_attach(fd, rawcart);
+                break;
+            case CARTRIDGE_MIKRO_ASSEMBLER:
+                rc = mikroass_crt_attach(fd, rawcart);
+                break;
+            case CARTRIDGE_MMC64: /* slot 0 */
+                rc = mmc64_crt_attach(fd, rawcart, filename);
+                break;
+            case CARTRIDGE_MMC_REPLAY:
+                rc = mmcreplay_crt_attach(fd, rawcart, filename);
+                break;
+            case CARTRIDGE_MULTIMAX:
+                rc = multimax_crt_attach(fd, rawcart);
+                break;
+            case CARTRIDGE_OCEAN:
+                rc = ocean_crt_attach(fd, rawcart);
+                break;
+            case CARTRIDGE_P64:
+                rc = p64_crt_attach(fd, rawcart);
+                break;
+            case CARTRIDGE_PAGEFOX:
+                rc = pagefox_crt_attach(fd, rawcart);
+                break;
+            case CARTRIDGE_PARTNER64:
+                rc = partner64_crt_attach(fd, rawcart);
+                break;
+#if 0
+            case CARTRIDGE_RAMCART: /* slot 1 */
+                rc = ramcart_crt_attach(fd, rawcart, filename);
+                break;
+#endif
+            case CARTRIDGE_RAMLINK: /* slot 0 */
+                rc = ramlink_crt_attach(fd, rawcart, filename);
+                break;
+            case CARTRIDGE_RETRO_REPLAY:
+                rc = retroreplay_crt_attach(fd, rawcart, filename, header.subtype);
+                break;
+            case CARTRIDGE_REX_EP256:
+                rc = rexep256_crt_attach(fd, rawcart);
+                break;
+            case CARTRIDGE_REX:
+                rc = rex_crt_attach(fd, rawcart);
+                break;
+            case CARTRIDGE_REX_RAMFLOPPY:
+                rc = rexramfloppy_crt_attach(fd, rawcart);
+                break;
+            case CARTRIDGE_RGCD:
+                rc = rgcd_crt_attach(fd, rawcart, header.subtype);
+                break;
+#ifdef HAVE_RAWNET
+            case CARTRIDGE_RRNETMK3:
+                rc = rrnetmk3_crt_attach(fd, rawcart, filename);
+                break;
+#endif
+            case CARTRIDGE_ROSS:
+                rc = ross_crt_attach(fd, rawcart);
+                break;
+            case CARTRIDGE_SDBOX:
+                rc = sdbox_crt_attach(fd, rawcart);
+                break;
+            case CARTRIDGE_SILVERROCK_128:
+                rc = silverrock128_crt_attach(fd, rawcart);
+                break;
+            case CARTRIDGE_SIMONS_BASIC:
+                rc = simon_crt_attach(fd, rawcart);
+                break;
+            case CARTRIDGE_STARDOS:
+                rc = stardos_crt_attach(fd, rawcart);
+                break;
+            case CARTRIDGE_SNAPSHOT64:
+                rc = snapshot64_crt_attach(fd, rawcart);
+                break;
+            case CARTRIDGE_STRUCTURED_BASIC:
+                rc = stb_crt_attach(fd, rawcart);
+                break;
+            case CARTRIDGE_SUPER_GAMES:
+                rc = supergames_crt_attach(fd, rawcart);
+                break;
+            case CARTRIDGE_SUPER_SNAPSHOT:
+                rc = supersnapshot_v4_crt_attach(fd, rawcart);
+                break;
+            case CARTRIDGE_SUPER_SNAPSHOT_V5:
+                rc = supersnapshot_v5_crt_attach(fd, rawcart);
+                break;
+            case CARTRIDGE_SUPER_EXPLODE_V5:
+                rc = se5_crt_attach(fd, rawcart);
+                break;
+            case CARTRIDGE_TURTLE_GRAPHICS_II:
+                rc = turtlegraphics_crt_attach(fd, rawcart);
+                break;
+            case CARTRIDGE_WARPSPEED:
+                rc = warpspeed_crt_attach(fd, rawcart);
+                break;
+            case CARTRIDGE_WESTERMANN:
+                rc = westermann_crt_attach(fd, rawcart);
+                break;
+            case CARTRIDGE_ZAXXON:
+                rc = zaxxon_crt_attach(fd, rawcart);
+                break;
+            case CARTRIDGE_ZIPPCODE48:
+                rc = zippcode48_crt_attach(fd, rawcart);
+                break;
+            default:
+                archdep_startup_log_error("unknown CRT ID: %d\n", new_crttype);
+                rc = -1;
+                break;
+        }
     }
 
     fclose(fd);
@@ -1007,7 +1097,16 @@ int cartridge_attach_image(int type, const char *filename)
     } else {
         DBG(("CART: attach BIN ID: %d '%s'\n", carttype, filename));
         cartid = carttype;
-        if (cart_bin_attach(carttype, abs_filename, rawcart) < 0) {
+        /* if this is x128 and the ID is a C128-only cart, use c128 specific function */
+        DBG(("%d %d %d\n",cartid,(machine_class == VICE_MACHINE_C128), (CARTRIDGE_C128_ISID(cartid)) ));
+        if ((machine_class == VICE_MACHINE_C128) && (CARTRIDGE_C128_ISID(cartid))) {
+            DBG(("trying C128 exclusive function\n"));
+            if (c128cartridge->bin_attach(carttype, abs_filename, rawcart) < 0) {
+                DBG(("C128 exclusive function FAILED\n"));
+                goto exiterror;
+            }
+            DBG(("C128 exclusive function OK\n"));
+        } else if (cart_bin_attach(carttype, abs_filename, rawcart) < 0) {
             goto exiterror;
         }
     }
@@ -1054,7 +1153,7 @@ void cart_power_off(void)
 {
     if (c64cartridge_reset) {
         /* "Turn off machine before removing cartridge" */
-        machine_trigger_reset(MACHINE_RESET_MODE_HARD);
+        machine_trigger_reset(MACHINE_RESET_MODE_POWER_CYCLE);
     }
 }
 
@@ -1122,6 +1221,10 @@ void cartridge_detach_image(int type)
         } else {
             cart_detach(type);
         }
+    }
+
+    if (machine_class == VICE_MACHINE_C128) {
+        c128cartridge->detach_image(type);
     }
 
     /* FIXME: cart_detach should take care of it */
@@ -1271,27 +1374,4 @@ void cartridge_init(void)
     cartridge_nmi_alarm = alarm_new(maincpu_alarm_context, "Cartridge", cart_nmi_alarm_triggered, NULL);
     cartridge_freeze_alarm = alarm_new(maincpu_alarm_context, "Cartridge", cart_freeze_alarm_triggered, NULL);
     cartridge_int_num = interrupt_cpu_status_int_new(maincpu_int_status, "Cartridge");
-}
-
-/* returns 1 when cartridge (ROM) image can be flushed */
-int cartridge_can_flush_image(int crtid)
-{
-    const char *p;
-    if (!cartridge_type_enabled(crtid)) {
-        return 0;
-    }
-    p = cartridge_get_file_name(crtid);
-    if ((p == NULL) || (*p == '\x0')) {
-        return 0;
-    }
-    return 1;
-}
-
-/* returns 1 when cartridge (ROM) image can be saved */
-int cartridge_can_save_image(int crtid)
-{
-    if (!cartridge_type_enabled(crtid)) {
-        return 0;
-    }
-    return 1;
 }

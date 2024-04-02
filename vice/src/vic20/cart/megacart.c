@@ -142,7 +142,8 @@ static io_source_t megacart_io2_device = {
     megacart_mon_dump,             /* device state information dump function */
     CARTRIDGE_VIC20_MEGACART,      /* cartridge ID */
     IO_PRIO_NORMAL,                /* normal priority, device read needs to be checked for collisions */
-    0                              /* insertion order, gets filled in by the registration function */
+    0,                             /* insertion order, gets filled in by the registration function */
+    IO_MIRROR_NONE                 /* NO mirroring */
 };
 
 static io_source_t megacart_io3_device = {
@@ -158,7 +159,8 @@ static io_source_t megacart_io3_device = {
     megacart_mon_dump,             /* device state information dump function */
     CARTRIDGE_VIC20_MEGACART,      /* cartridge ID */
     IO_PRIO_NORMAL,                /* normal priority, device read needs to be checked for collisions */
-    0                              /* insertion order, gets filled in by the registration function */
+    0,                             /* insertion order, gets filled in by the registration function */
+    IO_MIRROR_NONE                 /* NO mirroring */
 };
 
 static io_source_list_t *megacart_io2_list_item = NULL;
@@ -366,7 +368,7 @@ static void megacart_io3_store(uint16_t addr, uint8_t value)
     if ((addr & 0x200) == 0x200) { /* $9e00 */
         /* perform reset */
         reset_mode = SOFTWARE_RESET;
-        machine_trigger_reset(MACHINE_RESET_MODE_SOFT);
+        machine_trigger_reset(MACHINE_RESET_MODE_RESET_CPU);
     }
 }
 
@@ -375,12 +377,14 @@ static void megacart_io3_store(uint16_t addr, uint8_t value)
 static int zfile_load(const char *filename, uint8_t *dest, size_t size)
 {
     FILE *fd;
+    off_t len;
 
     fd = zfile_fopen(filename, MODE_READ);
     if (!fd) {
         return -1;
     }
-    if (util_file_length(fd) != size) {
+    len = archdep_file_size(fd);
+    if (len < 0 || (size_t)len != size) {
         zfile_fclose(fd);
         return -1;
     }

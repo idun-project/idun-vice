@@ -65,19 +65,13 @@ static void sdl_poll_print_timeout(int x, int y, int time)
 /* ------------------------------------------------------------------ */
 /* External interface */
 
-SDL_Event sdl_ui_poll_event(const char *what, const char *target, int options, int timeout)
+SDL_Event sdl_ui_poll_event(const char *what, const char *target, VICE_SDL_JoystickID joystick_device, char allow_any_joystick, char allow_keyboard, char allow_modifier, int timeout)
 {
     SDL_Event e;
 
     int count = 0;
     int polling = 1;
     int i;
-
-    int allow_keyboard = options & SDL_POLL_KEYBOARD;
-    int allow_modifier = options & SDL_POLL_MODIFIER;
-#ifdef HAVE_SDL_NUMJOYSTICKS
-    int allow_joystick = options & SDL_POLL_JOYSTICK;
-#endif
 
     sdl_ui_clear();
     i = sdl_ui_print("Polling ", 0, 0);
@@ -90,10 +84,6 @@ SDL_Event sdl_ui_poll_event(const char *what, const char *target, int options, i
     }
 
     /* TODO check if key/event is suitable */
-#ifdef ANDROID_COMPILE
-    e.type = SDL_USEREVENT;
-    polling = 0;
-#else
     while (polling) {
         while (polling && SDL_PollEvent(&e)) {
             switch (e.type) {
@@ -104,17 +94,17 @@ SDL_Event sdl_ui_poll_event(const char *what, const char *target, int options, i
                     break;
 #ifdef HAVE_SDL_NUMJOYSTICKS
                 case SDL_JOYBUTTONDOWN:
-                    if (allow_joystick) {
+                    if (allow_any_joystick || e.jbutton.which == joystick_device) {
                         polling = 0;
                     }
                     break;
                 case SDL_JOYHATMOTION:
-                    if (allow_joystick && (sdljoy_check_hat_movement(e) != 0)) {
+                    if ((allow_any_joystick || e.jhat.which == joystick_device) && (sdljoy_check_hat_movement(e) != 0)) {
                         polling = 0;
                     }
                     break;
                 case SDL_JOYAXISMOTION:
-                    if (allow_joystick && (sdljoy_check_axis_movement(e) != 0)) {
+                    if ((allow_any_joystick || e.jaxis.which == joystick_device) && (sdljoy_check_axis_movement(e) != 0)) {
                         polling = 0;
                     }
                     break;
@@ -136,7 +126,6 @@ SDL_Event sdl_ui_poll_event(const char *what, const char *target, int options, i
             }
         }
     }
-#endif
 
     if (polling == 1) {
         e.type = SDL_USEREVENT;

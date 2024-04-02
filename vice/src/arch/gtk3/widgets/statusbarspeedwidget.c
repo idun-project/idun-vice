@@ -39,15 +39,17 @@
 #include "vice_gtk3.h"
 #include "basedialogs.h"
 #include "drive.h"
+#include "hotkeys.h"
 #include "keyboard.h"
 #include "lib.h"
 #include "machine.h"
+#include "petpia.h"
 #include "resources.h"
 #include "statusbarledwidget.h"
 #include "uiapi.h"
 #include "ui.h"
 #include "uiactions.h"
-#include "uimachinemenu.h"
+#include "uimenu.h"
 #include "uistatusbar.h"
 #include "vsync.h"
 #include "vsyncapi.h"
@@ -55,24 +57,25 @@
 #include "statusbarspeedwidget.h"
 
 
-/** \brief  Predefined emulation speeds (taken from vice.texi)
+/** \brief  Predefined emulation speeds
  */
-static int emu_speeds[] = { 200, 100, 50, 20, 10, 0 };
+static int emu_speeds[][2] = {
+    { 200, ACTION_SPEED_CPU_200 },
+    { 100, ACTION_SPEED_CPU_100 },
+    {  50, ACTION_SPEED_CPU_50 },
+    {  25, ACTION_SPEED_CPU_25 },
+    {  10, ACTION_SPEED_CPU_10 },
+    {   0, ACTION_NONE }
+};
+
 
 /** \brief  Predefined emulation speed fps targets
  */
-static int emu_fps_targets[] = { 60, 50, 0 };
-
-
-/** \brief  Handler for the "activate" event of the "Advance frame" menu item
- *
- * \param[in]   widget  menu item (unused)
- * \param[in]   data    extra event data (unused
- */
-static void on_advance_frame_activate(GtkWidget *widget, gpointer data)
-{
-    ui_action_advance_frame();
-}
+static int emu_fps_targets[][2] = {
+    { 60, ACTION_SPEED_FPS_60 },
+    { 50, ACTION_SPEED_FPS_50 },
+    {  0, ACTION_NONE }
+};
 
 
 /** \brief  Add separator to \a menu
@@ -88,55 +91,10 @@ static void add_separator(GtkWidget *menu)
 }
 
 
-/** \brief  Handler for the "toggled" event of the Enable warp menu item
- *
- * \param[in]   widget  menu item (unused)
- * \param[in]   data    extra event data (unused)
- */
-static void on_warp_toggled(GtkWidget *widget, gpointer data)
+static void trigger_ui_action(GtkWidget *item, gpointer action)
 {
-    ui_action_toggle_warp();
+    ui_action_trigger(GPOINTER_TO_INT(action));
 }
-
-
-/** \brief  Handler for the "toggled" event of the Pause menu item
- *
- * \param[in]   widget  menu item (unused)
- * \param[in]   data    extra even data (unused)
- */
-static void on_pause_toggled(GtkWidget *widget, gpointer data)
-{
-    ui_action_toggle_pause();
-}
-
-
-#if 0
-/** \brief  Handler for the toggled event of a emulation speed submenu item
- *
- * \param[in]   widget  emulation speed submenu item
- * \param[in]   data    new emulation speed
- */
-static void on_emulation_speed_toggled(GtkWidget *widget, gpointer data)
-{
-    int speed = GPOINTER_TO_INT(data);
-
-    ui_action_set_speed(speed);
-}
-#endif
-
-#if 0
-/** \brief  Handler for the toggled event of an FPS submenu item
- *
- * \param[in]   widget  emulation speed submenu item
- * \param[in]   data    new emulation speed
- */
-static void on_fps_toggled(GtkWidget *widget, gpointer data)
-{
-    int fps = 0 - GPOINTER_TO_INT(data);
-
-    ui_action_set_fps(fps);
-}
-#endif
 
 
 /** \brief  Create emulation speed submenu
@@ -157,24 +115,25 @@ static GtkWidget *emulation_speed_submenu_create(void)
     menu = gtk_menu_new();
 
     /* cpu speed values */
-    for (i = 0; emu_speeds[i] != 0; i++) {
-        g_snprintf(buffer, 256, "%d%%", emu_speeds[i]);
+    for (i = 0; emu_speeds[i][0] != 0; i++) {
+        g_snprintf(buffer, sizeof(buffer), "%d%%", emu_speeds[i][0]);
         item = gtk_check_menu_item_new_with_label(buffer);
         gtk_check_menu_item_set_draw_as_radio(GTK_CHECK_MENU_ITEM(item), TRUE);
-        if (curr_speed == emu_speeds[i]) {
+        if (curr_speed == emu_speeds[i][0]) {
             gtk_check_menu_item_set_active(GTK_CHECK_MENU_ITEM(item), TRUE);
             found = TRUE;
         }
         gtk_container_add(GTK_CONTAINER(menu), item);
 
-        g_signal_connect(item, "toggled",
-                G_CALLBACK(ui_cpu_speed_callback),
-                GINT_TO_POINTER(emu_speeds[i]));
+        g_signal_connect(item,
+                         "toggled",
+                         G_CALLBACK(trigger_ui_action),
+                         GINT_TO_POINTER(emu_speeds[i][1]));
     }
 
     /* custom speed */
-    if (!found && curr_speed > 0) {
-        g_snprintf(buffer, 256, "Custom CPU speed (%d%%) ...", curr_speed);
+    if (!found) {
+        g_snprintf(buffer, sizeof(buffer), "Custom CPU speed (%d%%) ...", curr_speed);
         item = gtk_check_menu_item_new_with_label(buffer);
         gtk_check_menu_item_set_active(GTK_CHECK_MENU_ITEM(item), TRUE);
     } else {
@@ -182,8 +141,10 @@ static GtkWidget *emulation_speed_submenu_create(void)
     }
     gtk_check_menu_item_set_draw_as_radio(GTK_CHECK_MENU_ITEM(item), TRUE);
     gtk_container_add(GTK_CONTAINER(menu), item);
-    g_signal_connect(item, "toggled",
-            G_CALLBACK(ui_speed_custom_toggled), GINT_TO_POINTER(curr_speed));
+    g_signal_connect(item,
+                     "toggled",
+                     G_CALLBACK(trigger_ui_action),
+                     GINT_TO_POINTER(ACTION_SPEED_CPU_CUSTOM));
 
     /* fps targets */
 
@@ -196,29 +157,32 @@ static GtkWidget *emulation_speed_submenu_create(void)
     if (curr_speed == 100) {
         gtk_check_menu_item_set_active(GTK_CHECK_MENU_ITEM(item), TRUE);
     }
-    g_signal_connect(item, "toggled",
-                     G_CALLBACK(ui_cpu_speed_callback), GINT_TO_POINTER(100));
+    g_signal_connect(item,
+                     "toggled",
+                     G_CALLBACK(trigger_ui_action),
+                     GINT_TO_POINTER(ACTION_SPEED_CPU_100));
     gtk_container_add(GTK_CONTAINER(menu), item);
 
     /* predefined fps targets */
-    for (i = 0; emu_fps_targets[i] != 0; i++) {
-        g_snprintf(buffer, 256, "%d FPS", emu_fps_targets[i]);
+    for (i = 0; emu_fps_targets[i][0] != 0; i++) {
+        g_snprintf(buffer, sizeof(buffer), "%d FPS", emu_fps_targets[i][0]);
         item = gtk_check_menu_item_new_with_label(buffer);
         gtk_check_menu_item_set_draw_as_radio(GTK_CHECK_MENU_ITEM(item), TRUE);
-        if (curr_speed == 0 - emu_fps_targets[i]) {
+        if (curr_speed == 0 - emu_fps_targets[i][0]) {
             gtk_check_menu_item_set_active(GTK_CHECK_MENU_ITEM(item), TRUE);
             found = TRUE;
         }
         gtk_container_add(GTK_CONTAINER(menu), item);
 
-        g_signal_connect(item, "toggled",
-                G_CALLBACK(ui_fps_callback),
-                GINT_TO_POINTER(emu_fps_targets[i]));
+        g_signal_connect(item,
+                         "toggled",
+                         G_CALLBACK(trigger_ui_action),
+                         GINT_TO_POINTER(emu_fps_targets[i][1]));
     }
 
     /* custom fps target */
     if (!found && curr_speed < 0) {
-        g_snprintf(buffer, 256, "Custom (%d FPS) ...", 0 - curr_speed);
+        g_snprintf(buffer, sizeof(buffer), "Custom (%d FPS) ...", 0 - curr_speed);
         item = gtk_check_menu_item_new_with_label(buffer);
         gtk_check_menu_item_set_active(GTK_CHECK_MENU_ITEM(item), TRUE);
     } else {
@@ -226,8 +190,10 @@ static GtkWidget *emulation_speed_submenu_create(void)
     }
     gtk_check_menu_item_set_draw_as_radio(GTK_CHECK_MENU_ITEM(item), TRUE);
     gtk_container_add(GTK_CONTAINER(menu), item);
-    g_signal_connect(item, "toggled",
-            G_CALLBACK(ui_fps_custom_toggled), GINT_TO_POINTER(curr_speed));
+    g_signal_connect(item,
+                     "toggled",
+                     G_CALLBACK(trigger_ui_action),
+                     GINT_TO_POINTER(ACTION_SPEED_FPS_CUSTOM));
 
     gtk_widget_show_all(menu);
     return menu;
@@ -256,26 +222,34 @@ GtkWidget *speed_menu_popup_create(void)
 
     /* pause */
     item = gtk_check_menu_item_new_with_label("Pause emulation");
-    ui_set_gtk_menu_item_accel_label(item, ACTION_PAUSE_TOGGLE);
+    vhk_gtk_set_menu_item_accel_label(item, ACTION_PAUSE_TOGGLE);
     if (ui_pause_active()) {
         gtk_check_menu_item_set_active(GTK_CHECK_MENU_ITEM(item), TRUE);
     }
     gtk_container_add(GTK_CONTAINER(menu), item);
-    g_signal_connect(item, "toggled", G_CALLBACK(on_pause_toggled), NULL);
+    g_signal_connect(item,
+                     "toggled",
+                     G_CALLBACK(trigger_ui_action),
+                     GINT_TO_POINTER(ACTION_PAUSE_TOGGLE));
 
     /* advance frame */
     item = gtk_menu_item_new_with_label("Advance frame");
-    ui_set_gtk_menu_item_accel_label(item, ACTION_ADVANCE_FRAME);
+    vhk_gtk_set_menu_item_accel_label(item, ACTION_ADVANCE_FRAME);
     gtk_container_add(GTK_CONTAINER(menu), item);
-    g_signal_connect(item, "activate", G_CALLBACK(on_advance_frame_activate),
-            NULL);
+    g_signal_connect(item,
+                     "activate",
+                     G_CALLBACK(trigger_ui_action),
+                     GINT_TO_POINTER(ACTION_ADVANCE_FRAME));
 
     /* enable warp mode */
     item = gtk_check_menu_item_new_with_label("Warp mode");
-    ui_set_gtk_menu_item_accel_label(item, ACTION_WARP_MODE_TOGGLE);
+    vhk_gtk_set_menu_item_accel_label(item, ACTION_WARP_MODE_TOGGLE);
     gtk_check_menu_item_set_active(GTK_CHECK_MENU_ITEM(item), (gboolean)vsync_get_warp_mode());
     gtk_container_add(GTK_CONTAINER(menu), item);
-    g_signal_connect(item, "toggled", G_CALLBACK(on_warp_toggled), NULL);
+    g_signal_connect(item,
+                     "toggled",
+                     G_CALLBACK(trigger_ui_action),
+                     GINT_TO_POINTER(ACTION_WARP_MODE_TOGGLE));
 
     gtk_widget_show_all(menu);
     return menu;
@@ -385,6 +359,7 @@ GtkWidget *statusbar_speed_widget_create(statusbar_speed_widget_state_t *state)
     state->last_warp = -1;
     state->last_shiftlock = -1;
     state->last_mode4080 = -1;
+    state->last_diagnostic_pin = -1;
 
     grid = gtk_grid_new();
     gtk_widget_set_valign(grid, GTK_ALIGN_START);
@@ -571,22 +546,20 @@ void statusbar_speed_widget_update(GtkWidget *widget,
     int this_fps_int = (int)(vsync_metric_emulated_fps * pow(10, FPS_DECIMAL_PLACES) + 0.5);
     bool is_paused = ui_pause_active();
     bool is_shiftlock = keyboard_get_shiftlock();
-    bool is_mode4080 = 0;
-    bool is_capslock = keyboard_get_caps_key();
+    bool is_mode4080 = false;
+    bool is_capslock = false;
+    bool is_diagnostic_pin = false;
 
     if (machine_class == VICE_MACHINE_C128) {
-        int n = 0;
-        resources_get_int("C128ColumnKey", &n);
-        is_mode4080 = (n & 1) ^ 1;
+        is_mode4080 = keyboard_custom_key_get(KBD_CUSTOM_4080);
+        is_capslock = keyboard_custom_key_get(KBD_CUSTOM_CAPS);
     }
 
-    if (state->last_cpu_int != this_cpu_int ||
-            state->last_warp != vsync_metric_warp_enabled ||
-            state->last_shiftlock != is_shiftlock ||
-            state->last_mode4080 != is_mode4080 ||
-            state->last_capslock != is_capslock ||
-            state->last_paused != is_paused) {
+    if (machine_class == VICE_MACHINE_PET) {
+        is_diagnostic_pin = pia1_get_diagnostic_pin();
+    }
 
+    if (state->last_cpu_int != this_cpu_int) {
         /* get grid containing the two labels */
         grid = gtk_bin_get_child(GTK_BIN(widget));
 
@@ -597,35 +570,66 @@ void statusbar_speed_widget_update(GtkWidget *widget,
                    "%7." STR(CPU_DECIMAL_PLACES) "f%% cpu",
                    vsync_metric_cpu_percent);
         gtk_label_set_text(GTK_LABEL(label), buffer);
-
-        /* warp */
-        if (state->last_warp != vsync_metric_warp_enabled) {
-            warp_led_set_active(window_identity, vsync_metric_warp_enabled);
-        }
-        /* pause */
-        if (state->last_paused != is_paused) {
-            pause_led_set_active(window_identity, is_paused);
-        }
-        /* shiftlock */
-        if (state->last_shiftlock != is_shiftlock) {
-            shiftlock_led_set_active(window_identity, is_shiftlock);
-        }
-        /* 40/80 colums */
-        if (state->last_mode4080 != is_mode4080) {
-            mode4080_led_set_active(window_identity, is_mode4080);
-        }
-        /* capslock */
-        if (state->last_capslock != is_capslock) {
-            capslock_led_set_active(window_identity, is_capslock);
-        }
-
         state->last_cpu_int = this_cpu_int;
+    }
+
+    /* Somehow the last state gets out of sync when pressing Alt+W and clicking
+     * the warp led, or when pressing Alt+P and clicking the pause led, nearly
+     * simultaneously, so we don't check for changes but always rerender the
+     * leds.
+     * See bug #1840: https://sourceforge.net/p/vice-emu/bugs/1840/
+     */
+#if 0
+    /* warp */
+    if (state->last_warp != vsync_metric_warp_enabled) {
+        warp_led_set_active(window_identity, vsync_metric_warp_enabled);
         state->last_warp = vsync_metric_warp_enabled;
+    }
+    /* pause */
+    if (state->last_paused != is_paused) {
+        pause_led_set_active(window_identity, is_paused);
         state->last_paused = is_paused;
+    }
+    /* shiftlock */
+    if (state->last_shiftlock != is_shiftlock) {
+        shiftlock_led_set_active(window_identity, is_shiftlock);
         state->last_shiftlock = is_shiftlock;
+    }
+    /* 40/80 colums */
+    if (state->last_mode4080 != is_mode4080) {
+        mode4080_led_set_active(window_identity, is_mode4080);
         state->last_mode4080 = is_mode4080;
+    }
+    /* capslock */
+    if (state->last_capslock != is_capslock) {
+        capslock_led_set_active(window_identity, is_capslock);
         state->last_capslock = is_capslock;
     }
+    /* userport diagnostic pin */
+    if (state->last_diagnostic_pin != is_diagnostic_pin) {
+        diagnosticpin_led_set_active(window_identity, is_diagnostic_pin);
+        state->last_diagnostic_pin = is_diagnostic_pin;
+    }
+#else
+    /* warp */
+    warp_led_set_active(window_identity, vsync_metric_warp_enabled);
+    state->last_warp = vsync_metric_warp_enabled;
+    /* pause */
+    pause_led_set_active(window_identity, is_paused);
+    state->last_paused = is_paused;
+    /* shiftlock */
+    shiftlock_led_set_active(window_identity, is_shiftlock);
+    state->last_shiftlock = is_shiftlock;
+    /* 40/80 colums */
+    mode4080_led_set_active(window_identity, is_mode4080);
+    state->last_mode4080 = is_mode4080;
+    /* capslock */
+    capslock_led_set_active(window_identity, is_capslock);
+    state->last_capslock = is_capslock;
+    /* userport diagnostic pin */
+    diagnosticpin_led_set_active(window_identity, is_diagnostic_pin);
+    state->last_diagnostic_pin = is_diagnostic_pin;
+#endif
 
     if (window_identity == PRIMARY_WINDOW) {
         if (state->last_fps_int != this_fps_int) {

@@ -7,7 +7,7 @@ EXTRA_DIST = \
 
 
 if UNIX_COMPILE
-if !UNIX_MACOSX_COMPILE
+if !MACOS_COMPILE
 
 if INSTALL_DESKTOP_FILES
 # Make .desktop files
@@ -196,18 +196,32 @@ $(VSID_DESKTOP): emu.desktop
 
 install-data-hook: $(VICE_DIR_FILE) $(VICE_DESKTOP_FILES)
 	$(XDG_DESKTOP_MENU) install "$(VICE_DIR_FILE)" $(VICE_DESKTOP_FILES)
+	$(XDG_DESKTOP_MENU) forceupdate
+	@echo " "
+	@echo "* Remember that for desktop updates to show up, you may have to log off and on,"
+	@echo "* or run the following commands:"
+	@echo "update-desktop-database ~/.local/share/applications/"
+	@echo "update-mime-database ~/.local/share/mime/"
+	@echo "gtk-update-icon-cache ~/.local/share/icons/hicolor/ -t"
+	@echo " "
 
 # Seems GNU disapproves of this, but it works to uninstall the .desktop/.directory
 # files.
 uninstall-hook:
 	$(XDG_DESKTOP_MENU) uninstall "$(VICE_DIR_FILE)" $(VICE_DESKTOP_FILES)
+	$(XDG_DESKTOP_MENU) forceupdate
+	@echo " "
+	@echo "* Remember that for desktop updates to show up, you may have to log off and on,"
+	@echo "* or run the following commands:"
+	@echo "update-desktop-database ~/.local/share/applications/"
+	@echo "update-mime-database ~/.local/share/mime/"
+	@echo "gtk-update-icon-cache ~/.local/share/icons/hicolor/ -t"
+	@echo " "
 
 
 # if INSTALL_DESKTOP_FILES
 endif
-# if !UNIX_MACOSX_COMPILE
+# if !MACOS_COMPILE
 endif
 
 endif
-
-#: vim set noet ts=8 sts=8 sw=8:

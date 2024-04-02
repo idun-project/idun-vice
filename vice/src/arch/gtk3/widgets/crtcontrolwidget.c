@@ -18,6 +18,7 @@
  * |Scanline shade      | yes  | yes  |yes|yes |yes |yes |yes |yes |
  * |Odd lines phase     | yes  |  no  | no|yes | no |yes | no | no |
  * |Odd lines offset    | yes  |  no  | no|yes | no |yes | no | no |
+ * |U-only delayline    | yes  |  no  | no|yes | no |yes | no | no |
  *
  * TODO:    Fix display of sliders when switching between PAL and NTSC
  */
@@ -40,6 +41,7 @@
  * $VICERES TEDPALOddLineOffset     xplus4
  * $VICERES TEDPALOddLinePhase      xplus4
  * $VICERES TEDPALScanLineShade     xplus4
+ * $VICERES TEDPALDelaylineType     xplus4
  *
  * $VICERES VDCColorBrightness      x128
  * $VICERES VDCColorContrast        x128
@@ -58,6 +60,7 @@
  * $VICERES VICPALOddLineOffset     xvic
  * $VICERES VICPALOddLinePhase      xvic
  * $VICERES VICPALScanLineShade     xvic
+ * $VICERES VICPALDelaylineType     xvic
  *
  * $VICERES VICIIColorBrightness    x64 x64sc x64dtv xscpu64 x128 xcbm5x0
  * $VICERES VICIIColorContrast      x64 x64sc x64dtv xscpu64 x128 xcbm5x0
@@ -68,6 +71,7 @@
  * $VICERES VICIIPALOddLineOffset   x64 x64sc x64dtv xscpu64 x128 xcbm5x0
  * $VICERES VICIIPALOddLinePhase    x64 x64sc x64dtv xscpu64 x128 xcbm5x0
  * $VICERES VICIIPALScanLineShade   x64 x64sc x64dtv xscpu64 x128 xcbm5x0
+ * $VICERES VICIIPALDelaylineType   x64 x64sc x64dtv xscpu64 x128 xcbm5x0
  */
 
 /*
@@ -94,6 +98,7 @@
 #include "vice.h"
 
 #include <gtk/gtk.h>
+#include <stdbool.h>
 #include <string.h>
 
 #include "lib.h"
@@ -105,7 +110,7 @@
 #include "crtcontrolwidget.h"
 
 
-/** \brief  CSS for the scales
+/** \brief  CSS for the scale widgets in the status bar CRT widget
  *
  * This makes the sliders take up less vertical space. The margin can be set
  * to a negative value (in px) to allow the slider to be larger than the scale
@@ -114,17 +119,53 @@
  * Probably will require some testing/tweaking to get this to look acceptable
  * with various themes (and OSes).
  */
-#define SLIDER_CSS \
+#define SCALE_CSS_STATUSBAR \
     "scale slider {\n" \
     "  min-width: 10px;\n" \
     "  min-height: 10px;\n" \
     "  margin: -3px;\n" \
     "}\n\n" \
+    "scale value {\n" \
+    "  font-family: monospace;\n" \
+    "  font-size: 80%;\n" \
+    "}\n" \
     "scale {\n" \
     "  margin-top: -8px;\n" \
     "  margin-bottom: -8px;\n" \
     "}"
 
+/** \brief  CSS used to tweak looks of CRT sliders in the settings dialog
+ *
+ * We use monospace for the value labels to keep them aligned on the decimal
+ * point and to keep the width of the sliders consistent.
+ */
+#define SCALE_CSS_DIALOG \
+    "scale value {\n" \
+    "  font-family: monospace;\n" \
+    "}"
+
+/** \brief  CSS for the "U-only delayline" check button on the status bar
+ */
+#define CHECKBUTTON_CSS_STATUSBAR \
+    "checkbutton {\n" \
+    "  font-size: 80%;\n" \
+    "}\n" \
+    "checkbutton check {\n" \
+    "  min-width: 12px;\n" \
+    "  min-height: 12px;\n" \
+    "}"
+
+/** \brief  CSS for the reset button when used on the status bar
+ */
+#define BUTTON_CSS_STATUSBAR \
+    "button {\n" \
+    "  min-width: 12px;\n" \
+    "  min-height: 12px;\n" \
+    "  padding-top: 2px;\n " \
+    "  padding-left: 2px;\n " \
+    "  padding-bottom: 2px;\n " \
+    "  padding-right: 2px;\n " \
+    "}"
 
 /** \brief  CSS for the labels
  *
@@ -139,50 +180,24 @@
     "  margin-bottom: -2px;\n" \
     "}"
 
-
-/** \brief  Number of valid resources for PAL */
-#define RESOURCE_COUNT_PAL  9
-
-/** \brief  Number of valid resources for NTSC */
-#define RESOURCE_COUNT_NTSC 5
-
 /** \brief  Size of array required for all resources */
-#define RESOURCE_COUNT_MAX  RESOURCE_COUNT_PAL
-
-
-/** \brief  Video chip identifiers
- *
- * Allows for easier/faster switching than using strcmp()
- */
-enum {
-    CHIP_CRTC,      /**< CRTC videochip (CBM-II 6x0/7x0, PET) */
-    CHIP_TED,       /**< TED videochip (Plus4, C16) */
-    CHIP_VDC,       /**< VDC videochip (C128) */
-    CHIP_VIC,       /**< VIC videochip (VIC20) */
-    CHIP_VICII,     /**< VIC-II videochip (C64, C128, CBM-II 5x0) */
-
-    CHIP_ID_COUNT   /**< Number of CHIP ID's */
-};
+#define RESOURCE_COUNT  9
 
 /** \brief  CRT resource info
  */
-typedef struct crt_control_resource_s {
-    const char *label;  /**< Displayed name (label) */
-    const char *name;   /**< Resource name excluding CHIP prefix */
-    int low;            /**< lowest value for resoource */
-    int high;           /**< highest value for resource */
-    int step;           /**< stepping for the spin button */
-} crt_control_resource_t;
-
-
-/** \brief  CRT resource object
- */
-typedef struct crt_control_s {
-    crt_control_resource_t res;     /**< resource info */
-    GtkWidget *scale;               /**< GtkScale reference */
-    GtkWidget *spin;                /**< GtkSpinButton reference */
-} crt_control_t;
-
+typedef struct crt_control_info_s {
+    const char *label;      /**< displayed name (label) */
+    const char *name;       /**< resource name excluding CHIP prefix */
+    bool        ntsc;       /**< resource is valid for NTSC */
+    int         low;        /**< lowest value for resource */
+    int         high;       /**< highest value for resource */
+    int         step;       /**< stepping for the spin button */
+    double      disp_low;   /**< display low */
+    double      disp_high;  /**< display high */
+    double      disp_step;  /**< stepping for the displayed values */
+    const char *disp_fmt;   /**< format string for the displayed value */
+    int         emu_mask;   /**< mask indicating which emus expose the resource */
+} crt_control_info_t;
 
 /** \brief  Object holding internal state of a CRT control widget
  *
@@ -191,153 +206,146 @@ typedef struct crt_control_s {
  * clean that memory up once the widget is destroyed.
  */
 typedef struct crt_control_data_s {
-    char *chip;                                 /**< video chip name */
-    crt_control_t controls[RESOURCE_COUNT_MAX]; /**< list of controls */
+    char           chip[16];                /**< video chip name */
+    GtkWidget     *scales[RESOURCE_COUNT];  /**< sliders */
+    GtkWidget     *delayline;               /**< U-delay line widget */
 } crt_control_data_t;
 
 
 /** \brief  List of CRT emulation resources
  */
-static const crt_control_resource_t resource_table[RESOURCE_COUNT_MAX] = {
-    { "Brightness",     "ColorBrightness",  0, 2000, 100 },
-    { "Contrast",       "ColorContrast",    0, 2000, 100 },
-    { "Saturation",     "ColorSaturation",  0, 2000, 100 },
-    { "Tint",           "ColorTint",        0, 2000, 100 },
-    { "Gamma",          "ColorGamma",       0, 4000, 200 },
-    { "Blur",           "PALBlur",          0, 1000, 50 },
-    { "Scanline shade", "PALScanLineShade", 0, 1000, 50 },
-    { "Oddline phase",  "PALOddLinePhase",  0, 2000, 100 },
-    { "Oddline offset", "PALOddLineOffset", 0, 2000, 100 }
+static const crt_control_info_t control_info[RESOURCE_COUNT] = {
+    { "Brightness",     "ColorBrightness",  true,  0, 2000, 100,   0.0, 200.0,  0.1, "%5.1f%%",      VICE_MACHINE_ALL },
+    { "Contrast",       "ColorContrast",    true,  0, 2000, 100,   0.0, 200.0,  0.1, "%5.1f%%",      VICE_MACHINE_ALL },
+    { "Saturation",     "ColorSaturation",  true,  0, 2000, 100,   0.0, 200.0,  0.1, "%5.1f%%",      VICE_MACHINE_ALL },
+    { "Tint",           "ColorTint",        true,  0, 2000, 100, -25.0,  25.0,  0.1, "%+5.1f%%",     VICE_MACHINE_ALL },
+    { "Gamma",          "ColorGamma",       true,  0, 4000, 200,   0.0,   4.0, 0.01, "%6.2f",        VICE_MACHINE_ALL },
+    { "Blur",           "PALBlur",          true,  0, 1000,  50,   0.0, 100.0,  0.1, "%5.1f%%",      VICE_MACHINE_ALL },
+    { "Scanline shade", "PALScanLineShade", true,  0, 1000,  50,   0.0, 100.0,  0.1, "%5.1f%%",      VICE_MACHINE_ALL },
+    { "Oddline phase",  "PALOddLinePhase",  false, 0, 2000, 100, -25.0,  25.0,  0.1, "%+5.1f\u00b0", VICE_MACHINE_ALL^VICE_MACHINE_CBM6x0^VICE_MACHINE_PET },
+    { "Oddline offset", "PALOddLineOffset", false, 0, 2000, 100, -50.0,  50.0,  0.1, "%+4.1f%%",     VICE_MACHINE_ALL^VICE_MACHINE_CBM6x0^VICE_MACHINE_PET }
 };
 
 
-/** \brief  Struct mapping chip names to chip IDs
- */
-typedef struct chip_id_s {
-    const char *name;   /**< chip name (ie VDC, VICII, etc) */
-    int id;             /**< chip ID */
-} chip_id_t;
+/** \brief  CSS provider for labels */
+static GtkCssProvider *label_css = NULL;
+
+/** \brief  CSS provider for the reset button on the status bar */
+static GtkCssProvider *button_css = NULL;
+
+/** \brief  CSS provider for the U-delayline check button on the status bar */
+static GtkCssProvider *checkbutton_css = NULL;
+
+/** \brief  CSS provider for scales in the CRT widget for the statusbar */
+static GtkCssProvider *scale_css_statusbar = NULL;
+
+/** \brief  CSS provider for scales in the settings dialog */
+static GtkCssProvider *scale_css_dialog = NULL;
+
+/** \brief  MachineVideoStandard resource value on construction */
+static int standard = 0;
 
 
-/** \brief  Enum mapping CHIP prefixes to CHIP ID's
- */
-static const chip_id_t chips[CHIP_ID_COUNT] = {
-    { "CRTC",   CHIP_CRTC },
-    { "TED",    CHIP_TED },
-    { "VDC",    CHIP_VDC },
-    { "VIC",    CHIP_VIC },
-    { "VICII",  CHIP_VICII }
-};
-
-
-/** \brief  CSS provider for labels
- */
-static GtkCssProvider *label_css_provider;
-
-/** \brief  CSS provider for scales
- */
-static GtkCssProvider *scale_css_provider;
-
-
-/** \brief  Find chip ID by \a name
+/** \brief  Determine if the PAL-specific controls must be enabled
  *
- * \param[in]   name    chip name
+ * Check video standard and \a chip for PAL support.
  *
- * \return  chip ID or -1 on error
+ * \param[in]   chip    video chip name
+ *
+ * \return  true if PAL controls must be enabled
  */
-static int get_chip_id(const char *name)
+static bool is_pal(const char *chip)
 {
-    int i;
-
-    for (i = 0; i < CHIP_ID_COUNT; i++) {
-        if (strcmp(name, chips[i].name) == 0) {
-            return chips[i].id;
-        }
+    if ((standard == MACHINE_SYNC_PAL || standard == MACHINE_SYNC_PALN) &&
+        (chip[0] != 'C') /* not Crtc */ &&
+        (!(chip[0] == 'V' && chip[1] == 'D'))) /* not VDC */ {
+        return true;
     }
-    return -1;
+    return false;
 }
-
 
 /** \brief  Reset all sliders to their factory value
  *
- * \param[in]   widget      reset button
- * \param[in]   user_data   extra event data (unused)
+ * \param[in]   data    crt control data
  */
-static void on_reset_clicked(GtkWidget *widget, gpointer user_data)
+static void reset_sliders(crt_control_data_t *data)
 {
-    GtkWidget *parent;
-    crt_control_data_t *data;
     int i;
 
-    parent = gtk_widget_get_parent(widget);
-    data = g_object_get_data(G_OBJECT(parent), "InternalState");
-#if 0
-    debug_gtk3("CHIP: %s.", data->chip);
-#endif
-    for (i = 0; i < RESOURCE_COUNT_MAX; i++) {
-        crt_control_t control = data->controls[i];
+    for (i = 0; i < RESOURCE_COUNT; i++) {
+        GtkWidget *scale = data->scales[i];
 
-        if (control.scale != NULL) {
-#if 0
-            debug_gtk3("Resetting '%s' to factory value.", control.res.label);
-#endif
-            vice_gtk3_resource_scale_int_factory(control.scale);
-            /* No need to reset the spin button, that gets triggered via
-             * the scale widget
-             */
+        if (scale != NULL) {
+            vice_gtk3_resource_scale_custom_factory(scale);
         }
     }
 }
 
+/** \brief  Reset all sliders to their factory value
+ *
+ * \param[in]   button  reset button
+ * \param[in]   data    crt control data
+ */
+static void on_reset_clicked(GtkWidget *button, gpointer data)
+{
+    reset_sliders(data);
+}
 
 /** \brief  Clean up memory used by the internal state of \a widget
  *
- * \param[in]   widget      widget
- * \param[in]   user_data   extra event data (unused)
+ * \param[in]   widget  widget
+ * \param[in]   data    crt control dat
  */
-static void on_widget_destroy(GtkWidget *widget, gpointer user_data)
+static void on_widget_destroy(GtkWidget *widget, gpointer data)
 {
-    crt_control_data_t *data;
-
-    data = (crt_control_data_t *)(g_object_get_data(
-                G_OBJECT(widget), "InternalState"));
-    lib_free(data->chip);
     lib_free(data);
 }
 
 
-/** \brief  Handler for the 'value-changed' event of the spin buttons
+/** \brief  Create reusable CSS providers for the widgets
  *
- * Updates \a scale with the value of \a spin.
+ * Create CSS providers once when needed and only unref on emulator shutdown.
+ * Keeping them around after a widget using them has been destroyed avoids
+ * having to recreate them every time a dialog/widget is recreated that uses
+ * said widget.
  *
- * \param[in]       spin    spin button
- * \param[in,out]   scale   scale widget
+ * \return  TRUE when all CSS was successfully parsed
  */
-static void on_spin_value_changed(GtkWidget *spin, gpointer scale)
+static gboolean create_css_providers(void)
 {
-    gdouble spinval;
+    if (label_css == NULL) {
+        label_css = vice_gtk3_css_provider_new(LABEL_CSS);
+        if (label_css == NULL) {
+            return FALSE;
+        }
+    }
+    if (button_css == NULL) {
+        button_css = vice_gtk3_css_provider_new(BUTTON_CSS_STATUSBAR);
+        if (button_css == NULL) {
+            return FALSE;
+        }
+    }
+    if (checkbutton_css == NULL) {
+        checkbutton_css = vice_gtk3_css_provider_new(CHECKBUTTON_CSS_STATUSBAR);
+        if (checkbutton_css == NULL) {
+            return FALSE;
+        }
+    }
 
-    spinval = gtk_spin_button_get_value(GTK_SPIN_BUTTON(spin));
-    gtk_range_set_value(GTK_RANGE(scale), (int)spinval);
+    if (scale_css_statusbar == NULL) {
+        scale_css_statusbar = vice_gtk3_css_provider_new(SCALE_CSS_STATUSBAR);
+        if (scale_css_statusbar == NULL) {
+            return FALSE;
+        }
+    }
+    if (scale_css_dialog == NULL) {
+        scale_css_dialog = vice_gtk3_css_provider_new(SCALE_CSS_DIALOG);
+        if (scale_css_dialog == NULL) {
+            return FALSE;
+        }
+    }
+    return TRUE;
 }
-
-
-/** \brief  Handler for the 'value-changed' event of the scale widgets
- *
- * Updates \a spin with the value of \a scale
- *
- * \param[in]       scale   scale widget
- * \param[in,out]   spin    spin button
- */
-static void on_scale_value_changed(GtkWidget *scale, gpointer spin)
-{
-    int scaleval;
-
-    scaleval = gtk_range_get_value(GTK_RANGE(scale));
-    gtk_spin_button_set_value(GTK_SPIN_BUTTON(spin), (double)scaleval);
-}
-
-
 
 /** \brief  Create right-aligned label with a smaller font
  *
@@ -354,87 +362,72 @@ static GtkWidget *create_label(const char *text, gboolean minimal)
     gtk_widget_set_halign(label, GTK_ALIGN_END);
 
     if (minimal) {
-        vice_gtk3_css_provider_add(label, label_css_provider);
+        vice_gtk3_css_provider_add(label, label_css);
     }
-
     return label;
 }
 
-
 /** \brief  Create a customized GtkScale for \a resource
  *
- * \param[in]   resource    resource name without the video \a chip name prefix
- * \param[in]   chip        video chip name
- * \param[in]   low         lower bound
- * \param[in]   high        upper bound
- * \param[in]   step        step used to increase/decrease slider value
- * \param[in]   minimal     reduced size (for the statusbar widget)
+ * \param[in]   resource        resource name without the \a chip prefix
+ * \param[in]   chip            video chip name
+ * \param[in]   resource_low    resource value lower bound
+ * \param[in]   resource_high   resource value upper bound
+ * \param[in]   display_low     display value lower bound
+ * \param[in]   display_high    display value upper bound
+ * \param[in]   display_step    display value stepping
+ * \param[in]   display_format  format string for displaying value
+ * \param[in]   minimal         reduced size (for the statusbar widget)
  *
  * \return  GtkScale
  */
-static GtkWidget *create_slider(
-        const char *resource, const char *chip,
-        int low, int high, int step,
-        gboolean minimal)
+static GtkWidget *create_slider(const char *resource,
+                                const char *chip,
+                                int         resource_low,
+                                int         resource_high,
+                                double      display_low,
+                                double      display_high,
+                                double      display_step,
+                                const char *display_format,
+                                gboolean    minimal)
 {
     GtkWidget *scale;
 
-    /* Set stepping to 1, for now, to allow more finegrained control of the
-     * sliders. This only works in the settings menu, not in the popup CRT
-     * controls since the keyboard is captured for the running emulator.
-     */
-    step = 1;
-
-    scale = vice_gtk3_resource_scale_int_new_sprintf("%s%s",
-            GTK_ORIENTATION_HORIZONTAL, low, high, step,
-            chip, resource);
+    scale = vice_gtk3_resource_scale_custom_new_printf("%s%s",
+                                                       GTK_ORIENTATION_HORIZONTAL,
+                                                       resource_low,
+                                                       resource_high,
+                                                       display_low,
+                                                       display_high,
+                                                       display_step,
+                                                       display_format,
+                                                       chip,
+                                                       resource);
     gtk_widget_set_hexpand(scale, TRUE);
     gtk_scale_set_value_pos(GTK_SCALE(scale), GTK_POS_RIGHT);
-    /* Disable tickmarks. This looks nice and could help to quickly set a value,
-     * but in reality it screws with the user's mouse control over the sliders
-     */
-#if 0
-    vice_gtk3_resource_scale_int_set_marks(scale, step);
-#endif
 
     /* set up custom CSS to make the scale take up less space */
     if (minimal) {
-        vice_gtk3_css_provider_add(scale, scale_css_provider);
+        vice_gtk3_css_provider_add(scale, scale_css_statusbar);
+    } else {
+        vice_gtk3_css_provider_add(scale, scale_css_dialog);
     }
 
-#if 0
-    /* don't draw the value next to the scale if used a statusbar popup */
-    gtk_scale_set_draw_value(GTK_SCALE(scale), !minimal);
-#endif
     return scale;
 }
 
-
-/** \brief  Create spin button for \a resource of \a chip
+/** \brief  Create "U-only delayline" check button
  *
- * \param[in]   resource    resource name, excluding \a chip
- * \param[in]   chip        video chip name
- * \param[in]   low         spinbox lowest value
- * \param[in]   high        spinbox highest value
- * \param[in]   step        spinbox stepping
- * \param[in]   minimal     reduced size (for the statusbar widget)
+ * \param[in]   chip    video chip name
  *
- * \return  spinbox widget
+ * \return  GtkCheckButton
  */
-static GtkWidget *create_spin(
-        const char *resource, const char *chip,
-        int low, int high, int step,
-        gboolean minimal)
+static GtkWidget *create_delayline_widget(const char *chip)
 {
-    GtkWidget *spin;
-
-    spin = vice_gtk3_resource_spin_int_new_sprintf(
-            "%s%s",
-            low, high, step,
-            chip, resource);
-    return spin;
+    return vice_gtk3_resource_check_button_new_sprintf("%sPALDelaylineType",
+                                                       "U-only Delayline",
+                                                       chip);
 }
-
 
 /** \brief  Add GtkScale sliders to \a grid
  *
@@ -444,95 +437,83 @@ static GtkWidget *create_spin(
  *
  * \return  row number of last widget added
  */
-static void add_sliders(GtkGrid *grid,
+static int add_sliders(GtkGrid             *grid,
                         crt_control_data_t *data,
-                        gboolean minimal)
+                        gboolean            minimal)
 {
-    GtkWidget *label;
-    const char *chip;
-    int video_standard;
-    int row = 1;
-    int chip_id;
-    size_t i;
+    GtkWidget                *label;
+    GtkWidget                *scale;
+    const crt_control_info_t *info;
+    const char               *chip;
+    int                       row;
+    size_t                    i;
 
     chip = data->chip;
-    chip_id = get_chip_id(chip);
-    if (chip_id < 0) {
-        log_error(LOG_ERR, "failed to get chip ID for '%s'.", chip);
-        return;
-    }
-
-    /* get PAL/NTSC mode */
-    if (resources_get_int("MachineVideoStandard", &video_standard) < 0) {
-        log_error(LOG_ERR, "failed to get 'MachineVideoStandard' resource value.");
-        return;
-    }
+    row = 1;
 
     if (!minimal) {
-        for (i = 0; i < RESOURCE_COUNT_MAX; i ++) {
-            crt_control_t *control = &(data->controls[i]);
-            label = create_label(control->res.label, minimal);
-            gtk_grid_attach(grid, label, 0, row, 1, 1);
-            control->scale = create_slider(control->res.name, chip,
-                    control->res.low, control->res.high, control->res.step,
-                    minimal);
-            gtk_grid_attach(grid, control->scale, 1, row, 1, 1);
+        for (i = 0; i < RESOURCE_COUNT; i ++) {
+            info = &(control_info[i]);
+            if (!(info->emu_mask & machine_class)) {
+                continue;
+            }
+            if (!(is_pal(chip)) && !(info->ntsc)) {
+                continue;
+            }
 
-            control->spin = create_spin(control->res.name, chip,
-                    control->res.low, control->res.high, control->res.step,
-                    minimal);
-            gtk_grid_attach(grid, control->spin, 2, row, 1, 1);
-            /* hook up signal handlers */
-            g_signal_connect(control->scale, "value-changed",
-                    G_CALLBACK(on_scale_value_changed),
-                    (gpointer)(control->spin));
-            g_signal_connect(control->spin, "value-changed",
-                    G_CALLBACK(on_spin_value_changed),
-                    (gpointer)(control->scale));
+            label   = create_label(info->label, minimal);
+
+            gtk_grid_attach(grid, label, 0, row, 1, 1);
+            scale = create_slider(info->name,
+                                  chip,
+                                  info->low,
+                                  info->high,
+                                  info->disp_low,
+                                  info->disp_high,
+                                  info->disp_step,
+                                  info->disp_fmt,
+                                  minimal);
+            gtk_grid_attach(grid, scale, 1, row, 1, 1);
+            data->scales[i] = scale;
             row++;
         }
     } else {
         /* Add sliders for statusbar popup */
-        for (i = 0; i < RESOURCE_COUNT_MAX; i ++) {
-            int col = (i % 2) * 2;
-            crt_control_t *control = &(data->controls[i]);
-            label = create_label(control->res.label, minimal);
-            gtk_grid_attach(grid, label, col + 0, row, 1, 1);
-            control->scale = create_slider(control->res.name, chip,
-                    control->res.low, control->res.high, control->res.step,
-                    minimal);
-            gtk_grid_attach(grid, control->scale, col + 1, row, 1, 1);
-            if (col > 0) {
+        for (i = 0; i < RESOURCE_COUNT; i ++) {
+            int column;
+
+            info = &(control_info[i]);
+            if (!(info->emu_mask & machine_class)) {
+                continue;
+            }
+            if (!(is_pal(chip)) && !(info->ntsc)) {
+                continue;
+            }
+
+
+            column = (i % 2) * 2;
+            label  = create_label(info->label, minimal);
+
+            gtk_grid_attach(grid, label, column + 0, row, 1, 1);
+            scale = create_slider(info->name,
+                                  chip,
+                                  info->low,
+                                  info->high,
+                                  info->disp_low,
+                                  info->disp_high,
+                                  info->disp_step,
+                                  info->disp_fmt,
+                                  minimal);
+            gtk_grid_attach(grid, scale, column + 1, row, 1, 1);
+            data->scales[i] = scale;
+            if (column > 0) {
                 row++;
             }
         }
     }
 
-    /* TODO: make this work again
-     *
-     * What the hell am I doing here?
-     * --compyx, 2020-06-14
-     */
-    int is_pal = ((video_standard == 0 /* PAL */
-                || video_standard == 1 /* Old PAL */
-                || video_standard == 4 /* PAL-N/Drean */
-                ) && chip_id != CHIP_CRTC && chip_id != CHIP_VDC);
-
-    if (!is_pal) {
-        for (i = 0; i < RESOURCE_COUNT_MAX; i ++) {
-            crt_control_t *control = &(data->controls[i]);
-            int is_ntsc = strncmp(control->res.name, "PAL", 3) != 0;
-
-            if (control->scale != NULL) {
-                gtk_widget_set_sensitive(control->scale, is_ntsc);
-                if (control->spin != NULL) {
-                    gtk_widget_set_sensitive(control->spin, is_ntsc);
-                }
-            }
-        }
-    }
+    return row + 1;
 }
-
 
 /** \brief  Create heap-allocated CRT controls state object
  *
@@ -545,78 +526,152 @@ static void add_sliders(GtkGrid *grid,
  */
 static crt_control_data_t *create_control_data(const char *chip)
 {
-    crt_control_data_t *data = lib_malloc(sizeof *data);
-    size_t i;
+    crt_control_data_t *data;
+    size_t              index;
 
-    data->chip = lib_strdup(chip);
-    for (i = 0; i < RESOURCE_COUNT_MAX; i++) {
-        crt_control_t *control = &(data->controls[i]);
-        control->res.label = resource_table[i].label;
-        control->res.name = resource_table[i].name;
-        control->res.low = resource_table[i].low;
-        control->res.high = resource_table[i].high;
-        control->res.step = resource_table[i].step;
-        control->scale = NULL;
-        control->spin = NULL;
+    data = lib_malloc(sizeof *data);
+
+    strncpy(data->chip, chip, sizeof data->chip - 1u);
+    data->chip[sizeof data->chip - 1u] = '\0';
+
+    for (index = 0; index < RESOURCE_COUNT; index++) {
+        data->scales[index] = NULL;
     }
+    data->delayline = NULL;
     return data;
+}
+
+/** \brief  Create header with label and reset button
+ *
+ * Create grid with label mentioning \a chip and reset button, adjust size
+ * depending on whether \a minimal is `TRUE`.
+ *
+ * \param[in]   chip    video chip name
+ * \param[in]   minimal reduce size of widgets for use on the status bar
+ * \param[in]   data    CRT controls runtime data object
+ *
+ * \return  GtkGrid
+ */
+static GtkWidget *create_header(const char         *chip,
+                                gboolean            minimal,
+                                crt_control_data_t *data)
+{
+    GtkWidget *grid;
+    GtkWidget *label;
+    GtkWidget *button;
+    GtkWidget *image;
+    char       buffer[256];
+
+    grid = gtk_grid_new();
+    gtk_widget_set_hexpand(grid, TRUE);
+
+    /* header label */
+    if (minimal) {
+        g_snprintf(buffer, sizeof buffer,
+                   "<small><b>CRT settings (%s)</b></small>", chip);
+    } else {
+        g_snprintf(buffer, sizeof buffer, "<b>CRT settings (%s)</b>", chip);
+    }
+    label = gtk_label_new(NULL);
+    gtk_label_set_markup(GTK_LABEL(label), buffer);
+    gtk_widget_set_halign(label, GTK_ALIGN_START);
+    gtk_widget_set_hexpand(label, TRUE);
+
+    /* reset button */
+    button = gtk_button_new();
+    image  = gtk_image_new_from_icon_name("edit-undo-symbolic",
+                                           GTK_ICON_SIZE_BUTTON);
+    if (minimal) {
+        gtk_image_set_pixel_size(GTK_IMAGE(image), 8);
+        /* We have to use CSS here: none of the Gtk size/margin/alignment
+         * setters work to reduce size from what Gtk considers minimal. */
+        vice_gtk3_css_provider_add(button, button_css);
+        gtk_widget_set_margin_top(button, 2);
+        gtk_widget_set_margin_start(button, 2);
+        gtk_widget_set_margin_end(button, 2);
+        gtk_widget_set_margin_bottom(button, 2);
+    }
+    gtk_button_set_image(GTK_BUTTON(button), image);
+    gtk_widget_set_halign(button, GTK_ALIGN_END);
+
+    g_signal_connect(button,
+                     "clicked",
+                     G_CALLBACK(on_reset_clicked),
+                     (gpointer)data);
+
+    gtk_grid_attach(GTK_GRID(grid), label,  0, 0, 1, 1);
+    gtk_grid_attach(GTK_GRID(grid), button, 1, 0, 1, 1);
+    return grid;
 }
 
 
 /** \brief  Create CRT control widget for \a chip
  *
- * \param[in]   parent  parent widget
- * \param[in]   chip    video chip name
- * \param[in]   minimal reduce slider sizes to be used attached to the status
- *              bar
+ * \param[in]   parent  parent widget (unused)
+ * \param[in]   chip    video chip name (all caps)
+ * \param[in]   minimal reduce slider sizes for use in the status bar
+ *
+ * \todo    Add a way to force update of all sliders and their sensitivity when
+ *          MachineVideoStandard is changed (ie CRT sliders in the statusbar
+ *          are shown and the user switches from PAL to NTSC)
  *
  * \return  GtkGrid
  */
-GtkWidget *crt_control_widget_create(GtkWidget *parent,
+GtkWidget *crt_control_widget_create(GtkWidget  *parent,
                                      const char *chip,
-                                     gboolean minimal)
+                                     gboolean    minimal)
 {
-    GtkWidget *grid;
-    GtkWidget *label;
-    GtkWidget *button;
-    gchar buffer[256];
+    GtkWidget          *grid;
+    GtkWidget          *header;
     crt_control_data_t *data;
+    int                 row;
+
+    /* sanity check */
+    if (RESOURCE_COUNT != sizeof control_info / sizeof control_info[0]) {
+        log_error(LOG_ERR,
+                  "RESOURCE_COUNT doesn't match element count of control_info[]");
+        return NULL;
+    }
 
     /* create reusable CSS providers */
-    label_css_provider = vice_gtk3_css_provider_new(LABEL_CSS);
-    if (label_css_provider == NULL) {
-        return NULL;
-    }
-    scale_css_provider = vice_gtk3_css_provider_new(SLIDER_CSS);
-    if (scale_css_provider == NULL) {
+    if (!create_css_providers()) {
         return NULL;
     }
 
+    /* this avoids obtaining the vice lock in each is_pal() call */
+    resources_get_int("MachineVideoStandard", &standard);
     data = create_control_data(chip);
 
-    grid = vice_gtk3_grid_new_spaced(16, 0);
-    /* g_object_set(grid, "font-size", 9, NULL); */
-    g_object_set(grid, "margin-left", 8, "margin-right", 8, NULL);
+    grid = gtk_grid_new();
+    gtk_grid_set_column_spacing(GTK_GRID(grid), minimal ? 4 : 8);
 
-    if (minimal) {
-        g_snprintf(buffer, 256, "<small><b>CRT settings (%s)</b></small>", chip);
-    } else {
-        g_snprintf(buffer, 256, "<b>CRT settings (%s)</b>", chip);
+    /* header */
+    header = create_header(chip, minimal, data);
+    gtk_grid_attach(GTK_GRID(grid), header, 0, 0, minimal ? 4 : 2, 1);
+
+    /* add scales and spin buttons */
+    row = add_sliders(GTK_GRID(grid), data, minimal);
+
+    /* add U-only delayline check button */
+    if ((machine_class != VICE_MACHINE_CBM6x0) &&
+        (machine_class != VICE_MACHINE_PET) &&
+        (is_pal(chip))) {
+        data->delayline = create_delayline_widget(chip);
+        if (minimal) {
+            vice_gtk3_css_provider_add(data->delayline, checkbutton_css);
+            gtk_grid_attach(GTK_GRID(grid), data->delayline, 2, row - 1, 2, 1);
+        } else {
+            gtk_widget_set_margin_top(data->delayline, 8);
+            gtk_grid_attach(GTK_GRID(grid), data->delayline, 0, row, 3, 1);
+        }
+        row++;
     }
-    label = gtk_label_new(NULL);
-    gtk_label_set_markup(GTK_LABEL(label), buffer);
-    gtk_widget_set_halign(label, GTK_ALIGN_CENTER);
-    gtk_grid_attach(GTK_GRID(grid), label, 0, 0, 1, 1);
-
-    add_sliders(GTK_GRID(grid), data, minimal);
-
-    button = gtk_button_new_with_label("Reset");
-    gtk_widget_set_halign(button, GTK_ALIGN_END);
-    gtk_grid_attach(GTK_GRID(grid), button, minimal ? 3 : 1, 0, 1, 1);
-    g_signal_connect(button, "clicked", G_CALLBACK(on_reset_clicked), NULL);
 
     g_object_set_data(G_OBJECT(grid), "InternalState", (gpointer)data);
-    g_signal_connect_unlocked(grid, "destroy", G_CALLBACK(on_widget_destroy), NULL);
+    g_signal_connect_unlocked(grid,
+                              "destroy",
+                              G_CALLBACK(on_widget_destroy),
+                              (gpointer)data);
 
     gtk_widget_show_all(grid);
     return grid;
@@ -625,29 +680,41 @@ GtkWidget *crt_control_widget_create(GtkWidget *parent,
 
 /** \brief  Custom callback for the resource widget manager
  *
- * This calls the reset methods on the various CRT sliders. It assumes the
- * widget was created for the settings UI ('minimal' argument set to false).
+ * This calls the reset methods on the various CRT sliders.
  *
  * \param[in]   widget  CRT control widget
  *
  * \return  bool
- *
- * FIXME:   When using the CRT widget in the settings UI and not as a widget
- *          controlled from the statusbar, the "Reset" shouldn't be there.
- *          So this code is not quite correct yet. I could hide the button,
- *          leaving all code intact and working, but that's lame.
  */
 gboolean crt_control_widget_reset(GtkWidget *widget)
 {
-    GtkWidget *button;
+    crt_control_data_t *data;
 
-    /* this assumes the CRT widget was created with 'minimal' set to False */
-    button = gtk_grid_get_child_at(GTK_GRID(widget), 1, 0);
-    if (GTK_IS_BUTTON(button)) {
-        /* abuse event handler to reset widgets */
-        on_reset_clicked(button, NULL);
-        return TRUE;
-    } else {
-        return FALSE;
+    data = g_object_get_data(G_OBJECT(widget), "InternalState");
+    reset_sliders(data);
+    return TRUE;
+}
+
+
+/** \brief  Free memory used by CSS providers for the sliders
+ *
+ * Call this function on UI shutdown.
+ */
+void crt_control_widget_shutdown(void)
+{
+    if (label_css != NULL) {
+        g_object_unref(label_css);
+    }
+    if (button_css != NULL) {
+        g_object_unref(button_css);
+    }
+    if (checkbutton_css != NULL) {
+        g_object_unref(checkbutton_css);
+    }
+    if (scale_css_statusbar != NULL) {
+        g_object_unref(scale_css_statusbar);
+    }
+    if (scale_css_dialog != NULL) {
+        g_object_unref(scale_css_dialog);
     }
 }

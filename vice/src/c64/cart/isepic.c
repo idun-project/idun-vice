@@ -151,7 +151,8 @@ static io_source_t isepic_io1_device = {
     isepic_dump,              /* device state information dump function */
     CARTRIDGE_ISEPIC,         /* cartridge ID */
     IO_PRIO_NORMAL,           /* normal priority, device read needs to be checked for collisions */
-    0                         /* insertion order, gets filled in by the registration function */
+    0,                        /* insertion order, gets filled in by the registration function */
+    IO_MIRROR_NONE            /* NO mirroring */
 };
 
 static io_source_t isepic_io2_device = {
@@ -167,7 +168,8 @@ static io_source_t isepic_io2_device = {
     isepic_dump,              /* device state information dump function */
     CARTRIDGE_ISEPIC,         /* cartridge ID */
     IO_PRIO_NORMAL,           /* normal priority, device read needs to be checked for collisions */
-    0                         /* insertion order, gets filled in by the registration function */
+    0,                        /* insertion order, gets filled in by the registration function */
+    IO_MIRROR_NONE            /* NO mirroring */
 };
 
 static const export_resource_t export_res = {
@@ -693,6 +695,7 @@ int isepic_bin_attach(const char *filename, uint8_t *rawcart)
         return -1;
     }
 
+    /* set the resource */
     if (set_isepic_filename(filename, NULL) < 0) {
         return -1;
     }
@@ -747,6 +750,7 @@ int isepic_crt_attach(FILE *fd, uint8_t *rawcart, const char *filename)
     if (isepic_crt_load(fd, rawcart) < 0) {
         return -1;
     }
+    /* set the resource */
     if (set_isepic_filename(filename, NULL) < 0) {
         return -1;
     }

@@ -35,7 +35,8 @@
 #include <gtk/gtk.h>
 
 #include "vice_gtk3.h"
-#include "c64-resources.h"
+#include "types.h"
+#include "c64rom.h"
 #include "lib.h"
 #include "resources.h"
 #include "vsync.h"
@@ -52,8 +53,10 @@ static const vice_gtk3_radiogroup_entry_t revisions[] = {
     { "Revision 2",         C64_KERNAL_REV2 },
     { "Revision 3",         C64_KERNAL_REV3 },
     { "SX-64",              C64_KERNAL_SX64 },
+    { "C64 GS",             C64_KERNAL_GS64 },
     { "PET64/Educator64",   C64_KERNAL_4064 },
-    { NULL, -1 }
+    { "Japanese",           C64_KERNAL_JAP },
+    { NULL,                 -1 }
 };
 
 
@@ -72,7 +75,6 @@ static int get_revision_index(int rev)
 {
     return vice_gtk3_radiogroup_get_list_index(revisions, rev);
 }
-
 
 /** \brief  Handler for the "toggled" event of the revision radio buttons
  *
@@ -101,43 +103,43 @@ GtkWidget *kernal_revision_widget_create(void)
 {
     GtkWidget *grid;
     GtkWidget *radio;
-    GtkRadioButton *last = NULL;
-    GSList *group = NULL;
-    int i;
-    int rev;
-    int index;
-    GtkWidget *title;
+    GtkWidget *last = NULL;
+    GSList    *group = NULL;
+    int        rev = 0;
+    int        index;
+    int        i;
 
     resources_get_int("KernalRev", &rev);
     index = get_revision_index(rev);
 
-    grid = vice_gtk3_grid_new_spaced_with_label(-1, 0, "KERNAL revision", 1);
-    title = gtk_grid_get_child_at(GTK_GRID(grid), 0, 0);
-    g_object_set(title, "margin-bottom", 8, NULL);
-
+    grid = vice_gtk3_grid_new_spaced_with_label(16, 0, "KERNAL revision", 1);
+    vice_gtk3_grid_set_title_margin(grid, 8);
 
     /* 'unknown' radio button (only used when using a custom KERNAL, cannot
      * be selected through the UI, only set through code */
     radio = gtk_radio_button_new_with_label(group, "Unknown");
-    g_object_set(radio, "margin-left", 16, NULL);
+    gtk_widget_set_margin_start(radio, 8);
     gtk_widget_set_sensitive(radio, FALSE);
     gtk_grid_attach(GTK_GRID(grid), radio, 0, 1, 1, 1);
 
-    last = GTK_RADIO_BUTTON(radio);
+    last = radio;
     for (i = 0; revisions[i].name != NULL; i++) {
         radio = gtk_radio_button_new_with_label(group, revisions[i].name);
-        g_object_set(radio, "margin-left", 16, NULL);
-        gtk_radio_button_join_group(GTK_RADIO_BUTTON(radio), last);
+        gtk_widget_set_margin_start(radio, 8);
+        gtk_radio_button_join_group(GTK_RADIO_BUTTON(radio),
+                                    GTK_RADIO_BUTTON(last));
 
         /* check if we got the right revision */
         if (index == i) {
             gtk_toggle_button_set_active(GTK_TOGGLE_BUTTON(radio), TRUE);
         }
 
-        g_signal_connect(radio, "toggled", G_CALLBACK(on_revision_toggled),
-                GINT_TO_POINTER(revisions[i].id));
+        g_signal_connect(radio,
+                         "toggled",
+                         G_CALLBACK(on_revision_toggled),
+                         GINT_TO_POINTER(revisions[i].id));
         gtk_grid_attach(GTK_GRID(grid), radio, 0, i + 2, 1, 1);
-        last = GTK_RADIO_BUTTON(radio);
+        last = radio;
     }
 
     gtk_widget_show_all(grid);

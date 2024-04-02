@@ -12,7 +12,7 @@
 
 /*
  *  HVSClib - a library to work with High Voltage SID Collection files
- *  Copyright (C) 2018-2021  Bas Wassink <b.wassink@ziggo.nl>
+ *  Copyright (C) 2018-2022  Bas Wassink <b.wassink@ziggo.nl>
  *
  *  This program is free software; you can redistribute it and/or modify
  *  it under the terms of the GNU General Public License as published by
@@ -32,8 +32,33 @@
 #ifndef HVSC_HVSC_H
 #define HVSC_HVSC_H
 
+#if 0
+/** \brief  Make hvsclib standalone
+ *
+ * If defined hvsclib will use its own memory allocation, string and path
+ * handling functions, not the ones provided by VICE, this allows me to further
+ * develop hvsclib as a standalone library as well.
+ */
+#define HVSC_STANDALONE
+#endif
+
+#ifndef HVSC_STANDALONE
+# include "vice.h"
+#else
+/* Compatibility with VICE's defines (keeps hits in src/findhacks.sh low): */
+# ifdef _WIN32
+/* Windows */
+#  define WINDOWS_COMPILE
+#  ifdef _WIN64
+/* 64-bit Windows */
+#   define WIN64_COMPILE
+#  endif
+# endif
+#endif
+
 /* for size_t, fixed width types and bool */
-#include <stdlib.h>
+#include <stddef.h>
+#include <stdbool.h>
 #include <stdint.h>
 
 /*
@@ -44,7 +69,7 @@
  * from VICE code so it can be used in other projects.
  */
 #ifndef PRI_SIZE_T
-# ifdef _WIN32
+# ifdef WINDOWS_COMPILE
 #  define PRI_SIZE_T    "Iu"
 # else
 #  define PRI_SIZE_T    "zu"
@@ -56,7 +81,6 @@
  */
 typedef enum hvsc_err_e {
     HVSC_ERR_OK = 0,            /**< no error */
-    HVSC_ERR_OOM,               /**< out of memory error */
     HVSC_ERR_IO,                /**< I/O error */
     HVSC_ERR_FILE_TOO_LARGE,    /**< file too large (> 2GB) */
     HVSC_ERR_GCRYPT,            /**< error in gcrypt library */
@@ -87,12 +111,13 @@ typedef enum hvsc_stil_field_type_e {
 /** \brief  Handle for the text file reader functions
  */
 typedef struct hvsc_text_file_s {
-    FILE *  fp;     /**< file pointer */
-    char *  path;   /**< copy of the path of the file (for error messages) */
-    long    lineno; /**< line number in file */
+    FILE   *fp;         /**< file pointer */
+    char   *path;       /**< copy of the path of the file (for error messages) */
+    long    lineno;     /**< line number in file */
     size_t  linelen;    /**< line length */
-    char *  buffer; /**< buffer for line data, grows when required */
-    size_t  buflen; /**< size of buffer, grows when needed */
+    char   *buffer;     /**< buffer for line data, grows when required */
+    char   *prevbuf;    /**< previous content of buffer (for path lookup via md5sum) */
+    size_t  buflen;     /**< size of buffer, grows when needed */
 } hvsc_text_file_t;
 
 
@@ -110,16 +135,14 @@ typedef struct hvsc_stil_timestamp_s {
     long to;    /**< 'to' timestamp, optional */
 } hvsc_stil_timestamp_t;
 
-
 /** \brief  STIL field object
  */
 typedef struct hvsc_stil_field_s {
-    hvsc_stil_field_type_t      type;       /**< field type */
-    char *                      text;       /**< field content */
-    hvsc_stil_timestamp_t       timestamp;  /**< timestamp (optional) */
-    char *                      album;      /**< cover info (optional) */
+    hvsc_stil_field_type_t  type;       /**< field type */
+    char                   *text;       /**< field content */
+    hvsc_stil_timestamp_t   timestamp;  /**< timestamp (optional) */
+    char                   *album;      /**< cover info (optional) */
 } hvsc_stil_field_t;
-
 
 /** \brief  STIL block object
  */
@@ -132,33 +155,31 @@ typedef struct hvsc_stil_block_s {
     size_t              fields_used;    /**< used entries in the fields array */
 } hvsc_stil_block_t;
 
-
 /** \brief  Handle for the STIL functions
  */
 typedef struct hvsc_stil_s {
     hvsc_text_file_t    stil;           /**< handle for the STIL.txt file */
-    char *              psid_path;      /**< path to PSID file */
-    char **             entry_buffer;   /**< content of the STIL entry */
+    char               *psid_path;      /**< path to PSID file */
+    char                md5sum[33];     /**< md5sum as hexadecimal string */
+    char              **entry_buffer;   /**< content of the STIL entry */
     size_t              entry_bufmax;   /**< number of available entries in
                                              the entry_buffer */
     size_t              entry_bufused;  /**< number of used entries in the
                                              entry_buffer */
-    char *              sid_comment;    /**< global comment (optional) */
+    char               *sid_comment;    /**< global comment (optional) */
     hvsc_stil_block_t **blocks;         /**< STIL blocks */
     size_t              blocks_max;     /**< number of available blocks */
     size_t              blocks_used;    /**< number of used blocks */
 } hvsc_stil_t;
 
-
 /** \brief  Handle for the BUGlist functions
  */
 typedef struct hvsc_bugs_s {
-    hvsc_text_file_t        bugs;       /**< handle for the BUGlist.txt file */
-    char *                  psid_path;  /**< path to PSID file */
-    char *                  text;       /**< text about the bug */
-    char *                  user;       /**< person reporting the bug */
+    hvsc_text_file_t  bugs;             /**< handle for the BUGlist.txt file */
+    char             *psid_path;        /**< path to PSID file */
+    char             *text;             /**< text about the bug */
+    char             *user;             /**< person reporting the bug */
 } hvsc_bugs_t;
-
 
 /** \brief  STIL tune entry object
  */
@@ -241,43 +262,38 @@ typedef struct hvsc_stil_tune_entry_s {
  * \ingroup psid
  */
 typedef struct hvsc_psid_s {
-    /*
-     * information on the entire file
-     */
-    char *      path;   /**< path to psid file */
-    uint8_t *   data;   /**< data of psid file */
-    size_t      size;   /**< size of psid file */
 
-    /*
-     * header data
-     */
+    /* Information on the entire file */
+    char     *path;                                 /**< path to psid file */
+    uint8_t  *data;                                 /**< data of psid file */
+    size_t    size;                                 /**< size of psid file */
 
-    uint8_t     magic[HVSC_PSID_MAGIC_LEN]; /**< magic bytes */
-    uint16_t    version;                    /**< version number */
+    /* Header data */
+    uint8_t   magic[HVSC_PSID_MAGIC_LEN];           /**< magic bytes */
+    uint16_t  version;                              /**< version number */
 
-    uint16_t    data_offset;                /**< offset to SID data */
-    uint16_t    load_address;               /**< load address on C64 */
-    uint16_t    init_address;               /**< init address on C64 */
-    uint16_t    play_address;               /**< play address on C64 */
+    uint16_t  data_offset;                          /**< offset to SID data */
+    uint16_t  load_address;                         /**< load address on C64 */
+    uint16_t  init_address;                         /**< init address on C64 */
+    uint16_t  play_address;                         /**< play address on C64 */
 
-    uint16_t    songs;                      /**< number of songs */
-    uint16_t    start_song;                 /**< starting song */
-    uint32_t    speed;                      /**< song speed flags */
+    uint16_t  songs;                                /**< number of songs */
+    uint16_t  start_song;                           /**< starting song */
+    uint32_t  speed;                                /**< song speed flags */
 
-    char        name[HVSC_PSID_TEXT_LEN + 1];   /**< SID name */
-    char        author[HVSC_PSID_TEXT_LEN + 1]; /**< SID author */
-    char        copyright[HVSC_PSID_TEXT_LEN + 1]; /**< SID copyright */
+    char      name[HVSC_PSID_TEXT_LEN + 1];         /**< SID name */
+    char      author[HVSC_PSID_TEXT_LEN + 1];       /**< SID author */
+    char      copyright[HVSC_PSID_TEXT_LEN + 1];    /**< SID copyright */
 
-    /*
-     * PSIDv2NG+ only fields
-     */
-
-    uint16_t    flags;                      /**< PSID flags */
-    uint8_t     start_page;                 /**< starting page of free memory                                                         not touched by the SID */
-    uint8_t     page_length;                /**< number of free pages after
-                                                 start page */
-    uint16_t    second_sid;                 /**< second SID I/O address */
-    uint16_t    third_sid;                  /**< third SID I/O adress */
+    /* PSIDv2NG+ only fields */
+    uint16_t  flags;                                /**< PSID flags */
+    uint8_t   start_page;                           /**< starting page of free
+                                                         memory not touched by
+                                                         the SID */
+    uint8_t   page_length;                          /**< number of free pages
+                                                         after start page */
+    uint16_t  second_sid;                           /**< 2nd SID I/O address */
+    uint16_t  third_sid;                            /**< 3rd SID I/O adress */
 
 } hvsc_psid_t;
 
@@ -286,8 +302,8 @@ typedef struct hvsc_psid_s {
  * main.c stuff
  */
 
-int         hvsc_init(const char *path);
-void        hvsc_exit(void);
+bool        hvsc_init           (const char *path);
+void        hvsc_exit           (void);
 const char *hvsc_lib_version_str(void);
 void        hvsc_lib_version_num(int *major, int *minor, int *revision);
 
@@ -295,52 +311,51 @@ void        hvsc_lib_version_num(int *major, int *minor, int *revision);
  * base.c stuff
  */
 
-
 extern int hvsc_errno;
 
-const char *hvsc_strerror(int n);
-void        hvsc_perror(const char *prefix);
-
+const char *hvsc_strerror  (int n);
+void        hvsc_perror    (const char *prefix);
+bool        hvsc_md5_digest(const char *psid, char *digest);
 
 /*
  * sldb.c stuff
  */
 
-#ifdef HVSC_USE_MD5
-char *      hvsc_sldb_get_entry_md5(const char *psid);
-#endif
-char *      hvsc_sldb_get_entry_txt(const char *psid);
-int         hvsc_sldb_get_lengths(const char *psid, long **lengths);
-
+char *      hvsc_sldb_get_entry_md5   (const char *psid);
+char *      hvsc_sldb_get_entry_txt   (const char *psid);
+int         hvsc_sldb_get_lengths     (const char *psid, long **lengths);
+int         hvsc_sldb_get_lengths_md5 (const char *digest, long **lengths);
+char *      hvsc_sldb_get_path_for_md5(const char *digest);
 
 /*
  * stil.c stuff
  */
 
-int         hvsc_stil_open(const char *psid, hvsc_stil_t *handle);
-void        hvsc_stil_close(hvsc_stil_t *handle);
-int         hvsc_stil_read_entry(hvsc_stil_t *handle);
-void        hvsc_stil_dump_entry(hvsc_stil_t *handle);
-int         hvsc_stil_parse_entry(hvsc_stil_t *handle);
-void        hvsc_stil_dump(hvsc_stil_t *handle);
+bool        hvsc_stil_open       (const char *psid,   hvsc_stil_t *handle);
+bool        hvsc_stil_open_md5   (const char *digest, hvsc_stil_t *handle);
+void        hvsc_stil_close      (hvsc_stil_t *handle);
+bool        hvsc_stil_read_entry (hvsc_stil_t *handle);
+void        hvsc_stil_dump_entry (hvsc_stil_t *handle);
+void        hvsc_stil_parse_entry(hvsc_stil_t *handle);
+void        hvsc_stil_dump       (hvsc_stil_t *handle);
 
 /* XXX: needs much better name
  *
  * This combines calls of stil_open(), stil_read_entry() and stil_parse_entry()
  * It's probably best to make those functions static and leave this one.
  * */
-int         hvsc_stil_get(hvsc_stil_t *stil, const char *path);
-
-int         hvsc_stil_get_tune_entry(const hvsc_stil_t *handle,
-                                     hvsc_stil_tune_entry_t *entry,
-                                     int tune);
+bool        hvsc_stil_get            (hvsc_stil_t *stil, const char *path);
+bool        hvsc_stil_get_md5        (hvsc_stil_t *stil, const char *digest);
+bool        hvsc_stil_get_tune_entry (const hvsc_stil_t      *handle,
+                                      hvsc_stil_tune_entry_t *entry,
+                                      int                     tune);
 void        hvsc_stil_dump_tune_entry(const hvsc_stil_tune_entry_t *entry);
 
 /*
  * bugs.c stuff
  */
 
-int         hvsc_bugs_open(const char *psid, hvsc_bugs_t *handle);
+bool        hvsc_bugs_open (const char *psid, hvsc_bugs_t *handle);
 void        hvsc_bugs_close(hvsc_bugs_t *handle);
 
 
@@ -348,13 +363,13 @@ void        hvsc_bugs_close(hvsc_bugs_t *handle);
  * psid.c stuff
  */
 
-int             hvsc_psid_open(const char *path, hvsc_psid_t *handle);
-void            hvsc_psid_close(hvsc_psid_t *handle);
-void            hvsc_psid_dump(const hvsc_psid_t *handle);
-int             hvsc_psid_write_bin(const hvsc_psid_t *handle, const char *path);
-unsigned int    hvsc_psid_get_model_id(const hvsc_psid_t *handle, int sid);
+bool            hvsc_psid_open         (const char *path, hvsc_psid_t *handle);
+void            hvsc_psid_close        (hvsc_psid_t *handle);
+void            hvsc_psid_dump         (const hvsc_psid_t *handle);
+bool            hvsc_psid_write_bin    (const hvsc_psid_t *handle, const char *path);
+unsigned int    hvsc_psid_get_model_id (const hvsc_psid_t *handle, int sid);
 const char *    hvsc_psid_get_model_str(const hvsc_psid_t *handle, int sid);
-unsigned int    hvsc_psid_get_clock_id(const hvsc_psid_t *handle);
+unsigned int    hvsc_psid_get_clock_id (const hvsc_psid_t *handle);
 const char *    hvsc_psid_get_clock_str(const hvsc_psid_t *handle);
 
 /*
@@ -362,6 +377,5 @@ const char *    hvsc_psid_get_clock_str(const hvsc_psid_t *handle);
  */
 
 const char *    hvsc_get_field_display(int type);
-
 
 #endif

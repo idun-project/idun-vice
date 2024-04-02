@@ -54,13 +54,14 @@
    JOY6 | pin J (D5)
    JOY7 | pin K (D6)
    JOY8 | pin L (D7)
-   
+
    The userport is driven in such a way that only 1 joystick
    has ground.
 
+   Note that the +5VDC pin is NOT connected to the 8 joystick ports
+
    Works on:
    - native joystick port(s) (x64/x64sc/xscpu64/x128/xvic)
-
  */
 
 static int spaceballs_enabled = 0;
@@ -73,26 +74,32 @@ static joyport_t joyport_spaceballs_device;
 
 static userport_device_t userport_spaceballs_device;
 
-static int joyport_spaceballs_enable(int port, int value)
+static int joyport_spaceballs_set_enabled(int port, int enabled)
 {
-    int val = value ? 1 : 0;
+    int new_state = enabled ? 1 : 0;
 
-    if (val == spaceballs_enabled) {
+    if (new_state == spaceballs_enabled) {
         return 0;
     }
 
-    if (val) {
+    if (new_state) {
+        /* enabled, activate userport part of the spaceballs adapter */
         if (resources_set_int("UserportDevice", USERPORT_DEVICE_SPACEBALLS) < 0) {
             return -1;
         }
+        /* activate joystick adapter and set amount of ports to 8 */
         joystick_adapter_activate(JOYSTICK_ADAPTER_ID_SPACEBALLS, joyport_spaceballs_device.name);
-        joystick_adapter_set_ports(8);
+
+        /* enable 8 extra joystick ports, without +5VDC support */
+        joystick_adapter_set_ports(8, 0);
     } else {
+        /* disabled, deactivate joystick adapter and userport part of the spaceballs adapter */
         joystick_adapter_deactivate();
         resources_set_int("UserportDevice", USERPORT_DEVICE_NONE);
     }
 
-    spaceballs_enabled = val;
+    /* set current state */
+    spaceballs_enabled = new_state;
 
     return 0;
 }
@@ -100,13 +107,15 @@ static int joyport_spaceballs_enable(int port, int value)
 static uint8_t spaceballs_read(int port)
 {
     uint8_t retval = 0;
-    uint16_t joyval = 0;
+    uint8_t joyval = 0;
 
     int i;
 
     for (i = 0; i < 8; i++) {
+        /* check which joystick are selected */
         if (!((spaceballs_grounds >> i) & 1)) {
-            joyval = get_joystick_value(JOYPORT_3 + i);
+            /* get value from selected joystick */
+            joyval = ~read_joyport_dig(JOYPORT_3 + i);
             retval |= (joyval & 0x1f);
         }
     }
@@ -124,10 +133,11 @@ static joyport_t joyport_spaceballs_device = {
     JOYPORT_RES_ID_NONE,              /* device can be used in multiple ports at the same time */
     JOYPORT_IS_NOT_LIGHTPEN,          /* device is NOT a lightpen */
     JOYPORT_POT_OPTIONAL,             /* device does NOT use the potentiometer lines */
+    JOYPORT_5VDC_NOT_NEEDED,          /* decice does NOT need the +5VDC on the joystick port, the switching gets its power from the +5VDC on the userport */
     JOYSTICK_ADAPTER_ID_SPACEBALLS,   /* device is a joystick adapter */
     JOYPORT_DEVICE_JOYSTICK_ADAPTER,  /* device is a Joystick adapter */
     0,                                /* NO output bits */
-    joyport_spaceballs_enable,        /* device enable function */
+    joyport_spaceballs_set_enabled,   /* device enable/disable function */
     spaceballs_read,                  /* digital line read function */
     NULL,                             /* NO digital line store function */
     NULL,                             /* NO pot-x read function */
@@ -174,6 +184,7 @@ static userport_device_t userport_spaceballs_device = {
     NULL,                                  /* NO read sp1 pin function */
     NULL,                                  /* NO store sp2 pin function */
     NULL,                                  /* NO read sp2 pin function */
+    NULL,                                  /* reset */
     NULL,                                  /* NO powerup function */
     NULL,                                  /* NO snapshot write function */
     NULL                                   /* NO snapshot read function */
@@ -202,7 +213,7 @@ static int spaceballs_write_snapshot(struct snapshot_s *s, int p)
         return -1;
     }
 
-    if (0 
+    if (0
         || SMW_B(m, spaceballs_grounds) < 0) {
             snapshot_module_close(m);
             return -1;

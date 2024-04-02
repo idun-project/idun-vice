@@ -37,11 +37,6 @@
 #include <sys/types.h>
 #endif
 
-/* VAC++ has off_t in sys/stat.h */
-#ifdef __IBMC__
-#include <sys/stat.h>
-#endif
-
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -173,7 +168,8 @@ static io_source_t ide64_idebus_device = {
     ide64_idebus_dump,           /* device state information dump function */
     CARTRIDGE_IDE64,             /* cartridge ID */
     IO_PRIO_NORMAL,              /* normal priority, device read needs to be checked for collisions */
-    0                            /* insertion order, gets filled in by the registration function */
+    0,                           /* insertion order, gets filled in by the registration function */
+    IO_MIRROR_NONE               /* NO mirroring */
 };
 
 static io_source_t ide64_io_device = {
@@ -189,7 +185,8 @@ static io_source_t ide64_io_device = {
     ide64_io_dump,               /* device state information dump function */
     CARTRIDGE_IDE64,             /* cartridge ID */
     IO_PRIO_NORMAL,              /* normal priority, device read needs to be checked for collisions */
-    0                            /* insertion order, gets filled in by the registration function */
+    0,                           /* insertion order, gets filled in by the registration function */
+    IO_MIRROR_NONE               /* NO mirroring */
 };
 
 static io_source_t ide64_ft245_device = {
@@ -205,7 +202,8 @@ static io_source_t ide64_ft245_device = {
     NULL,                          /* TODO: device state information dump function */
     CARTRIDGE_IDE64,               /* cartridge ID */
     IO_PRIO_NORMAL,                /* normal priority, device read needs to be checked for collisions */
-    0                              /* insertion order, gets filled in by the registration function */
+    0,                             /* insertion order, gets filled in by the registration function */
+    IO_MIRROR_NONE                 /* NO mirroring */
 };
 
 static io_source_t ide64_ds1302_device = {
@@ -221,7 +219,8 @@ static io_source_t ide64_ds1302_device = {
     ide64_rtc_dump,                 /* device state information dump function */
     CARTRIDGE_IDE64,                /* cartridge ID */
     IO_PRIO_NORMAL,                 /* normal priority, device read needs to be checked for collisions */
-    0                               /* insertion order, gets filled in by the registration function */
+    0,                              /* insertion order, gets filled in by the registration function */
+    IO_MIRROR_NONE                  /* NO mirroring */
 };
 
 static io_source_t ide64_rom_device = {
@@ -237,7 +236,8 @@ static io_source_t ide64_rom_device = {
     NULL,                        /* TODO: device state information dump function */
     CARTRIDGE_IDE64,             /* cartridge ID */
     IO_PRIO_NORMAL,              /* normal priority, device read needs to be checked for collisions */
-    0                            /* insertion order, gets filled in by the registration function */
+    0,                           /* insertion order, gets filled in by the registration function */
+    IO_MIRROR_NONE               /* NO mirroring */
 };
 
 static io_source_t ide64_clockport_device = {
@@ -253,7 +253,8 @@ static io_source_t ide64_clockport_device = {
     ide64_clockport_dump,             /* device state information dump function */
     CARTRIDGE_IDE64,                  /* cartridge ID */
     IO_PRIO_NORMAL,                   /* normal priority, device read needs to be checked for collisions */
-    0                                 /* insertion order, gets filled in by the registration function */
+    0,                                /* insertion order, gets filled in by the registration function */
+    IO_MIRROR_NONE                    /* NO mirroring */
 };
 
 static io_source_list_t *ide64_idebus_list_item = NULL;
@@ -422,13 +423,13 @@ static void detect_ide64_image(struct drive_s *drive)
     drive->type = ATA_DRIVE_CF;
     ext = util_get_extension(drive->filename);
     if (ext) {
-        if (!strcasecmp(ext, "cfa")) {
+        if (!util_strcasecmp(ext, "cfa")) {
             drive->type = ATA_DRIVE_CF;
-        } else if (!strcasecmp(ext, "hdd")) {
+        } else if (!util_strcasecmp(ext, "hdd")) {
             drive->type = ATA_DRIVE_HDD;
-        } else if (!strcasecmp(ext, "fdd")) {
+        } else if (!util_strcasecmp(ext, "fdd")) {
             drive->type = ATA_DRIVE_FDD;
-        } else if (!strcasecmp(ext, "iso")) {
+        } else if (!util_strcasecmp(ext, "iso")) {
             drive->type = ATA_DRIVE_CD;
         }
     }
@@ -463,8 +464,8 @@ static void detect_ide64_image(struct drive_s *drive)
             }
         } else {
             off_t size = 0;
-            if (fseeko(file, 0, SEEK_END) == 0) {
-                size = ftello(file);
+            if (archdep_fseeko(file, 0, SEEK_END) == 0) {
+                size = archdep_ftello(file);
                 if (size < 0) {
                     size = 0;
                 }
@@ -497,7 +498,7 @@ static int set_cylinders(int cylinders, void *param)
 {
     struct drive_s *drive = &drives[vice_ptr_to_int(param)];
 
-    if (cylinders > 65535 || cylinders < 1) {
+    if (cylinders > IDE64_CYLINDERS_MAX || cylinders < IDE64_CYLINDERS_MIN) {
         return -1;
     }
 
@@ -512,7 +513,7 @@ static int set_heads(int heads, void *param)
 {
     struct drive_s *drive = &drives[vice_ptr_to_int(param)];
 
-    if (heads > 16 || heads < 1) {
+    if (heads > IDE64_HEADS_MAX || heads < IDE64_HEADS_MIN) {
         return -1;
     }
     drive->settings.heads = heads;
@@ -526,7 +527,7 @@ static int set_sectors(int sectors, void *param)
 {
     struct drive_s *drive = &drives[vice_ptr_to_int(param)];
 
-    if (sectors > 63 || sectors < 1) {
+    if (sectors > IDE64_SECTORS_MAX || sectors < IDE64_SECTORS_MIN) {
         return -1;
     }
     drive->settings.sectors = sectors;
@@ -586,7 +587,7 @@ static int set_version(int value, void *param)
             return -1;
         }
         usbserver_activate(settings_usbserver);
-        machine_trigger_reset(MACHINE_RESET_MODE_HARD);
+        machine_trigger_reset(MACHINE_RESET_MODE_POWER_CYCLE);
     }
     return 0;
 }
@@ -1568,19 +1569,23 @@ static int ide64_common_attach(uint8_t *rawcart, int detect)
 
 int ide64_bin_attach(const char *filename, uint8_t *rawcart)
 {
-    size_t len;
+    off_t len;
     FILE *fd;
 
     fd = fopen(filename, MODE_READ);
     if (fd == NULL) {
         return -1;
     }
-    len = util_file_length(fd);
+    len = archdep_file_size(fd);
+    if (len < 0) {
+        fclose(fd);
+        return -1;
+    }
     fclose(fd);
 
     /* we accept 64k, 128k and full 512k images */
     if (len == 0x10000 || len == 0x20000 || len == 0x80000) {
-        if (util_file_load(filename, rawcart, len, UTIL_FILE_LOAD_SKIP_ADDRESS) < 0) {
+        if (util_file_load(filename, rawcart, (size_t)len, UTIL_FILE_LOAD_SKIP_ADDRESS) < 0) {
             return -1;
         }
     }

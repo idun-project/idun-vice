@@ -37,10 +37,12 @@
 #include "c128memrom.h"
 #include "c128mmu.h"
 #include "c64cart.h"
+#include "c128cart.h"
 #include "cmdline.h"
 #include "functionrom.h"
 #include "interrupt.h"
 #include "keyboard.h"
+#include "keymap.h"
 #include "log.h"
 #include "maincpu.h"
 #include "mem.h"
@@ -55,15 +57,26 @@
 #include "z80mem.h"
 
 /* #define MMU_DEBUG */
+/* #define DEBUG_KEYS */
+
+#ifdef DEBUG_KEYS
+#define DBGKEY(x) log_debug x
+#else
+#define DBGKEY(x)
+#endif
+
+#define NUM_CONFIGS64  32
+#define NUM_CONFIGS128 256
+#define NUM_CONFIGS (NUM_CONFIGS64+NUM_CONFIGS128)
 
 /* MMU register.  */
-static uint8_t mmu[12];
+uint8_t mmu[12];
 
 /* latches for P0H and P1H */
 static uint8_t p0h_latch, p1h_latch;
 
-/* State of the 40/80 column key.  */
-static int mmu_column4080_key = 1;
+/* State of the 40/80 column key (Resource value)  */
+static int mmu_column4080_key = -1;
 
 static int force_c64_mode_res = 0;
 static int force_c64_mode = 0;
@@ -75,9 +88,25 @@ static log_t mmu_log = LOG_ERR;
 
 /* ------------------------------------------------------------------------- */
 
+/* resource handler for "C128ColumnKey"
+    = 1 : 40 colums     (key released: 0)
+    = 0 : 80 colums     (key pressed: 1)
+*/
 static int set_column4080_key(int val, void *param)
 {
-    mmu_column4080_key = val ? 1 : 0;
+    DBGKEY(("set_column4080_key %d", val));
+    if (mmu_column4080_key != val) {
+        /* caution, the resource value is 1 when the key is not pressed (val = 0) */
+        keyboard_custom_key_set(KBD_CUSTOM_4080, val ? 0 : 1);
+        val = keyboard_custom_key_get(KBD_CUSTOM_4080);
+        if (val != 1) {
+            val = 0;
+        }
+        /* caution, the resource value is 1 when the key is not pressed (val = 0) */
+        mmu_column4080_key = val ^ 1;
+        DBGKEY(("set_column4080_key mmu_column4080_key:%d 40/80 column key: %s.",
+            mmu_column4080_key, mmu_column4080_key ? "40cols" : "80cols"));
+    }
 
 #ifdef HAS_SINGLE_CANVAS
     vdc_set_canvas_refresh(mmu_column4080_key ? 0 : 1);
@@ -201,11 +230,21 @@ static uint8_t mmu_is_valid_ram(uint8_t page, uint8_t bank, uint8_t current_bank
     return 0;
 }
 
-static void mmu_toggle_column4080_key(void)
+/* custom key handler, called when key either pressed or released */
+static int mmu_4080_key_event(int pressed)
 {
-    mmu_column4080_key = !mmu_column4080_key;
-    resources_set_int("C128ColumnKey", mmu_column4080_key);
-    log_message(mmu_log, "40/80 column key %s.", (mmu_column4080_key) ? "released" : "pressed");
+    DBGKEY(("mmu_4080_key_event pressed:%d", pressed));
+    /*keyboard_custom_key_set(KBD_CUSTOM_4080, pressed);
+    pressed = keyboard_custom_key_get(KBD_CUSTOM_4080);*/
+    if (pressed != 1) {
+        pressed = 0;
+    }
+    /* caution, the resource value is 1 when the key is not pressed (enabled = 0) */
+    mmu_column4080_key = pressed ? 0 : 1;
+    mem_pla_config_changed();
+    DBGKEY(("mmu_4080_key_event mmu_column4080_key:%d 40/80 column key: %s.",
+            mmu_column4080_key, mmu_column4080_key ? "40cols" : "80cols"));
+    return pressed;
 }
 
 static void mmu_switch_cpu(int value)
@@ -214,16 +253,18 @@ static void mmu_switch_cpu(int value)
 #ifdef MMU_DEBUG
         log_message(mmu_log, "Switching to 8502 CPU.");
 #endif
+        monitor_cpu_type_set_value(CPU_6502);
         z80_trigger_dma();
     } else {
 #ifdef MMU_DEBUG
         log_message(mmu_log, "Switching to Z80 CPU.");
 #endif
+        monitor_cpu_type_set_value(CPU_Z80);
         interrupt_trigger_dma(maincpu_int_status, maincpu_clk);
     }
 }
 
-static void mmu_set_ram_bank(uint8_t value)
+void mmu_set_ram_bank(uint8_t value)
 {
     if (c128_full_banks) {
         ram_bank = mem_ram + (((long)value & 0xc0) << 10);
@@ -237,6 +278,15 @@ static void mmu_set_ram_bank(uint8_t value)
         log_message(mmu_log, "Set RAM bank %i.", (value & 0x40) >> 6);
     }
 #endif
+}
+
+static void mmu_set_dma_bank(uint8_t value)
+{
+    if (c128_full_banks) {
+        dma_bank = mem_ram + (((long)value & 0xc0) << 10);
+    } else {
+        dma_bank = mem_ram + (((long)value & 0x40) << 10);
+    }
 }
 
 static void mmu_update_page01_pointers(void)
@@ -276,14 +326,18 @@ static void mmu_update_page01_pointers(void)
 /* returns 1 if MMU is in C64 mode */
 int mmu_is_c64config(void)
 {
-    return (mmu[5] & 0x40) ? 1 : 0; /* FIXME: is this correct? */
+    return (mmu[5] & 0x40) ? 1 : 0;
 }
+
+int in_c64_mode = -1;
+int c64_mode_bank = 0;
 
 static void mmu_switch_to_c64mode(void)
 {
 #ifdef MMU_DEBUG
     log_message(mmu_log, "mmu_switch_to_c64mode\n");
 #endif
+#if 0
     if (force_c64_mode) {
 #ifdef MMU_DEBUG
         log_message(mmu_log, "mmu_switch_to_c64mode: force_c64_mode\n");
@@ -296,18 +350,33 @@ static void mmu_switch_to_c64mode(void)
         /* force standard addresses for stack and zeropage */
         mmu[7] = 0;
         c128_mem_set_mmu_page_0(0);
+        mmu_set_dma_bank(mmu[6]);
         mmu[8] = 0;
         mmu[9] = 1;
         c128_mem_set_mmu_page_1(1);
         mmu[10] = 0;
         mmu_update_page01_pointers();
     }
+#endif
     machine_tape_init_c64();
-    mem_update_config(0x80 + mmu_config64);
+    if (in_c64_mode != 1) {
+        mem_initialize_go64_memory_bank(mmu[6]);
+        if (c128_full_banks) {
+            c64_mode_bank = ((mmu[0] >> 6) & 0x3);
+        } else {
+            c64_mode_bank = ((mmu[0] >> 6) & 0x1);
+        }
+        in_c64_mode = 1;
+        z80mem_update_config(8 + (mmu_config64 & 7));
+    }
+    /* make sure mem_initialize_go64_memory_bank() is run first */
+    mem_update_config(mmu_config64);
     keyboard_alternative_set(1);
     machine_kbdbuf_reset_c64();
     machine_autostart_reset_c64();
+#if 0
     force_c64_mode = 0;
+#endif
 }
 
 static void mmu_switch_to_c128mode(void)
@@ -316,12 +385,12 @@ static void mmu_switch_to_c128mode(void)
     log_message(mmu_log, "mmu_switch_to_c128mode\n");
 #endif
     machine_tape_init_c128();
-    mem_update_config(((mmu[0] & 0x2) ? 0 : 1) |
-                      ((mmu[0] & 0x0c) >> 1) |
-                      ((mmu[0] & 0x30) >> 1) |
-                      ((mmu[0] & 0x40) ? 32 : 0) |
-                      ((mmu[0] & 0x1) ? 0 : 64));
+    mem_update_config(NUM_CONFIGS64 + mmu[0]);
     z80mem_update_config((((mmu[0] & 0x1)) ? 0 : 1) | ((mmu[0] & 0x40) ? 2 : 0) | ((mmu[0] & 0x80) ? 4 : 0));
+    if (in_c64_mode != 0) {
+        mem_initialize_go64_memory_bank(mmu[6]);
+        in_c64_mode = 0;
+    }
     keyboard_alternative_set(0);
     machine_kbdbuf_reset_c128();
     machine_autostart_reset_c128();
@@ -432,9 +501,18 @@ void mmu_store(uint16_t address, uint8_t value)
                 if ((value & 1) ^ (oldvalue & 1)) {
                     mmu_switch_cpu(value & 1);
                 }
+                if (((value & 0x40) ^ (oldvalue & 0x40)) && (value & 0x40)) {
+                   /* tell carts we are in c64 mode */
+                   /* can't do this in mmu_switch_to_c64mode as cart_config calls it */
+                   c128cartridge_switch_mode(1);
+                   /* turn off the forced exrom signal in the mmu_read */
+                   force_c64_mode = 0;
+                }
                 c128fastiec_fast_cpu_direction(value & 8);
                 break;
             case 6: /* RAM configuration register (RCR).  */
+                mmu_set_dma_bank(value);
+                /* must call mmu_set_dma_bank before mem_set_ram_config */
                 mem_set_ram_config(value);
                 break;
             case 8:
@@ -473,6 +551,23 @@ void mmu_store(uint16_t address, uint8_t value)
     }
 }
 
+/* z80 version of the mmu read using in/out, the mmu i/o range for the z80 depends on the mmu i/o bit */
+uint8_t z80_c128_mmu_read(uint16_t addr)
+{
+    if (mmu[0] & 1) {
+        return 0;
+    }
+    return mmu_read(addr);
+}
+
+/* z80 version of the mmu store using in/out, the mmu i/o range for the z80 depends on the mmu i/o bit */
+void z80_c128_mmu_store(uint16_t address, uint8_t value)
+{
+    if (!(mmu[0] & 1)) {
+        mmu_store(address, value);
+    }
+}
+
 /* $FF00 - $FFFF: RAM, Kernal or internal function ROM, with MMU at
    $FF00 - $FF04.  */
 uint8_t mmu_ffxx_read(uint16_t addr)
@@ -480,7 +575,7 @@ uint8_t mmu_ffxx_read(uint16_t addr)
     if (addr >= 0xff00 && addr <= 0xff04) {
         vicii.last_cpu_val = mmu[addr & 0xf];
     } else if ((mmu[0] & 0x30) == 0x00) {
-        vicii.last_cpu_val = c128memrom_kernal_read(addr);
+        vicii.last_cpu_val = hi_read(addr);
     } else if ((mmu[0] & 0x30) == 0x10) {
         vicii.last_cpu_val = internal_function_rom_read(addr);
     } else if ((mmu[0] & 0x30) == 0x20) {
@@ -489,15 +584,6 @@ uint8_t mmu_ffxx_read(uint16_t addr)
         vicii.last_cpu_val = top_shared_read(addr);
     }
     return vicii.last_cpu_val;
-}
-
-uint8_t mmu_ffxx_read_z80(uint16_t addr)
-{
-    if (addr >= 0xff00 && addr <= 0xff04) {
-        return mmu[addr & 0xf];
-    }
-
-    return top_shared_read(addr);
 }
 
 void mmu_ffxx_store(uint16_t addr, uint8_t value)
@@ -512,7 +598,7 @@ void mmu_ffxx_store(uint16_t addr, uint8_t value)
         if (addr <= 0xff04) {
             mmu_store(0, mmu[addr & 0xf]);
         } else {
-            top_shared_store(addr, value);
+            hi_store(addr, value);
         }
     }
 }
@@ -587,7 +673,7 @@ int mmu_dump(void *context, uint16_t addr)
 void mmu_init(void)
 {
     mmu_log = log_open("MMU");
-
+    DBGKEY(("mmu_init mmu_column4080_key:%d", mmu_column4080_key));
     set_column4080_key(mmu_column4080_key, NULL);
 
     mmu[5] = 0;
@@ -600,10 +686,19 @@ void mmu_reset(void)
     for (i = 0; i < 0xb; i++) {
         mmu[i] = 0;
     }
+    /* defaults */
+    mmu[7] = 0;
+    c128_mem_set_mmu_page_0(mmu[7]);
     mmu[9] = 1;
+    c128_mem_set_mmu_page_1(mmu[9]);
     mmu_update_page01_pointers();
+    mmu_set_dma_bank(mmu[6]);
 
-    keyboard_register_column4080_key(mmu_toggle_column4080_key);
+    /* CAUTION: the registered function MUST NOT call keyboard_custom_key_set() */
+    keyboard_register_custom_key(KBD_CUSTOM_4080, mmu_4080_key_event, "40/80 column key",
+                                 &key_ctrl_column4080, &key_flags_column4080);
 
     force_c64_mode = force_c64_mode_res;
+    /* tell carts we are in c128 mode, or c64 if forced */
+    c128cartridge_switch_mode(force_c64_mode);
 }

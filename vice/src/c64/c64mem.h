@@ -40,63 +40,47 @@
 #define C64_BASIC_ROM_SIZE   0x2000
 #define C64_CHARGEN_ROM_SIZE 0x1000
 
-#define C64_BASIC_CHECKSUM         15702
+int c64_mem_init_resources(void);
+int c64_mem_init_cmdline_options(void);
 
-#define C64_KERNAL_CHECKSUM_R01    54525
-#define C64_KERNAL_CHECKSUM_R02    50955
-#define C64_KERNAL_CHECKSUM_R03    50954
-#define C64_KERNAL_CHECKSUM_R03swe 50633
-#define C64_KERNAL_CHECKSUM_R43    50955
-#define C64_KERNAL_CHECKSUM_R64    49680
+void mem_set_vbank(int new_vbank);
 
-/* the value located at 0xff80 */
-#define C64_KERNAL_ID_R01    0xaa
-#define C64_KERNAL_ID_R02    0x00
-#define C64_KERNAL_ID_R03    0x03
-#define C64_KERNAL_ID_R03swe 0x03
-#define C64_KERNAL_ID_R43    0x43
-#define C64_KERNAL_ID_R64    0x64
+uint8_t ram_read(uint16_t addr);
+void ram_store(uint16_t addr, uint8_t value);
+void ram_hi_store(uint16_t addr, uint8_t value);
 
-extern int c64_mem_init_resources(void);
-extern int c64_mem_init_cmdline_options(void);
+uint8_t chargen_read(uint16_t addr);
+void chargen_store(uint16_t addr, uint8_t value);
 
-extern void mem_set_vbank(int new_vbank);
+void colorram_store(uint16_t addr, uint8_t value);
+uint8_t colorram_read(uint16_t addr);
 
-extern uint8_t ram_read(uint16_t addr);
-extern void ram_store(uint16_t addr, uint8_t value);
-extern void ram_hi_store(uint16_t addr, uint8_t value);
-
-extern uint8_t chargen_read(uint16_t addr);
-extern void chargen_store(uint16_t addr, uint8_t value);
-
-extern void colorram_store(uint16_t addr, uint8_t value);
-extern uint8_t colorram_read(uint16_t addr);
-
-extern void mem_pla_config_changed(void);
-extern void mem_set_tape_sense(int sense);
-extern void mem_set_tape_write_in(int val);
-extern void mem_set_tape_motor_in(int val);
+void mem_pla_config_changed(void);
+void mem_set_tape_sense(int sense);
+void mem_set_tape_write_in(int val);
+void mem_set_tape_motor_in(int val);
 
 extern uint8_t mem_chargen_rom[C64_CHARGEN_ROM_SIZE];
 
-extern void mem_set_write_hook(int config, int page, store_func_t *f);
-extern void mem_read_tab_set(unsigned int base, unsigned int index, read_func_ptr_t read_func);
-extern void mem_read_base_set(unsigned int base, unsigned int index, uint8_t *mem_ptr);
+void mem_set_write_hook(int config, int page, store_func_t *f);
+void mem_read_tab_set(unsigned int base, unsigned int index, read_func_ptr_t read_func);
+void mem_read_base_set(unsigned int base, unsigned int index, uint8_t *mem_ptr);
+void mem_read_limit_set(unsigned int base, unsigned int index, uint32_t limit);
 
-extern void mem_store_without_ultimax(uint16_t addr, uint8_t value);
-extern uint8_t mem_read_without_ultimax(uint16_t addr);
-extern void mem_store_without_romlh(uint16_t addr, uint8_t value);
+void mem_store_without_ultimax(uint16_t addr, uint8_t value);
+uint8_t mem_read_without_ultimax(uint16_t addr);
+void mem_store_without_romlh(uint16_t addr, uint8_t value);
 
-extern void store_bank_io(uint16_t addr, uint8_t byte);
-extern uint8_t read_bank_io(uint16_t addr);
+void store_bank_io(uint16_t addr, uint8_t byte);
+uint8_t read_bank_io(uint16_t addr);
 
-extern void c64_mem_init(void);
+void c64_mem_init(void);
 
-extern int c64_mem_ui_init_early(void);
-extern int c64_mem_ui_init(void);
-extern void c64_mem_ui_shutdown(void);
+int c64_mem_ui_init_early(void);
+int c64_mem_ui_init(void);
+void c64_mem_ui_shutdown(void);
 
-extern uint8_t vsid_io_read(uint16_t addr);
-extern void vsid_io_store(uint16_t addr, uint8_t val);
+uint8_t vsid_io_read(uint16_t addr);
+void vsid_io_store(uint16_t addr, uint8_t val);
 
 #endif

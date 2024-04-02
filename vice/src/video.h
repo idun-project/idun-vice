@@ -38,6 +38,11 @@
 #define VIDEO_FILTER_CRT          1
 #define VIDEO_FILTER_SCALE2X      2
 
+/* video filter type, resource "CHIPGLFilter" */
+#define VIDEO_GLFILTER_NEAREST      0
+#define VIDEO_GLFILTER_BILINEAR     1
+#define VIDEO_GLFILTER_BICUBIC      2
+
 /* These constants are used to configure the video output.  */
 
 /* no video output (dummy) */
@@ -56,6 +61,17 @@
 #define VIDEO_RENDER_RGBI_2X2         9
 #define VIDEO_RENDER_RGBI_2X4        10 /* needed for y-stretch */
 
+/* type of monitor/display that is connected */
+#define VIDEO_CRT_TYPE_NTSC           0
+#define VIDEO_CRT_TYPE_PAL            1
+#define VIDEO_CRT_TYPE_RGB            2
+#define VIDEO_CRT_TYPE_MONO           3
+
+/* aspect ration mode (<CHIP>AspectMode) */
+#define VIDEO_ASPECT_MODE_NONE          0
+#define VIDEO_ASPECT_MODE_CUSTOM        1
+#define VIDEO_ASPECT_MODE_TRUE          2
+
 struct video_canvas_s;
 struct video_cbm_palette_s;
 struct viewport_s;
@@ -65,9 +81,6 @@ struct palette_s;
 struct canvas_refresh_s {
     uint8_t *draw_buffer;
     int draw_buffer_line_size;
-#ifdef __OS2__
-    int bufh;
-#endif
     int x;
     int y;
 };
@@ -111,20 +124,13 @@ struct cap_render_s {
 };
 typedef struct cap_render_s cap_render_t;
 
-
+/* FIXME: get rid of this */
 #define FULLSCREEN_MAXDEV 4
 
 struct cap_fullscreen_s {
     /* FIXME: get rid of as much as possible of this. */
-    unsigned int device_num;
-    const char *device_name[FULLSCREEN_MAXDEV];
     int (*enable)(struct video_canvas_s *canvas, int enable);
-    int (*statusbar)(struct video_canvas_s *canvas, int enable);
-    int (*device)(struct video_canvas_s *canvas, const char *device);
     int (*mode[FULLSCREEN_MAXDEV])(struct video_canvas_s *canvas, int mode);
-    /* needed in SDL */
-    int (*double_size)(struct video_canvas_s *canvas, int double_size);
-    int (*double_scan)(struct video_canvas_s *canvas, int double_scan);
 };
 typedef struct cap_fullscreen_s cap_fullscreen_t;
 
@@ -134,13 +140,12 @@ struct video_chip_cap_s {
     unsigned int dsize_limit_width;
     unsigned int dsize_limit_height;
     unsigned int dscan_allowed;
-    unsigned int scale2x_allowed;
-    unsigned int double_buffering_allowed;
     unsigned int interlace_allowed;
     const char *external_palette_name;
     cap_render_t single_mode;
     cap_render_t double_mode;
     cap_fullscreen_t fullscreen;
+    unsigned int video_has_palntsc; /* 1 if options for pal/ntsc/secam/whatever colour system are needed */
 };
 typedef struct video_chip_cap_s video_chip_cap_t;
 
@@ -166,7 +171,7 @@ struct video_render_color_tables_s {
     int32_t line_yuv_0[VIDEO_MAX_OUTPUT_WIDTH * 3];
     int16_t prevrgbline[VIDEO_MAX_OUTPUT_WIDTH * 3];
     uint8_t rgbscratchbuffer[VIDEO_MAX_OUTPUT_WIDTH * 4];
-    
+
     /*
      * All values below here formerly were globals in video-color.h.
      * This resulted in palette leaks between multiple rendering windows (VDC / VICII)
@@ -181,7 +186,7 @@ struct video_render_color_tables_s {
 
     /* optional alpha value for 32bit rendering */
     uint32_t alpha;
-    
+
     uint32_t color_red[256];
     uint32_t color_grn[256];
     uint32_t color_blu[256];
@@ -201,6 +206,7 @@ typedef struct video_resources_s {
     int pal_blur;               /* luma blur */
     int pal_oddlines_phase;     /* oddlines UV phase offset */
     int pal_oddlines_offset;    /* oddlines UV multiplier */
+    int delaylinetype;          /* type of delayline, UV or just U (1084 style) */
 
     int audioleak;              /* flag: enable video->audio leak emulation */
 } video_resources_t;
@@ -215,88 +221,77 @@ struct video_render_config_s {
     int scalex;                    /* Horizontal scaling */
     int scaley;                    /* Vertical scaling */
     int doublescan;                /* Doublescan enabled?  */
-    int scale2x;                   /* Scale2x enabled?  */
     int filter;                    /* VIDEO_FILTER_NONE, VIDEO_FILTER_CRT, VIDEO_FILTER_SCALE2X */
+    int glfilter;                  /* <CHIP>GLFilter */
+    int vsync;                     /* <CHIP>VSync */
     int external_palette;          /* Use an external palette?  */
     char *external_palette_name;   /* Name of the external palette.  */
-    int double_buffer;             /* Double buffering enabled? */
     int readable;                  /* reading of frame buffer is safe and fast */
     int interlaced;                /* Is the output currently interlaced? */
     int interlace_field;           /* Which of the two interlaced frames is current? */
     struct video_cbm_palette_s *cbm_palette; /* Internal palette.  */
     struct video_render_color_tables_s color_tables;
+    int show_statusbar;            /**< Show statusbar in the UI (boolean) */
+    int aspect_mode;
+    double aspect_ratio;
+    char *aspect_ratio_s;               /* custom aspect ratio <CHIP>AspectRatio */
+    char *aspect_ratio_factory_value_s; /* custom aspect ratio <CHIP>AspectRatio */
+    int flipx, flipy, rotate;           /* mirroring; <CHIP>FlipX, <CHIP>FlipY, <CHIP>Rotate */
+    /* FIXME: we can probably get rid of this: */
+    int double_buffer;             /* Double buffering enabled? */
+    /* FIXME: get rid of as much as possible of the following: */
     int fullscreen_enabled;
-    int fullscreen_statusbar_enabled;
-    char *fullscreen_device;
-    int fullscreen_device_num;
-    int fullscreen_double_size_enabled;
-    int fullscreen_double_scan_enabled;
     int fullscreen_mode[FULLSCREEN_MAXDEV];
+    int fullscreen_custom_width; /* currently used only in the SDL port */
+    int fullscreen_custom_height; /* currently used only in the SDL port */
 };
 typedef struct video_render_config_s video_render_config_t;
 
-extern void video_render_initconfig(video_render_config_t *config);
-extern void video_render_setphysicalcolor(video_render_config_t *config,
-                                          int index, uint32_t color, int depth);
-extern void video_render_setrawrgb(video_render_color_tables_t *color_tab, unsigned int index,
-                                   uint32_t r, uint32_t g, uint32_t b);
-extern void video_render_setrawalpha(video_render_color_tables_t *color_tab, uint32_t a);
-extern void video_render_initraw(struct video_render_config_s *videoconfig);
+void video_render_initconfig(video_render_config_t *config);
+void video_render_setphysicalcolor(video_render_config_t *config, int index, uint32_t color, int depth);
+void video_render_setrawrgb(video_render_color_tables_t *color_tab, unsigned int index, uint32_t r, uint32_t g, uint32_t b);
+void video_render_setrawalpha(video_render_color_tables_t *color_tab, uint32_t a);
+void video_render_initraw(struct video_render_config_s *videoconfig);
 
 /**************************************************************/
 
-extern int video_arch_cmdline_options_init(void);
-extern int video_cmdline_options_init(void);
-extern int video_init(void);
-extern void video_shutdown(void);
+int video_arch_cmdline_options_init(void);
+int video_cmdline_options_init(void);
+int video_init(void);
+void video_shutdown(void);
 
-extern struct video_canvas_s *video_canvas_create(struct video_canvas_s *canvas,
-                                                  unsigned int *width, unsigned int *height,
-                                                  int mapped);
-extern void video_arch_canvas_init(struct video_canvas_s *canvas);
-extern int video_arch_get_active_chip(void);
-extern void video_canvas_shutdown(struct video_canvas_s *canvas);
-extern struct video_canvas_s *video_canvas_init(void);
-extern void video_canvas_refresh_all_tracked(void);
-extern void video_canvas_refresh(struct video_canvas_s *canvas,
-                                 unsigned int xs, unsigned int ys,
-                                 unsigned int xi, unsigned int yi,
-                                 unsigned int w, unsigned int h);
-extern int video_canvas_set_palette(struct video_canvas_s *canvas,
-                                    struct palette_s *palette);
+struct video_canvas_s *video_canvas_create(struct video_canvas_s *canvas, unsigned int *width, unsigned int *height, int mapped);
+void video_arch_canvas_init(struct video_canvas_s *canvas);
+int video_arch_get_active_chip(void);
+void video_canvas_shutdown(struct video_canvas_s *canvas);
+struct video_canvas_s *video_canvas_init(void);
+void video_canvas_refresh_all_tracked(void);
+void video_canvas_refresh(struct video_canvas_s *canvas, unsigned int xs, unsigned int ys, unsigned int xi, unsigned int yi,
+                          unsigned int w, unsigned int h);
+int video_canvas_set_palette(struct video_canvas_s *canvas, struct palette_s *palette);
+
 /* This will go away.  */
-extern int video_canvas_palette_set(struct video_canvas_s *canvas,
-                                    struct palette_s *palette);
-extern void video_canvas_create_set(struct video_canvas_s *canvas);
-extern void video_canvas_destroy(struct video_canvas_s *canvas);
-extern void video_canvas_map(struct video_canvas_s *canvas);
-extern void video_canvas_unmap(struct video_canvas_s *canvas);
-extern void video_canvas_resize(struct video_canvas_s *canvas, char resize_canvas);
-extern void video_canvas_render(struct video_canvas_s *canvas, uint8_t *trg,
-                                int width, int height, int xs, int ys,
-                                int xt, int yt, int pitcht);
-extern void video_canvas_refresh_all(struct video_canvas_s *canvas);
-extern char video_canvas_can_resize(struct video_canvas_s *canvas);
-extern void video_viewport_get(struct video_canvas_s *canvas,
-                               struct viewport_s **viewport,
-                               struct geometry_s **geometry);
-extern void video_viewport_resize(struct video_canvas_s *canvas, char resize_canvas);
-extern void video_viewport_title_set(struct video_canvas_s *canvas,
-                                     const char *title);
-extern void video_viewport_title_free(struct viewport_s *viewport);
+int video_canvas_palette_set(struct video_canvas_s *canvas, struct palette_s *palette);
+void video_canvas_create_set(struct video_canvas_s *canvas);
+void video_canvas_destroy(struct video_canvas_s *canvas);
+void video_canvas_map(struct video_canvas_s *canvas);
+void video_canvas_unmap(struct video_canvas_s *canvas);
+void video_canvas_resize(struct video_canvas_s *canvas, char resize_canvas);
+void video_canvas_render(struct video_canvas_s *canvas, uint8_t *trg, int width, int height, int xs, int ys, int xt, int yt, int pitcht);
+void video_canvas_refresh_all(struct video_canvas_s *canvas);
+char video_canvas_can_resize(struct video_canvas_s *canvas);
+void video_viewport_get(struct video_canvas_s *canvas, struct viewport_s **viewport, struct geometry_s **geometry);
+void video_viewport_resize(struct video_canvas_s *canvas, char resize_canvas);
 
 struct raster_s;
 
-extern int video_resources_init(void);
-extern void video_resources_shutdown(void);
-extern int video_resources_chip_init(const char *chipname,
-                                     struct video_canvas_s **canvas,
-                                     video_chip_cap_t *video_chip_cap);
-extern void video_resources_chip_shutdown(struct video_canvas_s *canvas);
-extern int video_cmdline_options_chip_init(const char *chipname,
-                                           video_chip_cap_t *video_chip_cap);
-extern int video_arch_resources_init(void);
-extern void video_arch_resources_shutdown(void);
+int video_resources_init(void);
+void video_resources_shutdown(void);
+int video_resources_chip_init(const char *chipname, struct video_canvas_s **canvas, video_chip_cap_t *video_chip_cap);
+void video_resources_chip_shutdown(struct video_canvas_s *canvas);
+int video_cmdline_options_chip_init(const char *chipname, video_chip_cap_t *video_chip_cap);
+int video_arch_resources_init(void);
+void video_arch_resources_shutdown(void);
 
 /* Video render interface */
 
@@ -306,8 +301,9 @@ extern void video_arch_resources_shutdown(void);
 #define CBM_PALETTE_RGB  1
 
 typedef struct video_cbm_color_s {
-    float luminance;        /* luminance                      */
-    float angle;            /* angle on color wheel           */
+    float luminance;        /* (R) luminance                      */
+    float angle;            /* (G) angle on color wheel           */
+    float saturation;       /* (B) */
     int direction;          /* +1 (pos), -1 (neg) or 0 (grey) */
     char *name;             /* name of this color             */
 } video_cbm_color_t;
@@ -315,16 +311,16 @@ typedef struct video_cbm_color_s {
          is currently abused for RGB colors also. */
 
 typedef struct video_cbm_palette_s {
-    unsigned int num_entries;           /* number of colors in palette */
-    video_cbm_color_t *entries;         /* array of colors             */
-    float saturation; /* base saturation of all colors except the grey tones */
+    unsigned int num_entries;           /* number of colors in palette  */
+    video_cbm_color_t *entries;         /* array of colors              */
+    video_cbm_color_t *entries_odd;     /* array of colors (odd lines)  */
+    video_cbm_color_t *entries_even;    /* array of colors (even lines) */
     float phase;      /* color phase (will be added to all color angles) */
     int type;
 } video_cbm_palette_t;
 
-extern void video_color_palette_internal(struct video_canvas_s *canvas,
-                                         struct video_cbm_palette_s *cbm_palette);
-extern int video_color_update_palette(struct video_canvas_s *canvas);
-extern void video_color_palette_free(struct palette_s *palette);
+void video_color_palette_internal(struct video_canvas_s *canvas, struct video_cbm_palette_s *cbm_palette);
+int video_color_update_palette(struct video_canvas_s *canvas);
+void video_color_palette_free(struct palette_s *palette);
 
 #endif

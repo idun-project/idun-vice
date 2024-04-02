@@ -29,7 +29,7 @@
 
 #include "directx_renderer_impl.h"
 
-#ifdef WIN32_COMPILE
+#ifdef WINDOWS_COMPILE
 
 #include <assert.h>
 #include <math.h>
@@ -46,8 +46,8 @@ extern "C"
 #include "videoarch.h"
 }
 
-#define CANVAS_LOCK() pthread_mutex_lock(&context->canvas_lock)
-#define CANVAS_UNLOCK() pthread_mutex_unlock(&context->canvas_lock)
+#define CANVAS_LOCK() pthread_mutex_lock(context->canvas_lock_ptr)
+#define CANVAS_UNLOCK() pthread_mutex_unlock(context->canvas_lock_ptr)
 #define RENDER_LOCK() pthread_mutex_lock(&context->render_lock)
 #define RENDER_UNLOCK() pthread_mutex_unlock(&context->render_lock)
 
@@ -418,15 +418,10 @@ static void build_render_bitmap(vice_directx_renderer_context_t *context, backbu
 
 static void recalculate_layout(video_canvas_t *canvas, vice_directx_renderer_context_t *context)
 {
-    int keepaspect = 1;
-    int trueaspect = 0;
     float scale_x;
     float scale_y;
     D2D1_SIZE_U  viewport_size_ddp;
     D2D1_SIZE_U  bitmap_size_ddp;
-
-    resources_get_int("KeepAspectRatio", &keepaspect);
-    resources_get_int("TrueAspectRatio", &trueaspect);
 
     if (!context->dxgi_bitmap || !context->render_bitmap) {
         return;
@@ -435,15 +430,17 @@ static void recalculate_layout(video_canvas_t *canvas, vice_directx_renderer_con
     viewport_size_ddp   = context->dxgi_bitmap->GetPixelSize();
     bitmap_size_ddp     = context->render_bitmap->GetPixelSize();
 
-    if (keepaspect) {
+    if (canvas->videoconfig->aspect_mode != VIDEO_ASPECT_MODE_NONE) {
         float viewport_aspect;
         float emulated_aspect;
 
         viewport_aspect = (float)viewport_size_ddp.width / viewport_size_ddp.height;
         emulated_aspect = (float)bitmap_size_ddp.width   / bitmap_size_ddp.height;
 
-        if (trueaspect) {
+        if (canvas->videoconfig->aspect_mode == VIDEO_ASPECT_MODE_TRUE) {
             emulated_aspect *= context->pixel_aspect_ratio;
+        } else {
+            emulated_aspect *= canvas->videoconfig->aspect_ratio;
         }
 
         if (emulated_aspect < viewport_aspect) {
@@ -459,7 +456,7 @@ static void recalculate_layout(video_canvas_t *canvas, vice_directx_renderer_con
     }
 
     /* Calculate the minimum drawing area size to be enforced by gtk */
-    if (keepaspect && trueaspect) {
+    if (canvas->videoconfig->aspect_mode == VIDEO_ASPECT_MODE_TRUE) {
         context->window_min_width = ceil((float)context->bitmap_width * context->pixel_aspect_ratio);
         context->window_min_height = context->bitmap_height;
     } else {
@@ -507,8 +504,8 @@ void vice_directx_impl_async_render(void *job_data, void *pool_data)
     backbuffer_t *backbuffer;
     HRESULT result = S_OK;
     bool interlaced;
-    int vsync;
-    int filter;
+    int vsync = canvas->videoconfig->vsync;
+    int filter = canvas->videoconfig->glfilter;
     DXGI_PRESENT_PARAMETERS present_parameters = { 0 };
 
     if (job == render_thread_init) {
@@ -526,9 +523,6 @@ void vice_directx_impl_async_render(void *job_data, void *pool_data)
         log_message(LOG_DEFAULT, "Render thread shutdown");
         return;
     }
-
-    resources_get_int("VSync", &vsync);
-    resources_get_int("GTKFilter", &filter);
 
     CANVAS_LOCK();
 
@@ -651,4 +645,4 @@ void vice_directx_impl_log_windows_error(const char *prefix)
     LocalFree(error_message);
 }
 
-#endif /* #ifdef WIN32_COMPILE */
+#endif /* #ifdef WINDOWS_COMPILE */

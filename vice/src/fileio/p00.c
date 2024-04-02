@@ -39,7 +39,6 @@
 #include "archdep.h"
 #include "cbmdos.h"
 #include "fileio.h"
-#include "ioutil.h"
 #include "lib.h"
 #include "log.h"
 #include "p00.h"
@@ -77,7 +76,7 @@ static int p00_check_name(const char *name)
         return -1;
     }
 
-    if (!isdigit((int)p[1]) || !isdigit((int)p[2])) {
+    if (!isdigit((unsigned char)p[1]) || !isdigit((unsigned char)p[2])) {
         return -1;
     }
 
@@ -161,20 +160,20 @@ static void p00_pad_a0(uint8_t *slot)
 
 static char *p00_file_find(const char *file_name, const char *path)
 {
-    struct ioutil_dir_s *ioutil_dir;
+    archdep_dir_t *host_dir;
     struct rawfile_info_s *rawfile;
     uint8_t p00_header_file_name[P00_HDR_CBMNAME_LEN];
-    char *name, *alloc_name = NULL;
+    const char *name;
+    char *alloc_name = NULL;
     int rc;
 
-    ioutil_dir = ioutil_opendir(path, IOUTIL_OPENDIR_ALL_FILES);
-
-    if (ioutil_dir == NULL) {
+    host_dir = archdep_opendir(path, ARCHDEP_OPENDIR_ALL_FILES);
+    if (host_dir == NULL) {
         return NULL;
     }
 
     while (1) {
-        name = ioutil_readdir(ioutil_dir);
+        name = archdep_readdir(host_dir);
 
         if (name == NULL) {
             break;
@@ -214,7 +213,7 @@ static char *p00_file_find(const char *file_name, const char *path)
         }
     }
 
-    ioutil_closedir(ioutil_dir);
+    archdep_closedir(host_dir);
 
     return alloc_name;
 }
@@ -252,7 +251,7 @@ static int p00_reduce_filename_p00(char *filename, int len)
     }
 
     for (i = len - 1; i >= 0; i--) {
-        if (isalpha((int) filename[i])) {
+        if (isalpha((unsigned char) filename[i])) {
             if (p00_eliminate_char_p00(filename, i) <= 8) {
                 return 8;
             }
@@ -282,11 +281,11 @@ static char *p00_evaluate_name(const char *name, int length)
                 filename[j++] = '_';
                 break;
             default:
-                if (islower((int)name[i])) {
+                if (islower((unsigned char)name[i])) {
                     filename[j++] = util_toupper(name[i]);
                     break;
                 }
-                if (isalnum((int)name[i])) {
+                if (isalnum((unsigned char)name[i])) {
                     filename[j++] = name[i];
                     break;
                 }
@@ -336,7 +335,7 @@ char *p00_filename_create(const char *file_name, unsigned int type)
             break;
     }
 
-    p00name = util_concat(main_name, FSDEV_EXT_SEP_STR, typeext, "00", NULL);
+    p00name = util_concat(main_name, ".", typeext, "00", NULL);
     lib_free(main_name);
 
     return p00name;

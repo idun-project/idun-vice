@@ -51,6 +51,11 @@
    calculated as 65536 * drive_clk / clk_[main machine] */
 static int sync_factor;
 
+#if 0
+/* Frequency of the power grid in Hz */
+static int power_freq = 1;
+#endif
+
 /* Name of the character ROM.  */
 static char *chargen_rom_name = NULL;
 
@@ -99,13 +104,13 @@ static int set_sync_factor(int val, void *param)
         case MACHINE_SYNC_PAL:
             sync_factor = val;
             if (change_timing) {
-                machine_change_timing(MACHINE_SYNC_PAL, vicii_resources.border_mode);
+                machine_change_timing(MACHINE_SYNC_PAL, 0, vicii_resources.border_mode);
             }
             break;
         case MACHINE_SYNC_NTSC:
             sync_factor = val;
             if (change_timing) {
-                machine_change_timing(MACHINE_SYNC_NTSC, vicii_resources.border_mode);
+                machine_change_timing(MACHINE_SYNC_NTSC, 0, vicii_resources.border_mode);
             }
             break;
         default:
@@ -114,6 +119,33 @@ static int set_sync_factor(int val, void *param)
 
     return 0;
 }
+
+#if 0
+static int set_power_freq(int val, void *param)
+{
+    int change_timing = 0;
+
+    if (power_freq != val) {
+        change_timing = 1;
+    }
+
+    switch (val) {
+        case 50:
+        case 60:
+            break;
+        default:
+            return -1;
+    }
+    power_freq = val;
+    if (change_timing) {
+        if (sync_factor > 0) {
+            machine_change_timing(sync_factor, val, vicii_resources.border_mode);
+        }
+    }
+
+    return 0;
+}
+#endif
 
 int c64dtv_hummer_adc_enabled = 0;
 
@@ -124,13 +156,13 @@ static int c64dtv_hummer_adc_set(int val, void *param)
 }
 
 static const resource_string_t resources_string[] = {
-    { "ChargenName", "chargen", RES_EVENT_NO, NULL,
+    { "ChargenName", C64_CHARGEN_NAME, RES_EVENT_NO, NULL,
       /* FIXME: should be same but names may differ */
       &chargen_rom_name, set_chargen_rom_name, NULL },
-    { "KernalName", "kernal", RES_EVENT_NO, NULL,
+    { "KernalName", C64_KERNAL_REV3_NAME, RES_EVENT_NO, NULL,
       /* FIXME: should be same but names may differ */
       &kernal_rom_name, set_kernal_rom_name, NULL },
-    { "BasicName", "basic", RES_EVENT_NO, NULL,
+    { "BasicName", C64_BASIC_NAME, RES_EVENT_NO, NULL,
       /* FIXME: should be same but names may differ */
       &basic_rom_name, set_basic_rom_name, NULL },
     RESOURCE_STRING_LIST_END
@@ -139,6 +171,10 @@ static const resource_string_t resources_string[] = {
 static const resource_int_t resources_int[] = {
     { "MachineVideoStandard", MACHINE_SYNC_PAL, RES_EVENT_SAME, NULL,
       &sync_factor, set_sync_factor, NULL },
+#if 0
+    { "MachinePowerFrequency", 0, RES_EVENT_SAME, NULL,
+      &power_freq, set_power_freq, NULL },
+#endif
     { "HummerADC", 0, RES_EVENT_SAME, NULL,
       (int *)&c64dtv_hummer_adc_enabled, c64dtv_hummer_adc_set, NULL },
     RESOURCE_INT_LIST_END

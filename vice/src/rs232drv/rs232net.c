@@ -96,6 +96,7 @@ typedef struct rs232net {
                     log from being flooded with error messages. */
     int useip232; /*!< 1 to use the ip232 protocol for tcpser */
     int dcd_in;   /*!< ip232 status of DCD line */
+    int ri_in;    /*!< ip232 status of RI line */
     int dtr_out;  /*!< ip232 status of DTR line */
 } rs232net_t;
 
@@ -204,7 +205,7 @@ void rs232net_close(int fd)
             _rs232net_putc(fd, IP232MAGIC);
             _rs232net_putc(fd, IP232DTRLO);
         }
-        
+
         rs232net_closesocket(fd);
         fds[fd].inuse = 0;
 
@@ -231,7 +232,7 @@ static int _rs232net_putc(int fd, uint8_t b)
     }
 
     /* for the beginning... */
-    DEBUG_LOG_MESSAGE((rs232net_log, "Output 0x%02x '%c'.", b, isgraph(b) ? b : '.'));
+    DEBUG_LOG_MESSAGE((rs232net_log, "Output 0x%02x '%c'.", b, isgraph((unsigned char)b) ? b : '.'));
 
     n = vice_network_send(fds[fd].fd, &b, 1, 0);
     if (n < 0) {
@@ -260,7 +261,7 @@ static int _rs232net_getc(int fd, uint8_t * b)
             break;
         }
 
-        /* from now on, assume everything is ok, 
+        /* from now on, assume everything is ok,
            but we have not received any bytes */
         no_of_read_byte = 0;
 
@@ -274,7 +275,7 @@ static int _rs232net_getc(int fd, uint8_t * b)
         if (ret > 0) {
 
             no_of_read_byte = vice_network_receive(fds[fd].fd, b, 1, 0);
-            DEBUG_LOG_MESSAGE((rs232net_log, "Input 0x%02x '%c'.", *b, isgraph(*b) ? *b : '.'));
+            DEBUG_LOG_MESSAGE((rs232net_log, "Input 0x%02x '%c'.", *b, isgraph((unsigned char)*b) ? *b : '.'));
 
             if ( no_of_read_byte != 1 ) {
                 if ( no_of_read_byte < 0 ) {
@@ -310,7 +311,12 @@ int rs232net_putc(int fd, uint8_t b)
 int rs232net_getc(int fd, uint8_t * b)
 {
     int ret = -1;
-    
+
+    if (fd < 0 || fd >= RS232_NUM_DEVICES) {
+        log_error(rs232net_log, "Attempt to read from invalid fd %d.", fd);
+        return -1;
+    }
+
 tryagain:
 
     ret = _rs232net_getc(fd, b);
@@ -320,22 +326,16 @@ tryagain:
             if ((ret = _rs232net_getc(fd, b)) < 1) {
                 return ret;
             }
-            switch (*b) {
-                case IP232DCDLO: /* dcd false */
-                    fds[fd].dcd_in = 0;
-                    goto tryagain;
-                case IP232DCDHI: /* dcd true */
-                    fds[fd].dcd_in = 1;
-                    goto tryagain;
-                case 0xff:
-                    break;
-                default:
-                    log_error(rs232net_log, "rs232net_getc recieved invalid code after IP232 magic: %02x", *b);
-                    break;
+            if (*b == IP232MAGIC) {
+                /* literal 0xff */
+            } else {
+                fds[fd].dcd_in = (*b & IP232DCDMASK) == IP232DCDHI ? 1 : 0;
+                fds[fd].ri_in = (*b & IP232RIMASK) == IP232RIHI ? 1 : 0;
+                goto tryagain;
             }
         }
     }
-    
+
     return ret;
 }
 
@@ -345,7 +345,7 @@ int rs232net_set_status(int fd, enum rs232handshake_out status)
     int dtr = (status & RS232_HSO_DTR) ? 1 : 0; /* is this correct? */
 #ifdef LOG_MODEM_STATUS
     if (dtr != fds[fd].dtr_out) {
-        DEBUG_LOG_MESSAGE((rs232net_log, "rs232net_set_status(fd:%d) status:%02x dtr:%d rts:%d", 
+        DEBUG_LOG_MESSAGE((rs232net_log, "rs232net_set_status(fd:%d) status:%02x dtr:%d rts:%d",
             fd, status, dtr, status & RS232_HSO_RTS ? 1 : 0
         ));
     }
@@ -373,8 +373,8 @@ enum rs232handshake_in rs232net_get_status(int fd)
     enum rs232handshake_in status = 0;
 #ifdef LOG_MODEM_STATUS
     static enum rs232handshake_in oldstatus = 0;
-#endif    
-    
+#endif
+
     if (fds[fd].useip232) {
 #if 0   /* this doesnt work right, eg local echo wont work anymore */
         /* if DTR is low, read from the socket to update it's status */
@@ -390,6 +390,9 @@ enum rs232handshake_in rs232net_get_status(int fd)
         if (fds[fd].dcd_in && fds[fd].dtr_out) {
             status |= RS232_HSI_DCD;
         }
+        if (fds[fd].ri_in) {
+            status |= RS232_HSI_RI;
+        }
     } else {
         status |= RS232_HSI_DCD;
     }
@@ -399,16 +402,16 @@ enum rs232handshake_in rs232net_get_status(int fd)
 
 #ifdef LOG_MODEM_STATUS
     if (status != oldstatus) {
-        printf("rs232net_get_status(fd:%d): DCD:%d modem_status:%02x cts:%d dsr:%d dcd:%d ri:%d\n", 
-               fd, fds[fd].dcd_in, status, 
+        printf("rs232net_get_status(fd:%d): DCD:%d modem_status:%02x cts:%d dsr:%d dcd:%d ri:%d\n",
+               fd, fds[fd].dcd_in, status,
                status & RS232_HSI_CTS ? 1 : 0,
                status & RS232_HSI_DSR ? 1 : 0,
                status & RS232_HSI_DCD ? 1 : 0,
                status & RS232_HSI_RI ? 1 : 0
-              );    
+              );
         oldstatus = status;
     }
-#endif     
+#endif
     return status;
 /*    return RS232_HSI_CTS | RS232_HSI_DSR; */
 }

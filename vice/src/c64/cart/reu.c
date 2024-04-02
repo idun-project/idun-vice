@@ -242,11 +242,12 @@ static unsigned int reu_int_num;
 
 /*! \brief interface for BA interaction with CPU & VICII, used for x64sc */
 struct reu_ba_s {
-    reu_ba_check_callback_t *check;
-    reu_ba_steal_callback_t *steal;
-    int *cpu_ba;
-    int cpu_ba_mask;
-    int enabled;
+    reu_ba_check_callback_t *check; /*!< function that returns non zero when VICII uses the bus */
+    reu_ba_steal_callback_t *steal; /*!< function that increments main clock as long as VICII uses the bus */
+    int *cpu_ba;                    /*!< pointer to main cpu ba flags */
+    int cpu_ba_mask;                /*!< mask we should use in cpu_ba when REU DMA is active */
+    /* internal */
+    int enabled;                    /*!< flag that indicates if the above functions / variables have been registered, used to choose between x64 or x64sc hacks */
     int delay;
     int last_cycle;
 };
@@ -279,7 +280,8 @@ static io_source_t reu_io2_device = {
     NULL,                             /* TODO: device state information dump function */
     CARTRIDGE_REU,                    /* cartridge ID */
     IO_PRIO_NORMAL,                   /* normal priority, device read needs to be checked for collisions */
-    0                                 /* insertion order, gets filled in by the registration function */
+    0,                                /* insertion order, gets filled in by the registration function */
+    IO_MIRROR_NONE                    /* NO mirroring */
 };
 
 static io_source_list_t *reu_list_item = NULL;
@@ -754,13 +756,17 @@ int reu_disable(void)
 int reu_bin_attach(const char *filename, uint8_t *rawcart)
 {
     FILE *fd;
-    size_t size;
+    off_t size;
 
     fd = fopen(filename, MODE_READ);
     if (fd == NULL) {
         return -1;
     }
-    size = util_file_length(fd);
+    size = archdep_file_size(fd);
+    if (size < 0) {
+        fclose(fd);
+        return -1;
+    }
     fclose(fd);
 
     if (set_reu_size((uint32_t)size / 1024, NULL) < 0) {
@@ -771,7 +777,7 @@ int reu_bin_attach(const char *filename, uint8_t *rawcart)
         return -1;
     }
 
-    if (util_file_load(filename, rawcart, size, UTIL_FILE_LOAD_SKIP_ADDRESS) < 0) {
+    if (util_file_load(filename, rawcart, (size_t)size, UTIL_FILE_LOAD_SKIP_ADDRESS) < 0) {
         return -1;
     }
 
@@ -807,7 +813,7 @@ int reu_flush_image(void)
 /* helper functions */
 
 /*! \brief clock handling for x64 */
-inline static void reu_clk_inc_pre(void)
+inline static void nonsc_reu_clk_inc_pre(void)
 {
     if (!reu_ba.enabled) {
         maincpu_clk++;
@@ -815,12 +821,12 @@ inline static void reu_clk_inc_pre(void)
 }
 
 /*! \brief clock handling for x64sc reu write */
-inline static void reu_clk_inc_post(void)
+inline static void reu_clk_inc_post_write(void)
 {
     if (reu_ba.enabled) {
         maincpu_clk++;
         if (reu_ba.check()) {
-            reu_ba.delay++; 
+            reu_ba.delay++;
         } else {
             reu_ba.delay = 0;
         }
@@ -833,10 +839,12 @@ inline static void reu_clk_inc_post(void)
 }
 
 /*! \brief clock handling for x64sc reu read */
-inline static void reu_clk_inc_post2(void)
+inline static void reu_clk_inc_post_read(void)
 {
     if (reu_ba.enabled) {
+        /* add one cycle */
         maincpu_clk++;
+        /* steal more cycles while BA is pulled low by the VICII */
         if (reu_ba.check()) {
             reu_ba.steal();
         }
@@ -1243,10 +1251,10 @@ static void reu_dma_host_to_reu(uint16_t host_addr, unsigned int reu_addr, int h
     assert(len >= 1);
 
     while (len) {
-        reu_clk_inc_pre();
+        nonsc_reu_clk_inc_pre();
         machine_handle_pending_alarms(0);
-        value = mem_read(host_addr);
-        reu_clk_inc_post2();
+        value = mem_dma_read(host_addr);
+        reu_clk_inc_post_read();
         DEBUG_LOG(DEBUG_LEVEL_TRANSFER_LOW_LEVEL, (reu_log, "Transferring byte: %x from main $%04X to ext $%05X.", value, host_addr, reu_addr));
 
         store_to_reu(reu_addr, value);
@@ -1289,12 +1297,12 @@ static void reu_dma_reu_to_host(uint16_t host_addr, unsigned int reu_addr, int h
 
     while (len) {
         DEBUG_LOG(DEBUG_LEVEL_TRANSFER_LOW_LEVEL, (reu_log, "Transferring byte: %x from ext $%05X to main $%04X.", reu_ram[reu_addr % reu_size], reu_addr, host_addr));
-        reu_clk_inc_pre();
+        nonsc_reu_clk_inc_pre();
         /* after a transfer from REU to host, the last (pre)fetched value from valid
            REU RAM stays in the latch that drives the bus. see comment below. */
         floating_bus_value = value = read_from_reu(reu_addr);
-        mem_store(host_addr, value);
-        reu_clk_inc_post();
+        mem_dma_store(host_addr, value);
+        reu_clk_inc_post_write();
         machine_handle_pending_alarms(0);
         host_addr = (host_addr + host_step) & 0xffff;
         reu_addr = increment_reu_with_wrap_around(reu_addr, reu_step);
@@ -1302,7 +1310,7 @@ static void reu_dma_reu_to_host(uint16_t host_addr, unsigned int reu_addr, int h
     }
     if (reu_ba.enabled && reu_ba.last_cycle) { /* extra cycle if ended while BA set */
        machine_handle_pending_alarms(0);
-       reu_clk_inc_post2();
+       reu_clk_inc_post_read();
     }
     DEBUG_LOG(DEBUG_LEVEL_REGISTER2, (reu_log, "END OF BLOCK"));
     reu_dma_update_regs(host_addr, reu_addr, ++len, REU_REG_R_STATUS_END_OF_BLOCK);
@@ -1343,15 +1351,15 @@ static void reu_dma_swap(uint16_t host_addr, unsigned int reu_addr, int host_ste
 
     while (len) {
         value_from_reu = read_from_reu(reu_addr);
-        reu_clk_inc_pre();
+        nonsc_reu_clk_inc_pre();
         machine_handle_pending_alarms(0);
-        value_from_c64 = mem_read(host_addr);
-        reu_clk_inc_post2();
+        value_from_c64 = mem_dma_read(host_addr);
+        reu_clk_inc_post_read();
         DEBUG_LOG(DEBUG_LEVEL_TRANSFER_LOW_LEVEL, (reu_log, "Exchanging bytes: %x from main $%04X with %x from ext $%05X.", value_from_c64, host_addr, value_from_reu, reu_addr));
         store_to_reu(reu_addr, value_from_c64);
-        mem_store(host_addr, value_from_reu);
-        reu_clk_inc_pre();
-        reu_clk_inc_post();
+        mem_dma_store(host_addr, value_from_reu);
+        nonsc_reu_clk_inc_pre();
+        reu_clk_inc_post_write();
         machine_handle_pending_alarms(0);
         host_addr = (host_addr + host_step) & 0xffff;
         reu_addr = increment_reu_with_wrap_around(reu_addr, reu_step);
@@ -1359,7 +1367,7 @@ static void reu_dma_swap(uint16_t host_addr, unsigned int reu_addr, int host_ste
     }
     if (reu_ba.enabled && reu_ba.last_cycle) { /* extra cycle if ended while BA set */
        machine_handle_pending_alarms(0);       /* likely needed, but not confirmed yet */
-       reu_clk_inc_post2();
+       reu_clk_inc_post_read();
     }
     DEBUG_LOG(DEBUG_LEVEL_REGISTER2, (reu_log, "END OF BLOCK"));
     reu_dma_update_regs(host_addr, reu_addr, ++len, REU_REG_R_STATUS_END_OF_BLOCK);
@@ -1402,11 +1410,11 @@ static void reu_dma_compare(uint16_t host_addr, unsigned int reu_addr, int host_
     /* rec.status &= ~ (REU_REG_R_STATUS_VERIFY_ERROR | REU_REG_R_STATUS_END_OF_BLOCK); */
 
     while (len) {
-        reu_clk_inc_pre();
+        nonsc_reu_clk_inc_pre();
         machine_handle_pending_alarms(0);
         value_from_reu = read_from_reu(reu_addr);
-        value_from_c64 = mem_read(host_addr);
-        reu_clk_inc_post2();
+        value_from_c64 = mem_dma_read(host_addr);
+        reu_clk_inc_post_read();
         DEBUG_LOG(DEBUG_LEVEL_TRANSFER_LOW_LEVEL, (reu_log, "Comparing bytes: %x from main $%04X with %x from ext $%05X.", value_from_c64, host_addr, value_from_reu, reu_addr));
         reu_addr = increment_reu_with_wrap_around(reu_addr, reu_step);
         host_addr = (host_addr + host_step) & 0xffff;
@@ -1421,9 +1429,9 @@ static void reu_dma_compare(uint16_t host_addr, unsigned int reu_addr, int host_
              * the failed comparison happened on the last byte of the buffer.
              */
             if (len >= 1) {
-                reu_clk_inc_pre();
+                nonsc_reu_clk_inc_pre();
                 machine_handle_pending_alarms(0);
-                reu_clk_inc_post2();
+                reu_clk_inc_post_read();
             }
             break;
         }
@@ -1445,7 +1453,7 @@ static void reu_dma_compare(uint16_t host_addr, unsigned int reu_addr, int host_
          */
 
         value_from_reu = read_from_reu(reu_addr);
-        value_from_c64 = mem_read(host_addr);
+        value_from_c64 = mem_dma_read(host_addr);
         DEBUG_LOG(DEBUG_LEVEL_TRANSFER_LOW_LEVEL, (reu_log, "Comparing bytes after verify error: %x from main $%04X with %x from ext $%05X.",
                                                    value_from_c64, host_addr, value_from_reu, reu_addr));
         if (value_from_reu == value_from_c64) {
@@ -1500,10 +1508,12 @@ int reu_dma(int immediate)
     }
 
     if (reu_ba.enabled) {
+        /* REU DMA on x64sc */
         /* signal CPU that BA is pulled low */
         *(reu_ba.cpu_ba) |= reu_ba.cpu_ba_mask;
         reu_ba.delay = 0; reu_ba.last_cycle = 0;
     } else {
+        /* REU DMA on x64 */
         /* start the operation right away */
         reu_dma_start();
     }

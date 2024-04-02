@@ -49,6 +49,11 @@
    calculated as 65536 * drive_clk / clk_[main machine] */
 static int sync_factor;
 
+#if 0
+/* Frequency of the power grid in Hz */
+static int power_freq = 1;
+#endif
+
 /* Name of the character ROM.  */
 static char *chargen_rom_name = NULL;
 
@@ -161,13 +166,13 @@ static int set_sync_factor(int val, void *param)
         case MACHINE_SYNC_PAL:
             sync_factor = val;
             if (change_timing) {
-                machine_change_timing(MACHINE_SYNC_PAL, vic_resources.border_mode);
+                machine_change_timing(MACHINE_SYNC_PAL, 50, vic_resources.border_mode);
             }
             break;
         case MACHINE_SYNC_NTSC:
             sync_factor = val;
             if (change_timing) {
-                machine_change_timing(MACHINE_SYNC_NTSC, vic_resources.border_mode);
+                machine_change_timing(MACHINE_SYNC_NTSC, 60, vic_resources.border_mode);
             }
             break;
         default:
@@ -176,13 +181,40 @@ static int set_sync_factor(int val, void *param)
     return 0;
 }
 
+#if 0
+static int set_power_freq(int val, void *param)
+{
+    int change_timing = 0;
+
+    if (power_freq != val) {
+        change_timing = 1;
+    }
+
+    switch (val) {
+        case 50:
+        case 60:
+            break;
+        default:
+            return -1;
+    }
+    power_freq = val;
+    if (change_timing) {
+        if (sync_factor > 0) {
+            machine_change_timing(sync_factor, val, vic_resources.border_mode);
+        }
+    }
+
+    return 0;
+}
+#endif
+
 static const resource_string_t resources_string[] =
 {
-    { "ChargenName", "chargen", RES_EVENT_NO, NULL,
+    { "ChargenName", VIC20_CHARGEN_NAME, RES_EVENT_NO, NULL,
       &chargen_rom_name, set_chargen_rom_name, NULL },
-    { "KernalName", "kernal", RES_EVENT_NO, NULL,
+    { "KernalName", VIC20_KERNAL_REV7_NAME, RES_EVENT_NO, NULL,
       &kernal_rom_name, set_kernal_rom_name, NULL },
-    { "BasicName", "basic", RES_EVENT_NO, NULL,
+    { "BasicName", VIC20_BASIC_NAME, RES_EVENT_NO, NULL,
       &basic_rom_name, set_basic_rom_name, NULL },
     RESOURCE_STRING_LIST_END
 };
@@ -191,6 +223,10 @@ static const resource_int_t resources_int[] =
 {
     { "MachineVideoStandard", MACHINE_SYNC_PAL, RES_EVENT_SAME, NULL,
       &sync_factor, set_sync_factor, NULL },
+#if 0
+    { "MachinePowerFrequency", 50, RES_EVENT_SAME, NULL,
+      &power_freq, set_power_freq, NULL },
+#endif
     { "RAMBlock0", 0, RES_EVENT_SAME, NULL,
       &ram_block_0_enabled, set_ram_block_0_enabled, NULL },
     { "RAMBlock1", 0, RES_EVENT_SAME, NULL,

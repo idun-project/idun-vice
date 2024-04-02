@@ -47,7 +47,7 @@
       "Business (us)"
       "Business (de)"
       "Business (jp)"
-      
+
       also see http://www.6502.org/users/andre/petindex/keyboards.html
 */
 
@@ -68,7 +68,7 @@
 extern int pet_colour_type;
 extern int pet_colour_analog_bg;
 
-extern int pet_resources_init(void);
-extern void pet_resources_shutdown(void);
+int pet_resources_init(void);
+void pet_resources_shutdown(void);
 
 #endif

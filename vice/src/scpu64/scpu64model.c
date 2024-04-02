@@ -35,6 +35,7 @@
 #include "cia.h"
 #include "machine.h"
 #include "resources.h"
+#include "scpu64rom.h"
 #include "sid.h"
 #include "types.h"
 #include "vicii.h"
@@ -82,6 +83,7 @@ static int is_new_cia(int model)
 struct model_s {
     int vicii;      /* VIC-II model */
     int video;      /* machine video timing */
+    int ciatick;
     int cia;        /* old or new */
     int glue;       /* discrete or ASIC */
     int sid;        /* old or new */
@@ -95,62 +97,62 @@ struct model_s {
 static const struct model_s scpu64models[] = {
 
     /* C64 PAL / PET64 PAL */
-    { VICII_MODEL_6569, MACHINE_SYNC_PAL,
+    { VICII_MODEL_6569, MACHINE_SYNC_PAL, CIATICK_NET,
       CIA_MODEL_DEFAULT_OLD, GLUE_DISCRETE, OLD_SID, IEC_SOFT_RESET,
-      HAS_IEC, HAS_USERPORT, HAS_KEYBOARD, "chargen" },
+      HAS_IEC, HAS_USERPORT, HAS_KEYBOARD, C64_CHARGEN_NAME },
 
     /* C64C PAL */
-    { VICII_MODEL_8565, MACHINE_SYNC_PAL,
+    { VICII_MODEL_8565, MACHINE_SYNC_PAL, CIATICK_NET,
       CIA_MODEL_DEFAULT_NEW, GLUE_CUSTOM_IC, NEW_SID, IEC_HARD_RESET,
-      HAS_IEC, HAS_USERPORT, HAS_KEYBOARD, "chargen" },
+      HAS_IEC, HAS_USERPORT, HAS_KEYBOARD, C64_CHARGEN_NAME },
 
     /* C64 OLD PAL */
-    { VICII_MODEL_6569R1, MACHINE_SYNC_PAL,
+    { VICII_MODEL_6569R1, MACHINE_SYNC_PAL, CIATICK_NET,
       CIA_MODEL_DEFAULT_OLD, GLUE_DISCRETE, OLD_SID, IEC_SOFT_RESET,
-      HAS_IEC, HAS_USERPORT, HAS_KEYBOARD, "chargen" },
+      HAS_IEC, HAS_USERPORT, HAS_KEYBOARD, C64_CHARGEN_NAME },
 
     /* C64 NTSC / PET64 NTSC */
-    { VICII_MODEL_6567, MACHINE_SYNC_NTSC,
+    { VICII_MODEL_6567, MACHINE_SYNC_NTSC, CIATICK_NET,
       CIA_MODEL_DEFAULT_OLD, GLUE_DISCRETE, OLD_SID, IEC_SOFT_RESET,
-      HAS_IEC, HAS_USERPORT, HAS_KEYBOARD, "chargen" },
+      HAS_IEC, HAS_USERPORT, HAS_KEYBOARD, C64_CHARGEN_NAME },
 
     /* C64C NTSC */
-    { VICII_MODEL_8562, MACHINE_SYNC_NTSC,
+    { VICII_MODEL_8562, MACHINE_SYNC_NTSC, CIATICK_NET,
       CIA_MODEL_DEFAULT_NEW, GLUE_CUSTOM_IC, NEW_SID, IEC_HARD_RESET,
-      HAS_IEC, HAS_USERPORT, HAS_KEYBOARD, "chargen" },
+      HAS_IEC, HAS_USERPORT, HAS_KEYBOARD, C64_CHARGEN_NAME },
 
     /* C64 OLD NTSC */
-    { VICII_MODEL_6567R56A, MACHINE_SYNC_NTSCOLD,
+    { VICII_MODEL_6567R56A, MACHINE_SYNC_NTSCOLD, CIATICK_NET,
       CIA_MODEL_DEFAULT_OLD, GLUE_DISCRETE, OLD_SID, IEC_SOFT_RESET,
-      HAS_IEC, HAS_USERPORT, HAS_KEYBOARD, "chargen" },
+      HAS_IEC, HAS_USERPORT, HAS_KEYBOARD, C64_CHARGEN_NAME },
 
     /* C64 PAL-N */
-    { VICII_MODEL_6572, MACHINE_SYNC_PALN,
+    { VICII_MODEL_6572, MACHINE_SYNC_PALN, CIATICK_NET,
       CIA_MODEL_DEFAULT_OLD, GLUE_DISCRETE, OLD_SID, IEC_SOFT_RESET,
-      HAS_IEC, HAS_USERPORT, HAS_KEYBOARD, "chargen" },
+      HAS_IEC, HAS_USERPORT, HAS_KEYBOARD, C64_CHARGEN_NAME },
 
     /* SX64 PAL, FIXME: guessed */
-    { VICII_MODEL_6569, MACHINE_SYNC_PAL,
+    { VICII_MODEL_6569, MACHINE_SYNC_PAL, CIATICK_60HZ,
       CIA_MODEL_DEFAULT_OLD, GLUE_DISCRETE, OLD_SID, IEC_SOFT_RESET,
-      HAS_IEC, HAS_USERPORT, HAS_KEYBOARD, "chargen" },
+      HAS_IEC, HAS_USERPORT, HAS_KEYBOARD, C64_CHARGEN_NAME },
 
     /* SX64 NTSC, FIXME: guessed */
-    { VICII_MODEL_6567, MACHINE_SYNC_NTSC,
+    { VICII_MODEL_6567, MACHINE_SYNC_NTSC, CIATICK_60HZ,
       CIA_MODEL_DEFAULT_OLD, GLUE_DISCRETE, OLD_SID, IEC_SOFT_RESET,
-      HAS_IEC, HAS_USERPORT, HAS_KEYBOARD, "chargen" },
+      HAS_IEC, HAS_USERPORT, HAS_KEYBOARD, C64_CHARGEN_NAME },
 
     /* C64 Japanese, FIXME: guessed */
-    { VICII_MODEL_6567, MACHINE_SYNC_NTSC,
+    { VICII_MODEL_6567, MACHINE_SYNC_NTSC, CIATICK_NET,
       CIA_MODEL_DEFAULT_OLD, GLUE_DISCRETE, OLD_SID, IEC_SOFT_RESET,
-      HAS_IEC, HAS_USERPORT, HAS_KEYBOARD, "jpchrgen" },
+      HAS_IEC, HAS_USERPORT, HAS_KEYBOARD, C64_CHARGEN_JAP_NAME },
 
     /* C64 GS, FIXME: guessed */
-    { VICII_MODEL_8565, MACHINE_SYNC_PAL,
+    { VICII_MODEL_8565, MACHINE_SYNC_PAL, CIATICK_NET,
       CIA_MODEL_DEFAULT_NEW, GLUE_CUSTOM_IC, NEW_SID, IEC_HARD_RESET,
-      NO_IEC, NO_USERPORT, NO_KEYBOARD, "chargen" },
+      NO_IEC, NO_USERPORT, NO_KEYBOARD, C64_CHARGEN_NAME },
 
     /* end of list */
-    { -1, -1, -1, -1, -1, -1, -1, -1, -1, NULL },
+    { -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, NULL },
 };
 
 /* ------------------------------------------------------------------------- */
@@ -176,7 +178,7 @@ static int scpu64model_get_temp(int vicii_model, int sid_model, int glue_logic,
             && (scpu64models[i].glue == glue_logic)
             && (scpu64models[i].sid == new_sid)
             && (scpu64models[i].iecreset == iecreset)
-            && (!strcmp(scpu64models[i].chargenname, chargen))) {
+            && (chargen && (strcmp(scpu64models[i].chargenname, chargen) == 0))) {
             return i;
         }
     }
@@ -195,8 +197,7 @@ int c64model_get_model(c64model_details_t *details)
 int c64model_get(void)
 {
     int vicii_model, sid_model, glue_logic, cia1model, cia2model, iecreset;
-    char c[0x10];
-    const char *chargen = c;
+    const char *chargen;
 
     if ((resources_get_int("VICIIModel", &vicii_model) < 0)
         || (resources_get_int("SidModel", &sid_model) < 0)
@@ -271,6 +272,7 @@ void c64model_set(int model)
     int old_type;
     int new_sid_model;
     int new_type;
+    int pf;
 
     old_model = c64model_get();
 
@@ -279,6 +281,20 @@ void c64model_set(int model)
     }
 
     resources_set_int("VICIIModel", scpu64models[model].vicii);
+    /* Determine the power net frequency for this model. It will be 60Hz in all
+       cases, except for PAL models that get the tick from the power grid */
+    pf = 60;
+    if (scpu64models[model].ciatick == CIATICK_NET) {
+        switch(scpu64models[model].video) {
+            case MACHINE_SYNC_PAL:
+            case MACHINE_SYNC_PALN:
+                pf = 50;
+                break;
+            default:
+                break;
+        }
+    }
+    resources_set_int("MachinePowerFrequency", pf);
     resources_set_int("CIA1Model", scpu64models[model].cia);
     resources_set_int("CIA2Model", scpu64models[model].cia);
     resources_set_int("GlueLogic", scpu64models[model].glue);

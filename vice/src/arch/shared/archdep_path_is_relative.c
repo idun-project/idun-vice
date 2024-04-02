@@ -52,11 +52,11 @@ int archdep_path_is_relative(const char *path)
 
 #if defined(UNIX_COMPILE) || defined(BEOS_COMPILE)
     return *path != '/';
-#elif defined(WIN32_COMPILE)
+#elif defined(WINDOWS_COMPILE)
     if (*path == '\\' || *path == '/') {
         return 0;
     }
-    if (isalpha(path[0]) && path[1] == ':' &&
+    if (isalpha((unsigned char)path[0]) && path[1] == ':' &&
             (path[2] == '\\' || path[2] == '/')) {
         return 0;
     }

@@ -1,14 +1,14 @@
 cbm2dir = $(VICE_DATADIR)/CBM-II
 
 roms = \
-	basic.128 \
-	basic.256 \
-	basic.500 \
-	chargen.500 \
-	chargen.600 \
-	chargen.700 \
-	kernal \
-	kernal.500
+	basic-901242+3-04a.bin \
+	basic-901240+1-03.bin \
+	basic-901235+6-02.bin \
+	chargen-901225-01.bin \
+	chargen-901237-01.bin \
+	chargen-901232-01.bin \
+	kernal-901244-04a.bin \
+	kernal-901234-02.bin
 
 romsets = \
 	rom500.vrs \
@@ -34,6 +34,13 @@ palettes = \
 	deekay.vpl \
 	cjam.vpl \
 	rgb.vpl \
+	the64.vpl \
+	palette_6569R1_v1r.vpl \
+	palette_6569R5_v1r.vpl \
+	palette_8565R2_v1r.vpl \
+	palette_C64_amber.vpl \
+	palette_C64_cyan.vpl \
+	palette_C64_green.vpl \
 	vice.vpl \
 	palette.vpl \
 	pixcen.vpl \
@@ -41,12 +48,9 @@ palettes = \
 	green.vpl \
 	white.vpl
 
-gtk3_hotkeys = \
-	gtk3-hotkeys.vhk \
-	gtk3-hotkeys-mac.vhk
-
 gtk3_keymaps = \
 	gtk3_pos.vkm \
+	gtk3_pos_de.vkm \
 	gtk3_sym.vkm \
 	gtk3_sym_de.vkm
 
@@ -54,15 +58,22 @@ sdl_keymaps = \
 	sdl_sym.vkm \
 	sdl_pos.vkm
 
-sdl_hotkeys = \
-	sdl-hotkeys.vhk
+if USE_SDLUI
+cbm2_DATA = $(roms) $(romsets) $(palettes) $(sdl_keymaps)
+EXTRA_DIST = $(cbm2_DATA) $(gtk3_keymaps)
+endif
 
-if SDL_COMPILE
-cbm2_DATA = $(roms) $(romsets) $(palettes) $(sdl_keymaps) $(sdl_hotkeys)
+if USE_SDL2UI
+cbm2_DATA = $(roms) $(romsets) $(palettes) $(sdl_keymaps)
+EXTRA_DIST = $(cbm2_DATA) $(gtk3_keymaps)
+endif
 
-EXTRA_DIST = $(cbm2_DATA) $(gtk3_keymaps) $(gtk3_hotkeys)
-else
-cbm2_DATA = $(roms) $(romsets) $(palettes) $(gtk3_keymaps) $(gtk3_hotkeys)
+if USE_GTK3UI
+cbm2_DATA = $(roms) $(romsets) $(palettes) $(gtk3_keymaps)
+EXTRA_DIST = $(cbm2_DATA) $(sdl_keymaps)
+endif
 
-EXTRA_DIST = $(cbm2_DATA) $(sdl_keymaps) $(sdl_hotkeys)
+if USE_HEADLESSUI
+cbm2_DATA = $(roms) $(romsets) $(palettes)
+EXTRA_DIST = $(cbm2_DATA) $(sdl_keymaps) $(gtk3_keymaps)
 endif

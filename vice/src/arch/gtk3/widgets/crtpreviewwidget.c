@@ -55,11 +55,6 @@ static const gchar *romstate[2] = {
     "active (lo)", "inactive (hi)"
 };
 
-/** \brief  Open function */
-static FILE *(*open_func)(const char *, crt_header_t *header) = NULL;
-/** \brief  Function to read chip header */
-static int (*chip_func)(crt_chip_header_t *, FILE *) = NULL;
-
 /* FIXME:   Do we actually need all these references? Perhaps get them via
  *          gtk_grid_get_child_at() ?
  */
@@ -293,31 +288,6 @@ GtkWidget *crt_preview_widget_create(void)
     return grid;
 }
 
-
-/** \brief  Set function to open a CRT file and read its header
- *
- * Required to avoid linking errors with VSID
- *
- * \param[in]   func    crt_open() reference
- */
-void crt_preview_widget_set_open_func(FILE *(*func)(const char *, crt_header_t *))
-{
-    open_func = func;
-}
-
-
-/** \brief  Set function to read a CRT CHIP packet
- *
- * Required to avoid linking errors with VSID
- *
- * \param[in]   func    crt_read_chip_header() reference
- */
-void crt_preview_widget_set_chip_func(int (*func)(crt_chip_header_t *, FILE *))
-{
-    chip_func = func;
-}
-
-
 /** \brief  Update widget with data from CTR image \a path
  *
  * \param[in]   path    path to CRT file
@@ -341,12 +311,16 @@ void crt_preview_widget_update(const gchar *path)
      */
     if (machine_class != VICE_MACHINE_C64
             && machine_class != VICE_MACHINE_C64SC
-            && machine_class != VICE_MACHINE_C128)
+            && machine_class != VICE_MACHINE_C128
+            /*&& machine_class != VICE_MACHINE_CBM5x0
+            && machine_class != VICE_MACHINE_CBM6x0*/   /* TODO: enable once implemented */
+            && machine_class != VICE_MACHINE_PLUS4
+            && machine_class != VICE_MACHINE_VIC20)
     {
         return;
     }
 
-    fd = open_func(path, &header);
+    fd = crt_open(path, &header);
     if (fd == NULL) {
         debug_gtk3("failed to open crt image");
         gtk_label_set_text(GTK_LABEL(crtid_label), "<unknown>");
@@ -354,6 +328,7 @@ void crt_preview_widget_update(const gchar *path)
         gtk_label_set_text(GTK_LABEL(crtname_label), "<unknown>");
         gtk_label_set_text(GTK_LABEL(exrom_label), "<unknown>");
         gtk_label_set_text(GTK_LABEL(game_label), "<unknown>");
+        chip_packets_clear();
         return;
     }
 
@@ -386,7 +361,7 @@ void crt_preview_widget_update(const gchar *path)
 #if 0
         debug_gtk3("reading packet #%d.", packets++);
 #endif
-        if (chip_func(&chip, fd) != 0) {
+        if (crt_read_chip_header(&chip, fd) != 0) {
             debug_gtk3("couldn't read further CHIP packets, exiting.");
             break;
         }

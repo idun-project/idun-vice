@@ -36,7 +36,7 @@
 
 #include <gtk/gtk.h>
 
-#include "archdep_real_path.h"
+#include "archdep.h"
 #include "hvsc.h"
 #include "hvscstilwidget.h"
 #include "lib.h"
@@ -51,9 +51,8 @@
 #include "videomodelwidget.h"
 #include "vsidcontrolwidget.h"
 #include "vsidmainwidget.h"
-#include "vsidmainwidget.h"
+#include "vsidmixerwidget.h"
 #include "vsidstate.h"
-#include "vsidtuneinfowidget.h"
 #include "vsidtuneinfowidget.h"
 #include "vsidui.h"
 #include "vsync.h"
@@ -214,7 +213,7 @@ static void vsid_window_create(video_canvas_t *canvas)
     canvas->event_box = NULL;
 
     main_widget = vsid_main_widget_create();
-    gtk_widget_set_size_request(main_widget, 400, 300);
+    /*gtk_widget_set_size_request(main_widget, 400, 300);*/
     gtk_widget_set_hexpand(main_widget, TRUE);
     gtk_widget_set_vexpand(main_widget, TRUE);
     gtk_widget_show(main_widget);
@@ -234,14 +233,18 @@ static void vsid_window_create(video_canvas_t *canvas)
  * \param[in]   filename    file to play
  *
  * \return  0 on success, -1 on failure
+ *
+ * \note    sets player UI state to either `VSID_PLAYING` or `VSID_ERROR`
  */
 int ui_vsid_window_load_psid(const char *filename)
 {
     vsid_state_t *state;
+    char          digest[33];
 
     vsync_suspend_speed_eval();
 
     if (machine_autodetect_psid(filename) < 0) {
+        vsid_control_widget_set_state(VSID_ERROR);
         ui_error("'%s' is not a valid PSID file.", filename);
         return -1;
     }
@@ -251,15 +254,25 @@ int ui_vsid_window_load_psid(const char *filename)
         lib_free(state->psid_filename);
     }
     state->psid_filename = lib_strdup(filename);
+    /* clear bitmap of played tunes */
+    memset(state->tunes_played, 0, sizeof state->tunes_played);
     vsid_state_unlock();
+
+    /* get md5 digest for PSID file */
+    hvsc_md5_digest(filename, digest);
 
     psid_init_driver();
     machine_play_psid(0);
-    machine_trigger_reset(MACHINE_RESET_MODE_SOFT);
-    vsid_tune_info_widget_set_song_lengths(filename);
-    hvsc_stil_widget_set_psid(filename);
-    ui_pause_disable();
+    machine_trigger_reset(MACHINE_RESET_MODE_RESET_CPU);
+    vsid_mixer_widget_update();
 
+    vsid_tune_info_widget_set_song_lengths_md5(digest);
+    hvsc_stil_widget_set_psid_md5(digest);
+    ui_pause_disable();
+    vsid_control_widget_set_state(VSID_PLAYING);
+#ifdef DEBUG
+    vsid_state_print_tunes_played();
+#endif
     return 0;
 }
 

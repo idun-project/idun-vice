@@ -32,7 +32,7 @@
     - bank register at $FDA0
  */
 
-#define DEBUG_MULTICART
+/* #define DEBUG_MULTICART */
 
 #include "vice.h"
 
@@ -85,7 +85,8 @@ static io_source_t multicart_device = {
     multicart_dump,             /* dump function for the monitor */
     CARTRIDGE_PLUS4_MULTI,      /* cartridge ID */
     IO_PRIO_NORMAL,             /* normal priority, device read needs to be checked for collisions */
-    0                           /* insertion order, gets filled in by the registration function */
+    0,                          /* insertion order, gets filled in by the registration function */
+    IO_MIRROR_NONE              /* NO mirroring */
 };
 
 static io_source_list_t *multicart_list_item = NULL;
@@ -159,7 +160,7 @@ int multicart_bin_attach(const char *filename, uint8_t *rawcart)
     if (fd == NULL) {
         return -1;
     }
-    len = (unsigned int)util_file_length(fd);
+    len = (unsigned int)archdep_file_size(fd);
     fclose(fd);
 
     DBG(("multicart_bin_attach len: %04x\n", len));

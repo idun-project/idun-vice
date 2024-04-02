@@ -55,6 +55,7 @@ struct checkpoint_list_s {
 typedef struct checkpoint_list_s checkpoint_list_t;
 
 static int breakpoint_count;
+static checkpoint_list_t *all_checkpoints;
 static checkpoint_list_t *breakpoints[NUM_MEMSPACES];
 static checkpoint_list_t *watchpoints_load[NUM_MEMSPACES];
 static checkpoint_list_t *watchpoints_store[NUM_MEMSPACES];
@@ -97,63 +98,31 @@ static void remove_checkpoint_from_list(checkpoint_list_t **head, mon_checkpoint
 /** \brief Get a list of all checkpoints
  *
  * \param[out]  len     length of the returned array
- * 
+ *
  * \return The list of checkpoints
  */
 mon_checkpoint_t **mon_breakpoint_checkpoint_list_get(unsigned int *len) {
     checkpoint_list_t *ptr;
-    int i;
     mon_checkpoint_t **concat;
 
     *len = 0;
 
-    for (i = FIRST_SPACE; i <= LAST_SPACE; i++) {
-        ptr = breakpoints[i];
-        while (ptr) {
-            ++*len;
-            ptr = ptr->next;
-        }
-
-        ptr = watchpoints_load[i];
-        while (ptr) {
-            ++*len;
-            ptr = ptr->next;
-        }
-
-        ptr = watchpoints_store[i];
-        while (ptr) {
-            ++*len;
-            ptr = ptr->next;
-        }
+    ptr = all_checkpoints;
+    while (ptr) {
+        ++*len;
+        ptr = ptr->next;
     }
 
     concat = lib_malloc(sizeof(mon_checkpoint_t *) * *len);
 
     *len = -1;
 
-    for (i = FIRST_SPACE; i <= LAST_SPACE; i++) {
-        ptr = breakpoints[i];
-        while (ptr) {
-            ++*len;
-            concat[*len] = ptr->checkpt;
-            ptr = ptr->next;
-        }
-
-        ptr = watchpoints_load[i];
-        while (ptr) {
-            ++*len;
-            concat[*len] = ptr->checkpt;
-            ptr = ptr->next;
-        }
-
-        ptr = watchpoints_store[i];
-        while (ptr) {
-            ++*len;
-            concat[*len] = ptr->checkpt;
-            ptr = ptr->next;
-        }
+    ptr = all_checkpoints;
+    while (ptr) {
+        ++*len;
+        concat[*len] = ptr->checkpt;
+        ptr = ptr->next;
     }
-
     ++*len;
 
     return concat;
@@ -162,54 +131,34 @@ mon_checkpoint_t **mon_breakpoint_checkpoint_list_get(unsigned int *len) {
 /** \brief find the breakpoint with number 'brknum' in the linked list
  *
  * \param[in]  brknum     breakpoint number
- * 
+ *
  * \return The checkpoint that has brknum, or NULL
  */
 mon_checkpoint_t *mon_breakpoint_find_checkpoint(int brknum)
 {
     checkpoint_list_t *ptr;
-    int i;
 
-    for (i = FIRST_SPACE; i <= LAST_SPACE; i++) {
-        ptr = breakpoints[i];
-        while (ptr) {
-            if (ptr->checkpt->checknum == brknum) {
-                return ptr->checkpt;
-            }
-            ptr = ptr->next;
+    ptr = all_checkpoints;
+    while (ptr) {
+        if (ptr->checkpt->checknum == brknum) {
+            return ptr->checkpt;
         }
-
-        ptr = watchpoints_load[i];
-        while (ptr) {
-            if (ptr->checkpt->checknum == brknum) {
-                return ptr->checkpt;
-            }
-            ptr = ptr->next;
-        }
-
-        ptr = watchpoints_store[i];
-        while (ptr) {
-            if (ptr->checkpt->checknum == brknum) {
-                return ptr->checkpt;
-            }
-            ptr = ptr->next;
-        }
+        ptr = ptr->next;
     }
-
     return NULL;
 }
 
 static void update_checkpoint_state(MEMSPACE mem)
 {
     /* calls mem_toggle_watchpoints() */
-    if (watchpoints_load[mem] != NULL || 
+    if (watchpoints_load[mem] != NULL ||
         watchpoints_store[mem] != NULL) {
         monitor_mask[mem] |= MI_WATCH;
-        mon_interfaces[mem]->toggle_watchpoints_func( 
+        mon_interfaces[mem]->toggle_watchpoints_func(
             1 | (break_on_dummy_access << 1), mon_interfaces[mem]->context);
     } else {
         monitor_mask[mem] &= ~MI_WATCH;
-        mon_interfaces[mem]->toggle_watchpoints_func( 
+        mon_interfaces[mem]->toggle_watchpoints_func(
             0, mon_interfaces[mem]->context);
     }
 
@@ -233,7 +182,7 @@ static void update_checkpoint_state(MEMSPACE mem)
 void mon_update_all_checkpoint_state(void)
 {
     MEMSPACE i;
-    
+
     for (i = FIRST_SPACE; i <= LAST_SPACE; i++) {
         update_checkpoint_state(i);
     }
@@ -260,6 +209,7 @@ static void remove_checkpoint(mon_checkpoint_t *cp)
     lib_free(cp->command);
     cp->command = NULL;
 
+    remove_checkpoint_from_list(&all_checkpoints, cp);
     if (cp->check_exec) {
         remove_checkpoint_from_list(&(breakpoints[mem]), cp);
     }
@@ -289,14 +239,14 @@ void mon_breakpoint_switch_checkpoint(int op, int cp_num)
         }
         return;
     }
-    
+
     cp = mon_breakpoint_find_checkpoint(cp_num);
-    
+
     if (!cp) {
         mon_out("#%d not a valid checkpoint\n", cp_num);
         return;
     }
-    
+
     cp->enabled = op;
 }
 
@@ -609,7 +559,14 @@ bool mon_breakpoint_check_checkpoint(MEMSPACE mem, unsigned int addr, unsigned i
             } else {
                 mon_out("\n");
             }
-            mon_interfaces[mem]->current_bank = 0; /* always disassemble using CPU bank */
+
+            /* always disassemble using CPU bank */
+            if (mon_interfaces[mem]->mem_bank_from_name != NULL) {
+                mon_interfaces[mem]->current_bank = mon_interfaces[mem]->mem_bank_from_name("cpu");
+            } else {
+                mon_interfaces[mem]->current_bank = 0;
+            }
+
             if (is_loadstore) {
                 mon_disassemble_with_regdump(mem, loadstorepc);
             } else if (!is_loadstore || cp->stop) {
@@ -688,6 +645,7 @@ int breakpoint_add_checkpoint(MON_ADDR start_addr, MON_ADDR end_addr,
     new_cp->temporary = is_temp;
 
     mem = addr_memspace(start_addr);
+    add_to_checkpoint_list(&all_checkpoints, new_cp);
     if (new_cp->check_exec) {
         add_to_checkpoint_list(&(breakpoints[mem]), new_cp);
     }
@@ -760,6 +718,7 @@ void mon_breakpoint_unset(MON_ADDR address)
 
     if (ptr) {
         /* there's a breakpoint, so remove it */
+        remove_checkpoint_from_list( &all_checkpoints, ptr->checkpt );
         remove_checkpoint_from_list( &breakpoints[mem], ptr->checkpt );
     }
 }

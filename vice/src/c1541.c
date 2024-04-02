@@ -48,10 +48,12 @@
 #include <stdbool.h>
 #include <stdlib.h>
 #include <stdint.h>
+#include <errno.h>
 #include <limits.h>
 #include <string.h>
 
 #include "attach.h"
+#include "diskconstants.h"
 #include "diskimage.h"
 #include "fsimage.h"
 #include "diskcontents-block.h"
@@ -65,10 +67,6 @@
 # include "svnversion.h"
 #endif
 
-#ifdef HAVE_ERRNO_H
-#include <errno.h>
-#endif
-
 #ifdef HAVE_FCNTL_H
 #include <fcntl.h>
 #endif
@@ -78,7 +76,6 @@
 #endif
 
 #include "archdep.h"
-#include "archdep_defs.h"
 #include "cbmdos.h"
 #include "cbmimage.h"
 #include "charset.h"
@@ -89,7 +86,6 @@
 #include "fsimage-check.h"
 #include "gcr.h"
 #include "imagecontents.h"
-#include "ioutil.h"
 #include "lib.h"
 #include "log.h"
 #include "serial.h"
@@ -105,9 +101,10 @@
 #include "p64.h"
 #include "fileio/p00.h"
 
+/* we want the NG header, not the old one in arch/gtk3: */
 #include "lib/linenoise-ng/linenoise.h"
 
-#ifdef ARCHDEP_OS_UNIX
+#ifdef UNIX_COMPILE
 #include <unistd.h>
 #endif
 
@@ -285,7 +282,7 @@ const command_t command_list[] = {
     { "?",
       "? [<command>]",
       "Explain specified command.  If no command is specified, "
-      "list available\n"      "ones.",
+      "list available\nones.",
       0, 1,
       help_cmd },
     { "attach",
@@ -540,54 +537,6 @@ const command_t command_list[] = {
 
 /* ------------------------------------------------------------------------- */
 
-#if 0
-#if defined(HAVE_READLINE) && defined(HAVE_READLINE_READLINE_H)
-#include <readline/readline.h>
-#include <readline/history.h>
-
-/** \brief  Read a line of input from stdin
- *
- * \param[in]   prompt  prompt to display to the user
- *
- * \return  line read from stdin
- */
-static char *read_line(const char *prompt)
-{
-    static char *line = NULL;
-
-    if (line != NULL) {
-        free(line);
-    }
-    line = readline(prompt);
-    if (line != NULL && *line != 0) {
-        add_history(line);
-    }
-    return line;
-}
-
-#else
-
-/** \brief  Read a line of input from stdin
- *
- * \param[in]   prompt  prompt to display to the user
- *
- * \return  line read from stdin
- */
-static char *read_line(const char *prompt)
-{
-    static char line[1024];
-
-    /* Make sure there is a 0 at the end of the string */
-    line[sizeof(line) - 1] = 0;
-
-    fputs(prompt, stdout);
-    fflush(stdout);
-    return fgets(line, sizeof(line) - 1, stdin);
-}
-
-#endif
-#endif
-
 
 /** \brief  Split \a line into a list of arguments
  *
@@ -619,7 +568,7 @@ static int split_args(const char *line, int *nargs, char **args)
                 begin_of_arg = 0;
                 in_quote = !in_quote;
                 continue;
-#ifndef WIN32_COMPILE
+#ifndef WINDOWS_COMPILE
             case '\\':
                 begin_of_arg = 0;
                 *(d++) = *(++s);
@@ -730,16 +679,15 @@ static int arg_to_int(const char *arg, int *return_value)
             break;  /* base is already 10 */
     }
 
-
     *return_value = (int)strtol(arg, &tailptr, base);
 
-    if (ioutil_errno(IOUTIL_ERRNO_ERANGE)) {
+    if (errno == ERANGE) {
         return -1;
     }
 
     /* Only whitespace is allowed after the last valid character.  */
     if (!util_check_null_string(tailptr)) {
-        while (isspace((int)tailptr[counter])) {
+        while (isspace((unsigned char)tailptr[counter])) {
             counter++;
         }
         tailptr += counter;
@@ -1097,21 +1045,30 @@ static int open_disk_image(vdrive_t *vdrive, const char *name,
     disk_image_t *image;
 
     image = disk_image_create();
+    /*printf("open_disk_image name:%s unit:%d\n", name, unit);*/
 
     if (archdep_file_is_blockdev(name)) {
         image->device = DISK_IMAGE_DEVICE_RAW;
         serial_device_type_set(SERIAL_DEVICE_RAW, unit);
         serial_realdevice_disable();
+    } else if (archdep_file_is_chardev(name)) {
+        image->device = DISK_IMAGE_DEVICE_REAL;
+        serial_device_type_set(SERIAL_DEVICE_REAL, unit);
+        serial_realdevice_enable();
+    } else if (strcmp(name, "opencbm") == 0) {
+        /*printf("opencbm name:%s unit:%d\n", name, unit);*/
+        image->device = DISK_IMAGE_DEVICE_REAL;
+        serial_device_type_set(SERIAL_DEVICE_REAL, unit);
+        serial_realdevice_enable();
+        /* FIXME: this will only work with a 1541 drive */
+        image->type = DISK_IMAGE_TYPE_D64;
+        image->tracks = MAX_TRACKS_1541;
+        image->max_half_tracks = MAX_TRACKS_1541 * 2;
+        printf("NOTE: using opencbm is always assuming 1541 disk layout.\n");
     } else {
-        if (archdep_file_is_chardev(name)) {
-            image->device = DISK_IMAGE_DEVICE_REAL;
-            serial_device_type_set(SERIAL_DEVICE_REAL, unit);
-            serial_realdevice_enable();
-        } else {
-            image->device = DISK_IMAGE_DEVICE_FS;
-            serial_device_type_set(SERIAL_DEVICE_FS, unit);
-            serial_realdevice_disable();
-        }
+        image->device = DISK_IMAGE_DEVICE_FS;
+        serial_device_type_set(SERIAL_DEVICE_FS, unit);
+        serial_realdevice_disable();
     }
 
     disk_image_media_create(image);
@@ -1236,8 +1193,10 @@ static int check_drive_ready(int index)
 {
     int status = check_drive_index(index);
     if (status == FD_OK) {
-        if (drives[index] == NULL || drives[index]->image == NULL) {
-            status = FD_NOTREADY;
+        if (drives[index]->image->device == DISK_IMAGE_DEVICE_FS) {
+            if ((drives[index] == NULL) || (drives[index]->image == NULL)) {
+                status = FD_NOTREADY;
+            }
         }
     }
     return status;
@@ -1307,6 +1266,17 @@ static int parse_unit_number(const char *s)
    and then PETSCII -> ASCII again.  */
 
 
+static int use_opencbm(char *name)
+{
+    size_t n = strlen(name);
+    if (n > 6) {
+        if (strcmp(&name[n - 7], "opencbm") == 0) {
+            return 1;
+        }
+    }
+    return 0;
+}
+
 /** \brief  'attach' command handler
  *
  * Attach a disk image to a virtual drive.
@@ -1342,7 +1312,11 @@ static int attach_cmd(int nargs, char **args)
             return FD_BADDEV;
     }
 
-    archdep_expand_path(&path, args[1]);
+    if (use_opencbm(args[1])) {
+        path = lib_strdup(args[1]);
+    } else {
+        archdep_expand_path(&path, args[1]);
+    }
     open_disk_image(drives[dev], path, (unsigned int)dev + DRIVE_UNIT_MIN);
     lib_free(path);
     return FD_OK;
@@ -1448,7 +1422,7 @@ static int bam_print_tracks(vdrive_t *vdrive,
  *
  * Display a bitmap of used/free sectors for each track in the image
  *
- * Syntax: 
+ * Syntax:
  *
  * \param[in]   nargs   argument count
  * \param[in]   args    argument list
@@ -2237,17 +2211,13 @@ static int chain_cmd(int nargs, char **args)
     }
 #endif
 
-    /* XXX: needs check for circular pattern, or perhaps some counter that
-     *      checks the number of blocks against the maximum block size of the
-     *      largest image type.
-     */
-
+    /* we keep a list of sectors visited so we can detect cyclic references */
     link = link_add(NULL, track, sector);
-
     do {
         unsigned char buffer[RAW_BLOCK_SIZE];
 
         printf("(%2u,%2u) -> ", track, sector);
+        fflush(stdout);
 
         /* read sector data */
         err = vdrive_read_sector(vdrive, buffer, track, sector);
@@ -2259,20 +2229,20 @@ static int chain_cmd(int nargs, char **args)
 
         if (link_find(link, track, sector) != NULL) {
             printf("cyclic reference found to (%u,%u)!\n", track, sector);
+            fflush(stdout);
             break;
         }
         link = link_add(link, track, sector);
 
     } while (track > 0);
 
-    if (track > 0) {
-        printf("%u\n", sector);
-    }
+    printf("%u\n", sector);     /* # bytes used in last block */
 #if 0
     printf("Dumping links:\n");
     link_print(link);
     putchar('\n');
 #endif
+    /* free list of visited sectors */
     link_free(link);
 
     return FD_OK;
@@ -2402,7 +2372,7 @@ static int copy_cmd(int nargs, char **args)
                 *comma = '\0';
             }
 
-            newname = lib_msprintf("%s,L,%c", oldname, rel_record_length);
+            newname = lib_msprintf("%s,L,%c", oldname, (int)rel_record_length);
 
             if (comma) {
                 *comma = ',';
@@ -2730,7 +2700,7 @@ static int entry_cmd(int nargs, char **args)
 
         /* If this is a REL file, print the side sectors */
         if (show_side_sector &&
-            (slot[SLOT_TYPE_OFFSET] & 7) == CBMDOS_FT_REL && 
+            (slot[SLOT_TYPE_OFFSET] & 7) == CBMDOS_FT_REL &&
             slot[SLOT_SIDE_TRACK] != 0) {
             unsigned int super_track = bufferinfo->super_side_sector_track;
             unsigned int super_sector = bufferinfo->super_side_sector_sector;
@@ -2785,7 +2755,7 @@ static int entry_cmd(int nargs, char **args)
                                         &data_block_number);
             }
         } else if (!show_side_sector &&
-            (slot[SLOT_TYPE_OFFSET] & 7) == CBMDOS_FT_REL && 
+            (slot[SLOT_TYPE_OFFSET] & 7) == CBMDOS_FT_REL &&
             slot[SLOT_SIDE_TRACK] != 0) {
             printf("This file seems to have side sector(s). Use the +side option to show them.\n");
         }
@@ -3028,29 +2998,19 @@ static int extract_cmd_common(int nargs, char **args, int geos)
                 }
 
                 if (p00save[dnr]) {
-                    char cwd[4096];
+                    char cwd[ARCHDEP_PATH_MAX];
                     char *total;
                     long idx = 0;
 
                     p00_name = p00_filename_create((const char *)name,
                             file_type & 7);
-#ifdef ARCHDEP_OS_UNIX
-                    if (getcwd(cwd, sizeof(cwd)) == NULL) {
+                    if (archdep_getcwd(cwd, sizeof(cwd)) == NULL) {
                         fprintf(stderr,
                                 "Couldn't get the cwd, all bets are off. "
                                 "Aborting to get a stack dump.\n");
                         abort();
                     }
-#else
-                    /* Assume crap */
-#ifdef ARCHDEP_OS_HAIKU
-                    getcwd(cwd, sizeof(cwd));
-#else
-                    _getcwd(cwd, sizeof(cwd));
-#endif
-#endif
-                    total = archdep_join_paths(cwd, p00_name, NULL);
-
+                    total = util_join_paths(cwd, p00_name, NULL);
 
                     printf("Trying filename '%s'\n", total);
                     while (archdep_file_exists(total) && idx < 100) {
@@ -3418,7 +3378,7 @@ static int match_sub_pattern(const char *name, int type,
 #endif
     /* first check if we have a filetype specifier */
     if (plen > 2 && pattern[plen - 2] == '=') {
-        if (toupper((int)(pattern[plen -1])) != type) {
+        if (toupper((unsigned char)(pattern[plen -1])) != type) {
             return 0;
         } else {
             /* reduce pattern size (strip off '=X') */
@@ -3450,7 +3410,7 @@ static int match_sub_pattern(const char *name, int type,
 
 /** \brief  Test a file \a name and \a type against \a pattern
  *
- * This function can handle multiple patterns separated by comma's, and supports
+ * This function can handle multiple patterns separated by commas, and supports
  * specifying a file type per sub pattern.
  *
  * Example: "foo*=p,b?r*=s", will match PRG files against "foo*" and SEQ files
@@ -3477,7 +3437,7 @@ static int list_file_matches_pattern(const char *name,
     int plen;
 
     /* get filetype as single token */
-    ftype = toupper((int)(type[1]));   /* P, S, D, R, U */
+    ftype = toupper((unsigned char)(type[1]));   /* P, S, D, R, U */
 
     /* pattern length */
     plen = (int)strlen(pattern);
@@ -3586,6 +3546,7 @@ static int list_cmd(int nargs, char **args)
                     lib_free(string);
                     string = image_contents_file_to_string(element, IMAGE_CONTENTS_STRING_ASCII);
                     printf("%s\n", string);
+                    fflush(stdout);
                 }
                 lib_free(string);
                 lib_free(type);
@@ -3593,6 +3554,7 @@ static int list_cmd(int nargs, char **args)
         }
         if (listing->blocks_free >= 0) {
             printf("%d blocks free.\n", listing->blocks_free);
+            fflush(stdout);
         }
         /* free image contents */
         image_contents_destroy(listing);
@@ -4528,6 +4490,31 @@ static int internal_write_geos_file(int unit, FILE* f)
     return FD_OK;
 }
 
+/* do some sanity checks, reject files that are clearly not valid convert files */
+static int check_geos_convert_file(FILE *f)
+{
+    uint8_t dirBlock[256];
+    int c = 0;
+    int n;
+
+    /* First block of cvt file is the directory entry, rest padded with zeros */
+    for (n = 0; n < 254; n++) {
+        c = fgetc(f);
+        dirBlock[n] = (unsigned char)c;
+    }
+
+    /* check if this is a valid convert file */
+    if (((memcmp(&dirBlock[0x1e], "PRG", 3) != 0) && (memcmp(&dirBlock[0x1e], "SEQ", 3) != 0)) ||
+        (memcmp(&dirBlock[0x21], " formatted GEOS file V1.0", 25) != 0)) {
+        fprintf(stderr, "not a valid GEOS convert file\n");
+        return -1;
+    }
+
+    /* reset file position */
+    fseek(f, 0, SEEK_SET);
+
+    return 0;
+}
 
 /* Author:      DiSc
  * Date:        2000-07-28
@@ -4556,6 +4543,10 @@ static int write_geos_cmd(int nargs, char **args)
     if (f == NULL) {
         fprintf(stderr,
                 "cannot read file `%s': %s\n", args[1], strerror(errno));
+        return FD_NOTRD;
+    }
+
+    if (check_geos_convert_file(f) < 0) {
         return FD_NOTRD;
     }
 
@@ -4730,9 +4721,9 @@ static int rename_cmd(int nargs, char **args)
  */
 static int show_cmd(int nargs, char **args)
 {
-    if (strcasecmp(args[1], "copying") == 0) {
+    if (util_strcasecmp(args[1], "copying") == 0) {
         printf("%s", info_license_text);
-    } else if (strcasecmp(args[1], "warranty") == 0) {
+    } else if (util_strcasecmp(args[1], "warranty") == 0) {
         printf("%s", info_warranty_text);
     } else {
         fprintf(stderr, "Use either `show copying' or `show warranty'\n");
@@ -5452,13 +5443,16 @@ static int write_cmd(int nargs, char **args)
 
 static int unzip_cmd(int nargs, char **args)
 {
+    char fname[ARCHDEP_PATH_MAX];
+    char dirname[ARCHDEP_PATH_MAX];
+    char oname[ARCHDEP_PATH_MAX];
     vdrive_t *vdrive = drives[drive_index];
     FILE *fsfd = NULL;
     unsigned int track, sector;
     unsigned int count;
-    char *p, *fname, *dirname, *oname;
     int singlefilemode = 0, err;
     uint8_t sector_data[256];
+    char *p;
 
     /* Open image or create a new one.  If the file exists, it must have
        valid header.  */
@@ -5466,10 +5460,7 @@ static int unzip_cmd(int nargs, char **args)
         return FD_BADIMAGE;
     }
 
-    fname = lib_malloc((size_t)ioutil_maxpathlen());
-    dirname = lib_malloc((size_t)ioutil_maxpathlen());
-
-    p = strrchr(args[2], FSDEV_DIR_SEP_CHR);
+    p = strrchr(args[2], ARCHDEP_DIR_SEP_CHR);
     if (p == NULL) {
         /* ignore '[0-4]!' if found */
         if (args[2][0] >= '1' && args[2][0] <= '4' && args[2][1] == '!') {
@@ -5486,8 +5477,6 @@ static int unzip_cmd(int nargs, char **args)
         len_path = (size_t)(p - args[2]);
         if (len_path == strlen(args[2]) - 1) {
             /* FIXME: Close image?  */
-            lib_free(fname);
-            lib_free(dirname);
             return FD_RDERR;
         }
         strncpy(dirname, args[2], len_path + 1);
@@ -5503,8 +5492,6 @@ static int unzip_cmd(int nargs, char **args)
         fname[0] = '0';
         fname[1] = '!';
     }
-
-    oname = lib_malloc((size_t)ioutil_maxpathlen());
 
     printf("copying blocks to image\n");
 
@@ -5539,9 +5526,6 @@ static int unzip_cmd(int nargs, char **args)
                     strcat(oname, fname);
                     if ((fsfd = fopen(oname, MODE_READ)) == NULL) {
                         fprintf(stderr, "cannot open `%s'\n", fname);
-                        lib_free(fname);
-                        lib_free(dirname);
-                        lib_free(oname);
                         return FD_NOTRD;
                     }
                     fseek(fsfd, (track == 1) ? 4 : 2, SEEK_SET);
@@ -5557,29 +5541,18 @@ static int unzip_cmd(int nargs, char **args)
                                       (char *)sector_data);
             if (err) {
                 fclose(fsfd);
-                lib_free(fname);
-                lib_free(dirname);
-                lib_free(oname);
                 return FD_BADIMAGE;
             }
             /* Write one block */
             if (vdrive_write_sector(vdrive, sector_data, track, sector) < 0) {
                 fclose(fsfd);
-                lib_free(fname);
-                lib_free(dirname);
-                lib_free(oname);
                 return FD_RDERR;
             }
         }
     }
 
     fclose(fsfd);
-
     vdrive_command_execute(vdrive, (uint8_t *)"I", 1);
-
-    lib_free(fname);
-    lib_free(dirname);
-    lib_free(oname);
 
     return FD_OK;
 }
@@ -5588,8 +5561,18 @@ static int raw_cmd(int nargs, char **args)
 {
     vdrive_t *vdrive = drives[drive_index];
 
-    if (vdrive == NULL || vdrive->buffers[15].buffer == NULL) {
+    if (vdrive == NULL) {
         return FD_NOTREADY;
+    }
+
+    if (vdrive->image == NULL) {
+        return FD_NOTREADY;
+    }
+
+    if (vdrive->image->device == DISK_IMAGE_DEVICE_FS) {
+        if (vdrive->buffers[15].buffer == NULL) {
+            return FD_NOTREADY;
+        }
     }
 
     /* Write to the command channel.  */
@@ -5661,12 +5644,6 @@ int main(int argc, char **argv)
 
         /* Interactive mode.  */
         interactive_mode = 1;
-#if 0
-        /* properly init GNU readline, if available */
-#ifdef HAVE_READLINE_READLINE_H
-        using_history();
-#endif
-#endif
         /* init linenoise-ng */
         linenoiseHistorySetMaxLen(100);
 
@@ -5731,18 +5708,35 @@ int main(int argc, char **argv)
             }
         }
         /* properly clean up GNU readline's history, if used */
-#if 0
-#ifdef HAVE_READLINE_READLINE_H
-        clear_history();
-#endif
-#endif
         linenoiseHistoryFree();
     } else {
         while (i < argc) {
-            args[0] = argv[i] + 1;
+            int match = 0, minargs = 0/*, maxargs = 0*/;
+            int n;
+            args[0] = argv[i] + 1;  /* only cmd word without leading - */
+            match = lookup_command(args[0]);
             nargs = 1;
             i++;
-            for (; i < argc && *argv[i] != '-'; i++) {
+            if (match >= 0) {
+                /* this was a valid command */
+                const command_t *cp = &command_list[match];
+                minargs = cp->min_args;
+                /*maxargs = cp->max_args;*/
+            }
+            /* first copy mandatory arguments, - is allowed without restrictions */
+            for (n = 0; (i < argc) && (n < minargs); n++, i++) {
+                args[nargs++] = argv[i];
+            }
+            /* copy rest of arguments (optional), - is allowed only when not the
+               same as a command */
+            for (; i < argc; i++) {
+                if (*argv[i] == '-') {
+                    if (lookup_command(argv[i] + 1) >= 0) {
+                        /* same as a command */
+                        break;
+                    }
+                }
+                /* valid optional argument */
                 args[nargs++] = argv[i];
             }
             if (lookup_and_execute_command(nargs, args) < 0) {
@@ -5823,7 +5817,7 @@ static int p00save_cmd(int nargs, char **args)
  */
 static int cd_cmd(int nargs, char **args)
 {
-    return ioutil_chdir(args[1]) ? FD_BADNAME : FD_OK;
+    return archdep_chdir(args[1]) == 0 ? FD_OK : FD_BADNAME;
 }
 
 
@@ -5838,7 +5832,7 @@ static int pwd_cmd(int nargs, char **args)
 {
     char buffer[4096];
 
-    ioutil_getcwd(buffer, (int)(sizeof(buffer) - 1));
+    archdep_getcwd(buffer, sizeof(buffer));
     printf("%s\n", buffer);
     return FD_OK;
 }

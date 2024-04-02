@@ -33,7 +33,6 @@
 #include "archdep.h"
 #include "cmdline.h"
 #include "findpath.h"
-#include "ioutil.h"
 #include "lib.h"
 #include "log.h"
 #include "resources.h"
@@ -65,7 +64,7 @@ static int set_system_path(const char *val, void *param)
 
     tmp_path_save = util_subst(system_path, "$$", default_path); /* malloc'd */
 
-    current_dir = ioutil_current_dir();
+    current_dir = archdep_current_dir();
 
     tmp_path = tmp_path_save; /* tmp_path points into tmp_path_save */
     for (;;) {
@@ -86,19 +85,19 @@ static int set_system_path(const char *val, void *param)
         } else { /* relative path */
             if (expanded_system_path == NULL) {
                 s = util_concat(current_dir,
-                                FSDEV_DIR_SEP_STR,
+                                ARCHDEP_DIR_SEP_STR,
                                 tmp_path, NULL );
             } else {
                 s = util_concat(expanded_system_path,
                                 ARCHDEP_FINDPATH_SEPARATOR_STRING,
                                 current_dir,
-                                FSDEV_DIR_SEP_STR,
+                                ARCHDEP_DIR_SEP_STR,
                                 tmp_path, NULL );
             }
         }
         lib_free(expanded_system_path);
         expanded_system_path = s;
-        
+
         if (p == NULL) {
             break;
         }
@@ -112,6 +111,11 @@ static int set_system_path(const char *val, void *param)
     DBG(("set_system_path -> expanded_system_path:'%s'\n", expanded_system_path));
 
     return 0;
+}
+
+const char *get_system_path(void)
+{
+    return expanded_system_path;
 }
 
 static const resource_string_t resources_string[] = {
@@ -179,7 +183,12 @@ FILE *sysfile_open(const char *name, const char *subpath, char **complete_path_r
         return NULL;
     }
 
-    p = findpath(name, expanded_system_path, subpath, IOUTIL_ACCESS_R_OK);
+    /*
+     * name      - filename or command we are looking for in the resulting path
+     * expanded_system_path  - list of search path(es), separated by target specific separator
+     * subpath  - path tail component, will be appended to the resulting path
+     */
+    p = findpath(name, expanded_system_path, subpath, ARCHDEP_ACCESS_R_OK);
 
     if (p == NULL) {
         if (complete_path_return != NULL) {
@@ -187,6 +196,18 @@ FILE *sysfile_open(const char *name, const char *subpath, char **complete_path_r
         }
         return NULL;
     } else {
+        unsigned int isdir = 0;
+
+        /* make sure we're not opening a directory */
+        archdep_stat(p, NULL, &isdir);
+        if (isdir) {
+            log_error(LOG_ERR, "'%s' is a directory, not a file.", p);
+            if (complete_path_return != NULL) {
+                *complete_path_return = NULL;
+            }
+            return NULL;
+        }
+
         f = fopen(p, open_mode);
 
         if (f == NULL || complete_path_return == NULL) {
@@ -225,6 +246,7 @@ int sysfile_load(const char *name, const char *subpath, uint8_t *dest, int minsi
 {
     FILE *fp = NULL;
     size_t rsize = 0;
+    off_t tmpsize;
     char *complete_path = NULL;
     int load_at_end;
 
@@ -233,7 +255,7 @@ int sysfile_load(const char *name, const char *subpath, uint8_t *dest, int minsi
     if (fp == NULL) {
         /* Try to open the file from the current directory. */
         const char working_dir_prefix[3] = {
-            '.', FSDEV_DIR_SEP_CHR, '\0'
+            '.', ARCHDEP_DIR_SEP_CHR, '\0'
         };
         char *local_name = NULL;
 
@@ -249,7 +271,12 @@ int sysfile_load(const char *name, const char *subpath, uint8_t *dest, int minsi
 
     log_message(LOG_DEFAULT, "Loading system file `%s'.", complete_path);
 
-    rsize = util_file_length(fp);
+    tmpsize = archdep_file_size(fp);
+    if (tmpsize < 0) {
+        log_message(LOG_DEFAULT, "Failed to determine size of '%s'.", complete_path);
+        goto fail;
+    }
+    rsize = (size_t)tmpsize;
     if (minsize < 0) {
         minsize = -minsize;
         load_at_end = 0;
@@ -273,8 +300,9 @@ int sysfile_load(const char *name, const char *subpath, uint8_t *dest, int minsi
     if (load_at_end && rsize < ((size_t)maxsize)) {
         dest += maxsize - rsize;
     } else if (rsize > ((size_t)maxsize)) {
-        log_warning(LOG_DEFAULT, "ROM `%s': long file, discarding end.",
-                    complete_path);
+        log_warning(LOG_DEFAULT,
+                    "ROM `%s': long file (%"PRI_SIZE_T"), discarding end (%"PRI_SIZE_T" bytes).",
+                    complete_path, rsize, rsize - maxsize);
         rsize = maxsize;
     }
     if ((rsize = fread((char *)dest, 1, rsize, fp)) < ((size_t)minsize)) {

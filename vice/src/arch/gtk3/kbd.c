@@ -28,14 +28,16 @@
  *  02111-1307  USA.
  *
  */
- 
+
 /* #define HAVE_DEBUG_GTK3UI */
 
 #include "vice.h"
 
 #include <stdio.h>
 #include <gtk/gtk.h>
+#include <string.h>
 #include "debug_gtk3.h"
+
 #include "hotkeys.h"
 #include "lib.h"
 #include "log.h"
@@ -43,12 +45,17 @@
 #include "kbddebugwidget.h"
 #include "keyboard.h"
 #include "mainlock.h"
-#include "uimachinemenu.h"
+#include "uiactions.h"
 #include "uimenu.h"
 #include "uimedia.h"
 #include "uistatusbar.h"
 
 #include "kbd.h"
+
+/** \brief  Enable debug_gtk3() calls for the Gdk scancode/keypad fixes
+ */
+/* #define DEBUG_GDK_FIXES */
+
 
 /** \brief  Gdk keyval translation table array indexes
  */
@@ -169,7 +176,7 @@ static void kbd_fix_shift_press(GdkEvent *report)
                     caps-lock key. on macOS we get a key down event when caps
                     become locked, and a key up event when it becomes unlocked */
         case GDK_KEY_Caps_Lock:
-#ifdef ARCHDEP_OS_MACOS
+#ifdef MACOS_COMPILE
             capslock_lock_state = 1;
 #else
             capslock_state = 1;
@@ -177,7 +184,7 @@ static void kbd_fix_shift_press(GdkEvent *report)
             break;
         /* HACK: this will update the capslock state from other keypresses,
                  hopefully making sure its kept in sync at all times */
-#ifdef ARCHDEP_OS_MACOS
+#ifdef MACOS_COMPILE
         default:
             capslock_lock_state = (report->key.state & GDK_LOCK_MASK) ? 1 : 0;
             break;
@@ -203,7 +210,7 @@ static void kbd_fix_shift_release(GdkEvent *report)
                     caps-lock key. on macOS we get a key down event when caps
                     become locked, and a key up event when it becomes unlocked */
         case GDK_KEY_Caps_Lock:
-#ifdef ARCHDEP_OS_MACOS
+#ifdef MACOS_COMPILE
             capslock_lock_state = 0;
 #else
             capslock_lock_state ^= 1;
@@ -212,7 +219,7 @@ static void kbd_fix_shift_release(GdkEvent *report)
             break;
         /* HACK: this will update the capslock state from other keypresses,
                  hopefully making sure its kept in sync at all times */
-#ifdef ARCHDEP_OS_MACOS
+#ifdef MACOS_COMPILE
         default:
             capslock_lock_state = (report->key.state & GDK_LOCK_MASK) ? 1 : 0;
             break;
@@ -234,7 +241,7 @@ static void kbd_fix_shift_clear(void)
  */
 static void kbd_sync_caps_lock(void)
 {
-#ifdef ARCHDEP_OS_MACOS
+#ifdef MACOS_COMPILE
     if (keyboard_get_shiftlock() != capslock_lock_state) {
         keyboard_set_shiftlock(capslock_lock_state);
     }
@@ -411,27 +418,25 @@ static int removepressedkey(GdkEvent *report, int *key, int *mod)
  */
 static gboolean isresethotkey(GdkEvent *report)
 {
-    static char *checkaccel[2] = { "reset-soft", "reset-hard" };
+    int checkaccel[2] = { ACTION_MACHINE_RESET_CPU, ACTION_MACHINE_POWER_CYCLE };
     gboolean res = FALSE;
     int i;
     char *this_accel = gtk_accelerator_get_label(report->key.keyval,
                                                  report->key.state & VHK_ACCEPTED_MODIFIERS);
     for (i = 0; i < 2; i++) {
-        ui_menu_item_t *item = ui_get_vice_menu_item_by_name(checkaccel[i]);
-        if (item != NULL) {
-            char *accel = gtk_accelerator_get_label(item->keysym, item->modifier);
-            if (!strcmp(this_accel, accel)) {
-                i = 2;
-                res = TRUE;
-            }
-            g_free(accel);
+        gchar *accel = vhk_gtk_get_accel_label_by_action(checkaccel[i]);
+
+        if (accel != NULL && strcmp(this_accel, accel) == 0) {
+            i = 2;
+            res = TRUE;
         }
+        g_free(accel);
     }
     g_free(this_accel);
     return res;
 }
 
-#ifdef ARCHDEP_OS_WINDOWS
+#ifdef WINDOWS_COMPILE
 /** \brief  Table of numpad keyval translations
  *
  * Array of translations from Gdk Windows keyvals to "proper" Gdk keyvals
@@ -466,7 +471,7 @@ static const guint numpad_fixes[][KV_ARR_SIZE] = {
 };
 #endif
 
-#ifdef ARCHDEP_OS_WINDOWS
+#ifdef WINDOWS_COMPILE
 /** \brief  Fix numpad keyvals
  *
  * On Windows Gdk doesn't discriminate between some "normal" keys and some
@@ -474,7 +479,7 @@ static const guint numpad_fixes[][KV_ARR_SIZE] = {
  *
  * ShiftLock OFF (US keyboard):
  *
- *  Key             Linux           Windows 
+ *  Key             Linux           Windows
  *  ----------      --------------- -----------
  *  /               KP_Divide       KP_Divide
  *  *               KP_Multiply     KP_Multiply
@@ -502,8 +507,10 @@ static guint fix_numpad_keyval(GdkEvent *event)
     int scancode = gdk_event_get_scancode(event);
     gboolean numpad = (scancode & 0x100) ? TRUE : FALSE;
     int i = 0;
+#ifdef DEBUG_GDK_FIXES
     debug_gtk3("scancode 0x%04x numpad: %d",
                (unsigned int)scancode, numpad);
+#endif
     while (numpad_fixes[i][KV_FIXED] != 0) {
         if (keyval == numpad_fixes[i][KV_ALIAS] && numpad == numpad_fixes[i][KV_BIT8]) {
             return numpad_fixes[i][KV_FIXED];
@@ -521,7 +528,7 @@ static guint fix_numpad_keyval(GdkEvent *event)
  * key instead of the decimal point.
  *
  * The first entry is the (correct) keyval, the second the (incorrect) alias.
- * 
+ *
  * CAUTION: when a key exist on KP and as a regular key (example: HOME), you
  *          MUST make sure to only map KP to KP and non KP to non KP symbols here.
  *
@@ -553,7 +560,9 @@ static guint fix_numpad_aliases(GdkEvent *event)
 {
     guint keyval = event->key.keyval;
     int i = 0;
+#ifdef DEBUG_GDK_FIXES
     debug_gtk3("fix_numpad_aliases: keyval 0x%04x", (unsigned int)keyval);
+#endif
     while (numpad_aliases[i][0] != 0) {
         if (keyval == numpad_aliases[i][1]) {
             return numpad_aliases[i][0];
@@ -581,7 +590,7 @@ static gboolean kbd_event_handler(GtkWidget *w, GdkEvent *report, gpointer gp)
             /* fprintf(stderr, "GDK_KEY_PRESS: %u %04x.\n",
                        report->key.keyval,  report->key.state); */
             kbd_fix_shift_press(report);
-#ifdef ARCHDEP_OS_WINDOWS
+#ifdef WINDOWS_COMPILE
 /* HACK: The Alt-Gr Key seems to work differently on windows and linux.
          On Linux one Keypress "ISO_Level3_Shift" will be produced, and
          the modifier mask for combined keys will be GDK_MOD5_MASK.
@@ -605,19 +614,26 @@ static gboolean kbd_event_handler(GtkWidget *w, GdkEvent *report, gpointer gp)
                        report->key.keyval,  report->key.state); */
 #endif
 
-#ifdef ARCHDEP_OS_WINDOWS
+#ifdef WINDOWS_COMPILE
+# ifdef DEBUG_GDK_FIXES
             debug_gtk3("(press) key before numpad fix: 0x%04x (GDK_KEY_%s).",
                        (unsigned int)key, gdk_keyval_name(key));
-            key = report->key.keyval = fix_numpad_keyval(report); 
+# endif
+            key = report->key.keyval = fix_numpad_keyval(report);
+#ifdef DEBUG_GDK_FIXES
             debug_gtk3("(press) key after numpad fix : 0x%04x (GDK_KEY_%s).",
                        (unsigned int)key, gdk_keyval_name(key));
+# endif
 #endif
+#ifdef DEBUG_GDK_FIXES
             debug_gtk3("(press) key before aliases fix : 0x%04x (GDK_KEY_%s).",
                        (unsigned int)key, gdk_keyval_name(key));
+#endif
             key = report->key.keyval = fix_numpad_aliases(report);
+#ifdef DEBUG_GDK_FIXES
             debug_gtk3("(press) key after aliases fix : 0x%04x (GDK_KEY_%s).",
                        (unsigned int)key, gdk_keyval_name(key));
-
+#endif
             /* FIXME:   This still gets the unmodified keyval, but we cannot
              *          modify `report` since that's owned by Gdk.
              */
@@ -655,14 +671,14 @@ static gboolean kbd_event_handler(GtkWidget *w, GdkEvent *report, gpointer gp)
 /* HACK: on windows the caps-lock key generates an invalid keycode of 0xffffff,
          so when we see this in the event we explicitly sync caps-lock state
          to make it work in the emulation */
-#ifdef ARCHDEP_OS_WINDOWS
+#ifdef WINDOWS_COMPILE
             if (report->key.keyval == 0xffffff) {
                 kbd_sync_caps_lock();
             }
 #endif
 /* HACK: on macOS caps-lock ON and OFF generate events, checking the state as
          such does not work, so we must track und update on our own */
-#ifdef ARCHDEP_OS_MACOS
+#ifdef MACOS_COMPILE
             kbd_sync_caps_lock();
 #endif
             return TRUE;
@@ -670,7 +686,7 @@ static gboolean kbd_event_handler(GtkWidget *w, GdkEvent *report, gpointer gp)
             /* fprintf(stderr, "GDK_KEY_RELEASE: %u %04x.\n",
                        report->key.keyval,  report->key.state); */
             kbd_fix_shift_release(report);
-#ifdef ARCHDEP_OS_WINDOWS
+#ifdef WINDOWS_COMPILE
             /* HACK: remap control,alt+r to alt-gr, see above */
             if (report->key.keyval == GDK_KEY_Alt_R) {
                 key = report->key.keyval = GDK_KEY_ISO_Level3_Shift;
@@ -679,19 +695,26 @@ static gboolean kbd_event_handler(GtkWidget *w, GdkEvent *report, gpointer gp)
                        report->key.keyval,  report->key.state); */
 #endif
 
-#ifdef ARCHDEP_OS_WINDOWS
+#ifdef WINDOWS_COMPILE
+# ifdef DEBUG_GDK_FIXES
             debug_gtk3("(release) key before numpad fix: 0x%04x (GDK_KEY_%s).",
                        (unsigned int)key, gdk_keyval_name(key));
-            key = report->key.keyval = fix_numpad_keyval(report); 
+# endif
+            key = report->key.keyval = fix_numpad_keyval(report);
+# ifdef DEBUG_GDK_FIXES
             debug_gtk3("(release) key after numpad fix : 0x%04x (GDK_KEY_%s).",
                        (unsigned int)key, gdk_keyval_name(key));
+# endif
 #endif
+#ifdef DEBUG_GDK_FIXES
             debug_gtk3("(release) key before aliases fix : 0x%04x (GDK_KEY_%s).",
                        (unsigned int)key, gdk_keyval_name(key));
+#endif
             key = report->key.keyval = fix_numpad_aliases(report);
+#ifdef DEBUG_GDK_FIXES
             debug_gtk3("(release) key after aliases fix : 0x%04x (GDK_KEY_%s).",
                        (unsigned int)key, gdk_keyval_name(key));
-
+#endif
             ui_statusbar_update_kbd_debug(report);
 
             if (removepressedkey(report, &key, &mod)) {
@@ -711,14 +734,14 @@ static gboolean kbd_event_handler(GtkWidget *w, GdkEvent *report, gpointer gp)
 /* HACK: on windows the caps-lock key generates an invalid keycode of 0xffffff,
          so when we see this in the event we explicitly sync caps-lock state
          to make it work in the emulation */
-#ifdef ARCHDEP_OS_WINDOWS
+#ifdef WINDOWS_COMPILE
             if (report->key.keyval == 0xffffff) {
                 kbd_sync_caps_lock();
             }
 #endif
 /* HACK: on macOS caps-lock ON and OFF generate events, checking the state as
          such does not work, so we must track und update on our own */
-#ifdef ARCHDEP_OS_MACOS
+#ifdef MACOS_COMPILE
             kbd_sync_caps_lock();
 #endif
             break;

@@ -37,6 +37,7 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+#include <stdbool.h>
 #ifdef USE_VICE_THREAD
 #include <pthread.h>
 #endif
@@ -59,9 +60,10 @@
 #include "mainlock.h"
 #include "resources.h"
 #include "sysfile.h"
-#include "tick.h"
 #include "types.h"
 #include "uiapi.h"
+#include "uiactions.h"
+#include "uihotkeys.h"
 #include "util.h"
 #include "version.h"
 #include "video.h"
@@ -77,8 +79,14 @@
 #define DBG(x)
 #endif
 
-int console_mode = 0;
-int video_disabled_mode = 0;
+/** \brief  Console mode requested on the command line
+ *
+ * The command line contained \c -console
+ */
+bool console_mode = false;
+
+/* FIXME: currently never set to true */
+bool video_disabled_mode = false;
 
 /** \brief  Help was requested on the command line
  *
@@ -86,7 +94,15 @@ int video_disabled_mode = 0;
  *
  * Include "machine.h" to use this variable.
  */
-int help_requested = 0;
+bool help_requested = false;
+
+/** \brief  Default setting were requested on the command line
+ *
+ * The command line contained \c -default, which has implications for loading
+ * of configuration and ROM files from certain user directories.
+ */
+bool default_settings_requested = false;
+
 
 void main_loop_forever(void);
 
@@ -112,36 +128,30 @@ int main_program(int argc, char **argv)
 {
     int i, n;
     const char *program_name;
-    int loadconfig = 1;
     char term_tmp[TERM_TMP_SIZE];
     size_t name_len;
     int reserr;
     char *cmdline;
+#ifdef WINDOWS_COMPILE
+    bool no_redirect_streams = false;
+#endif
+    bool loadconfig = true;
+    char *datadir;
 
 #ifdef USE_VICE_THREAD
     /*
      * The init lock guarantees that all main thread init outcomes are visible
      * to the VICE thread.
      */
-    
+
     pthread_mutex_lock(&init_lock);
 
     archdep_thread_init();
 
     mainlock_init();
 #endif
-    
-    /*
-     * OpenMP defaults to spinning threads for a couple hundred ms
-     * after they are used, which means they max out forever in our
-     * use case. Setting OMP_WAIT_POLICY to PASSIVE fixes that.
-     */
-    
-#if defined(WIN32_COMPILE)
-    _putenv("OMP_WAIT_POLICY=PASSIVE");
-#else
-    setenv("OMP_WAIT_POLICY", "PASSIVE", 1);
-#endif
+
+    archdep_set_openmp_wait_policy();
 
     lib_init();
 
@@ -154,7 +164,24 @@ int main_program(int argc, char **argv)
         lib_free(p); /* free old pointer */
     }
 
-    /* Check for some options at the beginning of the commandline before 
+#ifdef WINDOWS_COMPILE
+    /* make stdin, stdout and stderr available on Windows when compiling with
+     * -mwindows */
+    for (i = 1; i < argc; i++) {
+        if (strcmp(argv[i], "-no-redirect-streams") == 0) {
+            no_redirect_streams = true;
+            /* printf("%s(): found -no-redirect-streams\n", __func__); */
+            break;
+        }
+    }
+    if (!no_redirect_streams) {
+        /* printf("%s(): enabling stream redirection\n", __func__); */
+        archdep_fix_streams();
+    } else {
+        /* printf("%s(): disabling stream redirection\n", __func__); */
+    }
+#endif
+    /* Check for some options at the beginning of the commandline before
        initializing the user interface or loading the config file.
        -default => use default config, do not load any config
        -config  => use specified configuration file
@@ -166,7 +193,7 @@ int main_program(int argc, char **argv)
     DBG(("main:early cmdline(argc:%d)\n", argc));
     for (i = 1; i < argc; i++) {
         if ((!strcmp(argv[i], "-console")) || (!strcmp(argv[i], "--console"))) {
-            console_mode = 1;
+            console_mode = true;
             /* video_disabled_mode = 1;  Breaks exitscreenshot */
         } else if ((!strcmp(argv[i], "-version")) || (!strcmp(argv[i], "--version"))) {
 #ifdef USE_SVN_REVISION
@@ -181,10 +208,14 @@ int main_program(int argc, char **argv)
         } else if ((!strcmp(argv[i], "-config")) || (!strcmp(argv[i], "--config"))) {
             if ((i + 1) < argc) {
                 vice_config_file = lib_strdup(argv[++i]);
-                loadconfig = 1;
+                loadconfig = true;
             }
         } else if ((!strcmp(argv[i], "-default")) || (!strcmp(argv[i], "--default"))) {
-            loadconfig = 0;
+            loadconfig = false;
+#ifndef USE_HEADLESSUI
+            /* don't load custom hotkeys file in user config dir if present */
+            default_settings_requested = 1;
+#endif
         } else if ((!strcmp(argv[i], "-verbose")) || (!strcmp(argv[i], "--verbose"))) {
             log_set_silent(0);
             log_set_verbose(1);
@@ -214,7 +245,7 @@ int main_program(int argc, char **argv)
                    (!strcmp(argv[i], "--help")) ||
                    (!strcmp(argv[i], "-h")) ||
                    (!strcmp(argv[i], "-?"))) {
-            help_requested = 1;
+            help_requested = true;
         }
     }
 
@@ -233,16 +264,16 @@ int main_program(int argc, char **argv)
     /* Initialize system file locator.  */
     sysfile_init(machine_name);
 
-
-    /* hotkeys init needs to be called after sysfile_init() but before the
-     * resources and cmdline options of the hotkeys are registered.
-     */
-    if (!help_requested) {
-        ui_hotkeys_init();
+    /* generic init, first resources, then cmdline options that use them */
+    if ((init_resources() < 0) ||
+        (init_cmdline_options() < 0)) {
+        return -1;
     }
 
-    gfxoutput_early_init(help_requested);
-    if ((init_resources() < 0) || (init_cmdline_options() < 0)) {
+    gfxoutput_early_init((int)help_requested);
+    gfxoutput_resources_init();
+    if (gfxoutput_cmdline_options_init() < 0) {
+        init_cmdline_options_fail("gfxoutput");
         return -1;
     }
 
@@ -250,6 +281,17 @@ int main_program(int argc, char **argv)
     if (resources_set_defaults() < 0) {
         archdep_startup_log_error("Cannot set defaults.\n");
         return -1;
+    }
+
+    /* Initialize the UI actions system, this needs to happen before the UI
+     * init so the UI code can register handlers */
+    if (!console_mode && !help_requested) {
+#ifndef USE_HEADLESSUI
+        ui_actions_init();
+        /* also initialize the hotkeys resources/cmdline */
+        ui_hotkeys_resources_init();
+        ui_hotkeys_cmdline_options_init();
+#endif
     }
 
     /* Initialize the user interface.  `ui_init_with_args()' might need to handle the
@@ -357,11 +399,13 @@ int main_program(int argc, char **argv)
     log_message(LOG_DEFAULT, "command line was: %s", cmdline);
     lib_free(cmdline);
 
+    /* log VICE system file directory */
+    datadir = archdep_get_vice_datadir();
+    log_message(LOG_DEFAULT, "VICE system file directory: %s.", datadir);
+    lib_free(datadir);
+
     /* Complete the GUI initialization (after loading the resources and
        parsing the command-line) if necessary.  */
-    if (!console_mode && ui_init_finish() < 0) {
-        return -1;
-    }
 
     if (/*!console_mode && */video_init() < 0) {
         return -1;
@@ -374,8 +418,6 @@ int main_program(int argc, char **argv)
     if (init_main() < 0) {
         return -1;
     }
-
-    initcmdline_check_attach();
 
 #ifdef USE_VICE_THREAD
 
@@ -414,6 +456,7 @@ void vice_thread_shutdown(void)
         return;
     }
 
+    log_message(LOG_DEFAULT, "\nConfigure Flags:\n%s", CONFIGURE_FLAGS);
     /* log resources with non default values */
     resources_log_active();
     /* log the active config as commandline options */

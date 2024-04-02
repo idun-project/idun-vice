@@ -24,17 +24,27 @@
  *
  */
 
+/* #define DEBUGRAWFILE */
+
 #include "vice.h"
 
+#include <stddef.h>
 #include <stdio.h>
+#include <stdint.h>
+#include <errno.h>
 
 #include "archdep.h"
 #include "fileio.h"
-#include "ioutil.h"
 #include "lib.h"
-#include "rawfile.h"
 #include "util.h"
 
+#include "rawfile.h"
+
+#ifdef DEBUGRAWFILE
+#define DBG(x)  printf x
+#else
+#define DBG(x)
+#endif
 
 struct rawfile_info_s {
     FILE *fd;
@@ -58,7 +68,7 @@ rawfile_info_t *rawfile_open(const char *file_name, const char *path,
     if (path == NULL) {
         complete = lib_strdup(file_name);
     } else {
-        complete = util_concat(path, FSDEV_DIR_SEP_STR, file_name, NULL);
+        complete = util_concat(path, ARCHDEP_DIR_SEP_STR, file_name, NULL);
     }
 
     switch (command) {
@@ -83,7 +93,7 @@ rawfile_info_t *rawfile_open(const char *file_name, const char *path,
             return NULL;
     }
 
-    if (ioutil_stat(complete, &len, &isdir) != 0) {
+    if (archdep_stat(complete, &len, &isdir) != 0) {
         /* if stat failed exit early, except in write mode
            (since opening a non existing file creates a new file) */
         if (command != FILEIO_COMMAND_WRITE &&
@@ -184,22 +194,30 @@ unsigned int rawfile_rename(const char *src_name, const char *dst_name,
     char *complete_src, *complete_dst;
     int rc;
 
+    DBG(("rawfile_rename '%s' to '%s'\n", src_name, dst_name));
+
     if (path == NULL) {
         complete_src = lib_strdup(src_name);
         complete_dst = lib_strdup(dst_name);
     } else {
-        complete_src = util_concat(path, FSDEV_DIR_SEP_STR, src_name, NULL);
-        complete_dst = util_concat(path, FSDEV_DIR_SEP_STR, dst_name, NULL);
+        complete_src = util_concat(path, ARCHDEP_DIR_SEP_STR, src_name, NULL);
+        complete_dst = util_concat(path, ARCHDEP_DIR_SEP_STR, dst_name, NULL);
     }
 
-    /*ioutil_remove(dst_name);*/
-    rc = ioutil_rename(complete_src, complete_dst);
+    /* if dest name exists, produce "file exists" error */
+    if (archdep_file_exists(complete_dst)) {
+        lib_free(complete_src);
+        lib_free(complete_dst);
+        return FILEIO_FILE_EXISTS;
+    }
 
+    rc = archdep_rename(complete_src, complete_dst);
+    DBG(("rawfile_rename rename returned: %d errno: %d\n", rc, errno));
     lib_free(complete_src);
     lib_free(complete_dst);
 
     if (rc < 0) {
-        if (ioutil_errno(IOUTIL_ERRNO_EPERM)) {
+        if (errno == EPERM) {
             return FILEIO_FILE_PERMISSION;
         }
         return FILEIO_FILE_NOT_FOUND;
@@ -216,10 +234,10 @@ unsigned int rawfile_remove(const char *src_name, const char *path)
     if (path == NULL) {
         complete_src = lib_strdup(src_name);
     } else {
-        complete_src = util_concat(path, FSDEV_DIR_SEP_STR, src_name, NULL);
+        complete_src = util_concat(path, ARCHDEP_DIR_SEP_STR, src_name, NULL);
     }
 
-    rc = ioutil_remove(complete_src);
+    rc = archdep_remove(complete_src);
 
     lib_free(complete_src);
 

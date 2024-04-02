@@ -30,53 +30,101 @@
 #include <gtk/gtk.h>
 #include <stdarg.h>
 #include <stdlib.h>
+#include <stdbool.h>
+#include <stdint.h>
 #include <string.h>
 
-/* for GULONG_TO_POINTER() and GPOINTER_TO_ULONG() */
-#include "archdep_defs.h"
 #include "basewidget_types.h"
 #include "debug_gtk3.h"
 #include "lib.h"
 #include "log.h"
 #include "resourcehelpers.h"
 #include "resources.h"
+#include "resourcewidgetmediator.h"
 
 #include "resourcecombobox.h"
 
+/* Model columns for (id, value) pairs */
+enum {
+    COLUMN_ID,      /**< ID column (hidden) */
+    COLUMN_VALUE    /**< value column (shown) */
+};
 
-/*
- * Combo box for integer resources
- *
- * Presents a combo box with strings and uses integer keys to control a resource
- */
 
+/******************************************************************************
+ *                      Combo box for integer resources                       *
+ *                                                                            *
+ * Presents a combo box with integer keys and strings as displayed values.    *
+ *****************************************************************************/
 
-/** \brief  Create a model for a combo box with int's as ID's
+/** \brief  Create a model for a combo box with ints as IDs
  *
  * \param[in]   list    list of options
  *
  * \return  model
  */
-static GtkListStore *create_combo_int_model(const vice_gtk3_combo_entry_int_t *list)
+static GtkListStore *combo_int_model_new(const vice_gtk3_combo_entry_int_t *list)
 {
     GtkListStore *model;
-    GtkTreeIter iter;
-    int i;
+    int           index;
 
-    model = gtk_list_store_new(2, G_TYPE_STRING, G_TYPE_INT);
-    if (list == NULL) {
-        return model;
-    }
-    for (i = 0; list[i].name != NULL; i++) {
-        gtk_list_store_append(model, &iter);
-        gtk_list_store_set(model, &iter,
-                0, list[i].name,    /* item name */
-                1, list[i].id,      /* item ID */
-                -1);
+    model = gtk_list_store_new(2, G_TYPE_INT, G_TYPE_STRING);
+    if (list != NULL) {
+        for (index = 0; list[index].name != NULL; index++) {
+            GtkTreeIter iter;
+            gtk_list_store_append(model, &iter);
+            gtk_list_store_set(model,
+                               &iter,
+                               COLUMN_ID,    list[index].id,
+                               COLUMN_VALUE, list[index].name,
+                               -1);
+        }
     }
     return model;
 }
 
+/** \brief  Append row to int combo model
+ *
+ * \param[in]   model   combo box model
+ * \param[in]   id      ID for row
+ * \param[in]   value   displayed value for row
+ */
+static void combo_int_model_append(GtkListStore *model, int id, const char *value)
+{
+    GtkTreeIter iter;
+
+    gtk_list_store_append(model, &iter);
+    gtk_list_store_set(model,
+                       &iter,
+                       COLUMN_ID,    id,
+                       COLUMN_VALUE, value,
+                       -1);
+}
+
+/** \brief  Create a view for a combo box with ints as IDs
+ *
+ * \param[in]   model   model
+ *
+ * \return  GtkComboBox
+ */
+static GtkWidget *combo_int_view_new(GtkListStore *model)
+{
+    GtkWidget       *view;
+    GtkCellRenderer *renderer;
+
+    /* TODO: almost exact copy of create_combo_hex_view(), so refactor! */
+
+    /* create combo box with text renderer */
+    view = gtk_combo_box_new();
+    gtk_combo_box_set_model(GTK_COMBO_BOX(view), GTK_TREE_MODEL(model));
+    renderer = gtk_cell_renderer_text_new();
+    gtk_cell_layout_pack_start(GTK_CELL_LAYOUT(view), renderer, TRUE);
+    gtk_cell_layout_set_attributes(GTK_CELL_LAYOUT(view),
+                                   renderer,
+                                   "text", COLUMN_VALUE,
+                                   NULL);
+    return view;
+}
 
 /** \brief  Get current ID of \a combo
  *
@@ -89,19 +137,15 @@ static GtkListStore *create_combo_int_model(const vice_gtk3_combo_entry_int_t *l
  */
 static gboolean get_combo_int_id(GtkComboBox *combo, int *id)
 {
-    GtkTreeModel *model;
     GtkTreeIter iter;
 
-    if (gtk_combo_box_get_active(combo) >= 0) {
-        model = gtk_combo_box_get_model(combo);
-        if (gtk_combo_box_get_active_iter(combo, &iter)) {
-            gtk_tree_model_get(model, &iter, 1, id, -1);
-            return TRUE;
-        }
+    if (gtk_combo_box_get_active_iter(combo, &iter)) {
+        GtkTreeModel *model = gtk_combo_box_get_model(combo);
+        gtk_tree_model_get(model, &iter, COLUMN_ID, id, -1);
+        return TRUE;
     }
     return FALSE;
 }
-
 
 /** \brief  Set ID of \a combo to \a id
  *
@@ -113,14 +157,14 @@ static gboolean get_combo_int_id(GtkComboBox *combo, int *id)
 static gboolean set_combo_int_id(GtkComboBox *combo, int id)
 {
     GtkTreeModel *model;
-    GtkTreeIter iter;
+    GtkTreeIter   iter;
 
     model = gtk_combo_box_get_model(combo);
     if (gtk_tree_model_get_iter_first(model, &iter)) {
         do {
-            int current;
+            int current = 0;
 
-            gtk_tree_model_get(model, &iter, 1, &current, -1);
+            gtk_tree_model_get(model, &iter, COLUMN_ID, &current, -1);
             if (id == current) {
                 gtk_combo_box_set_active_iter(combo, &iter);
                 return TRUE;
@@ -130,207 +174,115 @@ static gboolean set_combo_int_id(GtkComboBox *combo, int id)
     return FALSE;
 }
 
-
-/** \brief  Handler for the "destroy" event of the integer combo box
- *
- * Frees the heap-allocated copy of the resource name
- *
- * \param[in]   combo       combo box
- * \param[in]   user_data   extra event data (unused)
- */
-static void on_combo_int_destroy(GtkWidget *combo, gpointer user_data)
-{
-    resource_widget_free_resource_name(combo);
-}
-
-
 /** \brief  Handler for the "changed" event of the integer combo box
  *
  * Updates the resource connected to the combo box
  *
- * \param[in]   combo       combo box
- * \param[in]   user_data   extra event data (unused)
+ * \param[in]   self    combo box
+ * \param[in]   data    extra event data (unused)
  */
-static void on_combo_int_changed(GtkComboBox *combo, gpointer user_data)
+static void on_combo_int_changed(GtkComboBox *self, gpointer data)
 {
-    int id;
-    const char *resource;
+    mediator_t *mediator;
+    int         id = 0;
 
-    resource = resource_widget_get_resource_name(GTK_WIDGET(combo));
-    if (get_combo_int_id(combo, &id)) {
-        if (resources_set_int(resource, id) < 0) {
-            gulong handler_id;
-            int prev;
-
-            log_error(LOG_ERR, "failed to set resource '%s' to %d\n",
-                    resource, id);
-
-            /* set combo back to its previous (valid) id */
-            prev = resource_widget_get_int(GTK_WIDGET(combo), "PreviousID");
-            handler_id = GPOINTER_TO_ULONG(g_object_get_data(G_OBJECT(combo),
-                                                             "ChangedHandlerID"));
-            g_signal_handler_block(G_OBJECT(combo), handler_id);
-            set_combo_int_id(combo, prev);
-            g_signal_handler_unblock(G_OBJECT(combo), handler_id);
-
-        } else {
-            /* valid, so update the previous ID */
-            resource_widget_set_int(GTK_WIDGET(combo), "PreviousID", id);
+    mediator = mediator_for_widget(GTK_WIDGET(self));
+    if (get_combo_int_id(self, &id)) {
+        /* set resource, update state and trigger callback if present */
+        if (!mediator_update_int(mediator, id)) {
+            /* revert without trigger useless resource update */
+            mediator_handler_block(mediator);
+            set_combo_int_id(self, mediator_get_current_int(mediator));
+            mediator_handler_unblock(mediator);
         }
-    } else {
-        log_error(LOG_ERR, "failed to get ID for resource '%s'\n", resource);
     }
 }
 
 
 /** \brief  Create a combo box to control an integer resource
  *
- * \param[in,out]   combo   combo box
- * \param[in]       entries list of entries for the combo box
- *
- * \return  GtkComboBox
- */
-static GtkWidget *resource_combo_box_int_new_helper(
-        GtkWidget *combo,
-        const vice_gtk3_combo_entry_int_t *entries)
-{
-    GtkListStore *model;
-    GtkCellRenderer *renderer;
-    const char *resource;
-    int current;
-    gulong handler_id;
-
-    /* setup combo box with model and renderers */
-    model = create_combo_int_model(entries);
-    gtk_combo_box_set_model(GTK_COMBO_BOX(combo), GTK_TREE_MODEL(model));
-    renderer = gtk_cell_renderer_text_new();
-    gtk_cell_layout_pack_start(GTK_CELL_LAYOUT(combo), renderer, TRUE);
-    gtk_cell_layout_set_attributes(GTK_CELL_LAYOUT(combo), renderer,
-            "text", 0, NULL);
-
-    /* set current ID */
-    resource = resource_widget_get_resource_name(combo);
-    if (resources_get_int(resource, &current) < 0) {
-        /* couldn't read resource */
-        log_error(LOG_ERR,
-                "failed to get value for resource %s, "
-                "reverting to the first entry\n",
-                resource);
-        current = 0;
-        gtk_combo_box_set_active(GTK_COMBO_BOX(combo), 0);
-    } else {
-        if (!set_combo_int_id(GTK_COMBO_BOX(combo), current)) {
-            /* failed to set ID, revert to first entry */
-            log_error(LOG_ERR,
-                    "failed to set ID to %d for resource '%s',"
-                    " reverting to the first entry\n",
-                    current, resource);
-            gtk_combo_box_set_active(GTK_COMBO_BOX(combo), 0);
-        }
-    }
-
-    /* remember original value for reset() */
-    resource_widget_set_int(combo, "ResourceOrig", current);
-    /* used to reset combo box to its previous state if setting the resource
-     * fails */
-    resource_widget_set_int(combo, "PreviousID", current);
-
-    /* register methods to be used by the resource widget manager */
-    resource_widget_register_methods(
-            combo,
-            vice_gtk3_resource_combo_box_int_reset,
-            vice_gtk3_resource_combo_box_int_factory,
-            vice_gtk3_resource_combo_box_int_sync);
-
-    /* connect signal handlers */
-    handler_id = g_signal_connect(combo, "changed", G_CALLBACK(on_combo_int_changed), NULL);
-    /* used to temporarily block the signal handler to avoid extra resource_set_int() calls */
-    g_object_set_data(G_OBJECT(combo), "ChangedHandlerID", GULONG_TO_POINTER(handler_id));
-    g_signal_connect_unlocked(combo, "destroy", G_CALLBACK(on_combo_int_destroy), NULL);
-
-    gtk_widget_show(combo);
-    return combo;
-}
-
-
-/** \brief  Create a combo box to control an integer resource
+ * Create integer resource-bound combo box for \a resource, populating it with
+ * \a entries. The \a entries list is allowed to be `NULL`, in which case an
+ * empty model is created and the user can manually add rows using
+ * vice_gtk3_resource_combo_int_append().
  *
  * \param[in]   resource    resource name
- * \param[in]   entries     list of entries for the combo box
+ * \param[in]   entries     list of entries for the combo box (can be `NULL`)
  *
  * \return  GtkComboBoxText
+ *
  */
-GtkWidget *vice_gtk3_resource_combo_box_int_new(
-        const char *resource,
-        const vice_gtk3_combo_entry_int_t *entries)
+GtkWidget *vice_gtk3_resource_combo_int_new(const char *resource,
+                                            const vice_gtk3_combo_entry_int_t *entries)
 {
-    GtkWidget * combo = gtk_combo_box_new();
+    GtkWidget    *view;
+    GtkListStore *model;
+    mediator_t   *mediator;
+    gulong        handler;
 
-    /* store a heap-allocated copy of the resource name in the object */
-    resource_widget_set_resource_name(combo, resource);
+    model    = combo_int_model_new(entries);
+    view     = combo_int_view_new(model);
+    mediator = mediator_new(view, resource, G_TYPE_INT);
 
-    return resource_combo_box_int_new_helper(combo, entries);
+    /* set current ID */
+    if (entries != NULL) {
+        set_combo_int_id(GTK_COMBO_BOX(view), mediator_get_current_int(mediator));
+    }
+    /* connect handler and register with mediator */
+    handler = g_signal_connect(G_OBJECT(view),
+                               "changed",
+                               G_CALLBACK(on_combo_int_changed),
+                               NULL);
+    mediator_set_handler(mediator, handler);
+
+    return view;
 }
 
 
 /** \brief  Create a combo box to control an integer resource
  *
- * Allows setting the resource name via sprintf()-syntax
+ * * Create integer resource-bound combo box, populating it with \a entries.
+ * The \a entries list is allowed to be `NULL`, in which case an empty model is
+ * created and the user can manually add rows using
+ * vice_gtk3_resource_combo_int_append().
+ *
+ * This verions allows setting the resource name via sprintf()-syntax.
  *
  * \param[in]   fmt     format string for the resource name
- * \param[in]   entries list of entries for the combo box
+ * \param[in]   entries list of entries for the combo box (can be `NULL`)
  *
  * \return  GtkComboBoxText
  */
-GtkWidget *vice_gtk3_resource_combo_box_int_new_sprintf(
+GtkWidget *vice_gtk3_resource_combo_int_new_sprintf(
         const char *fmt,
         const vice_gtk3_combo_entry_int_t *entries,
         ...)
 {
-    GtkWidget *combo;
-    char *resource;
+    char    resource[256];
     va_list args;
 
-    combo = gtk_combo_box_new();
-
     va_start(args, entries);
-    resource = lib_mvsprintf(fmt, args);
-    g_object_set_data(G_OBJECT(combo), "ResourceName", (gpointer)resource);
+    g_vsnprintf(resource, sizeof resource, fmt, args);
     va_end(args);
 
-    return resource_combo_box_int_new_helper(combo, entries);
+    return vice_gtk3_resource_combo_int_new(resource, entries);
 }
 
 
-/** \brief  Create combo box for integer \a resource with a \a label
+/** \brief  Append row to integer combo box
  *
- * \param[in]   resource    resource name
- * \param[in]   entries     list of entries for the combo box
- * \param[in]   label       text for the label
- *
- * \return  GtkGrid
+ * \param[in]   widget  integer resource combo box
+ * \param[in]   id      ID for row
+ * \param[in]   value   displayed string for row
  */
-GtkWidget *vice_gtk3_resource_combo_box_int_new_with_label(
-        const char *resource,
-        const vice_gtk3_combo_entry_int_t *entries,
-        const char *label)
+void vice_gtk3_resource_combo_int_append(GtkWidget  *widget,
+                                         int         id,
+                                         const char *value)
 {
-    GtkWidget *grid;
-    GtkWidget *lbl;
-    GtkWidget *combo;
+    GtkListStore *model;
 
-    grid = gtk_grid_new();
-    gtk_grid_set_column_spacing(GTK_GRID(grid), 8);
-
-    lbl = gtk_label_new(label);
-    gtk_widget_set_halign(lbl, GTK_ALIGN_START);
-    gtk_grid_attach(GTK_GRID(grid), lbl, 0, 0, 1, 1);
-
-    combo = vice_gtk3_resource_combo_box_int_new(resource, entries);
-    gtk_grid_attach(GTK_GRID(grid), combo, 1, 0, 1, 1);
-
-    gtk_widget_show_all(grid);
-    return grid;
+    model = GTK_LIST_STORE(gtk_combo_box_get_model(GTK_COMBO_BOX(widget)));
+    combo_int_model_append(model, id, value);
 }
 
 
@@ -343,44 +295,9 @@ GtkWidget *vice_gtk3_resource_combo_box_int_new_with_label(
  *
  * \return  TRUE if the new \a id was set
  */
-gboolean vice_gtk3_resource_combo_box_int_set(GtkWidget *widget, int id)
+gboolean vice_gtk3_resource_combo_int_set(GtkWidget *widget, int id)
 {
-    GtkWidget *combo;
-
-    if (GTK_IS_GRID(widget)) {
-        /* widget is a grid with label & combo */
-        combo = gtk_grid_get_child_at(GTK_GRID(widget), 1, 0);
-    } else {
-        combo = widget;
-    }
-    if (GTK_IS_COMBO_BOX(combo)) {
-        return set_combo_int_id(GTK_COMBO_BOX(combo), id);
-    }
-    return FALSE;   /* should not get here */
-}
-
-
-/** \brief  Get current ID for integer combo box
- *
- * \param[in]   widget  integer resource combo box
- * \param[out]  dest    object to store ID
- *
- * \return  TRUE if the ID was properly read
- */
-gboolean vice_gtk3_resource_combo_box_int_get(GtkWidget *widget, int *dest)
-{
-    GtkWidget *combo;
-
-    if (GTK_IS_GRID(widget)) {
-        /* widget is a grid with label & combo */
-        combo = gtk_grid_get_child_at(GTK_GRID(widget), 1, 0);
-    } else {
-        combo = widget;
-    }
-    if (GTK_IS_COMBO_BOX(combo)) {
-        return get_combo_int_id(GTK_COMBO_BOX(combo), dest);
-    }
-    return FALSE;   /* should not get here */
+    return set_combo_int_id(GTK_COMBO_BOX(widget), id);
 }
 
 
@@ -390,16 +307,14 @@ gboolean vice_gtk3_resource_combo_box_int_get(GtkWidget *widget, int *dest)
  *
  * \return  TRUE if the widget was reset to its factory value
  */
-gboolean vice_gtk3_resource_combo_box_int_factory(GtkWidget *widget)
+gboolean vice_gtk3_resource_combo_int_factory(GtkWidget *widget)
 {
-    const char *resource;
-    int value;
+    mediator_t *mediator;
+    int         factory;
 
-    resource = resource_widget_get_resource_name(widget);
-    if (resources_get_default_value(resource, &value) < 0) {
-        return FALSE;
-    }
-    return vice_gtk3_resource_combo_box_int_set(widget, value);
+    mediator = mediator_for_widget(widget);
+    factory  = mediator_get_factory_int(mediator);
+    return set_combo_int_id(GTK_COMBO_BOX(widget), factory);
 }
 
 
@@ -409,12 +324,14 @@ gboolean vice_gtk3_resource_combo_box_int_factory(GtkWidget *widget)
  *
  * \return  bool
  */
-gboolean vice_gtk3_resource_combo_box_int_reset(GtkWidget *widget)
+gboolean vice_gtk3_resource_combo_int_reset(GtkWidget *widget)
 {
-    int orig;
+    mediator_t *mediator;
+    int         initial = 0;
 
-    orig = resource_widget_get_int(widget, "ResourceOrig");
-    return vice_gtk3_resource_combo_box_int_set(widget, orig);
+    mediator = mediator_for_widget(widget);
+    initial  = mediator_get_initial_int(mediator);
+    return vice_gtk3_resource_combo_int_set(widget, initial);
 }
 
 
@@ -424,203 +341,477 @@ gboolean vice_gtk3_resource_combo_box_int_reset(GtkWidget *widget)
  *
  * \return  bool
  */
-gboolean vice_gtk3_resource_combo_box_int_sync(GtkWidget *widget)
+gboolean vice_gtk3_resource_combo_int_sync(GtkWidget *widget)
 {
-    const char *resource_name;
-    int resource_value;
-    gulong handler_id;
-    gboolean result;
+    mediator_t *mediator;
+    int         id = -1;
+    int         value;
+    gboolean    result = TRUE;
 
-    resource_name = resource_widget_get_resource_name(widget);
-    if (resources_get_int(resource_name, &resource_value) < 0) {
-        return FALSE;
+    mediator = mediator_for_widget(widget);
+    get_combo_int_id(GTK_COMBO_BOX(widget), &id);
+    value = mediator_get_resource_int(mediator);
+    if (id != value) {
+        mediator_handler_block(mediator);
+        result = set_combo_int_id(GTK_COMBO_BOX(widget), value);
+        mediator_handler_unblock(mediator);
     }
-
-    handler_id = GPOINTER_TO_ULONG(g_object_get_data(G_OBJECT(widget),
-                                                     "ChangedHandlerID"));
-    debug_gtk3("changed handler id = %lu.", handler_id);
-    g_signal_handler_block(G_OBJECT(widget), handler_id);
-    result = set_combo_int_id(GTK_COMBO_BOX(widget), resource_value);
-    g_signal_handler_unblock(G_OBJECT(widget), handler_id);
     return result;
 }
 
 
+/******************************************************************************
+ *    GtkComboBox for integer resources, displaying values in hexadecimal     *
+ *                                                                            *
+ * Displays a list, or range, of integer values in hexadecimal notation,      *
+ * presenting the values as unsigned 16-bit values in the form '$hhhh'.       *
+ *****************************************************************************/
 
-/*
- * Combo box for string resources
+/** \brief  Add value to model
  *
- * Presents a combo box with strings, and uses strings for keys
+ * Add \a value as integer ID and as a hex string (prefixed with '$') to be
+ * displayed.
+ *
+ * \param[in]   model   hex resource combo model
+ * \param[in]   value   value for \a model
  */
-
-/** \brief  Handler for the 'destroy' event of the combo box
- *
- * Frees the heap-allocated copy of the resource name
- *
- * \param[in,out]   combo       combo box
- * \param[in]       user_data   extra event data (unused)
- */
-static void on_combo_str_destroy(GtkWidget *combo, gpointer user_data)
+static void combo_hex_model_append(GtkListStore *model, int value)
 {
-    resource_widget_free_resource_name(combo);
-    resource_widget_free_string(combo, "ResourceOrig");
+    char hexstr[64];
+
+    g_snprintf(hexstr, sizeof hexstr, "$%04x", (unsigned int)value);
+    combo_int_model_append(model, value, hexstr);
 }
 
+/** \brief  Create model from list of integer values
+ *
+ * Create hex combo model from values in \a list.
+ *
+ * \param[in]   list    values, terminated with <0
+ *
+ * \return  populated model
+ */
+static GtkListStore *combo_hex_model_list_new(const int *list)
+{
+    GtkListStore *model;
+    int           index = 0;
+
+    model = combo_int_model_new(NULL);
+    while (list[index] >= 0) {
+        combo_hex_model_append(model, list[index]);
+        index++;
+    }
+    return model;
+}
+
+/** \brief  Create model from range of integer values
+ *
+ * Create hex combo model with values starting with \a lower up to, but excluding,
+ * \a upper, incrementing with \a step.
+ *
+ * \param[in]   list    values, terminated with <0
+ *
+ * \return  populated model
+ */
+static GtkListStore *combo_hex_model_range_new(int lower,
+                                               int upper,
+                                               int step)
+{
+    GtkListStore *model;
+    int           value;
+
+    model = combo_int_model_new(NULL);
+    for (value = lower; value < upper; value += step) {
+        combo_hex_model_append(model, value);
+    }
+    return model;
+}
+
+/** \brief  Create view for a hex resource combo
+ *
+ * Create combo box for \a model.
+ *
+ * \param[in]   model   model for the combo box
+ *
+ * \return  GtkComboBox
+ */
+static GtkWidget *combo_hex_view_new(GtkListStore *model)
+{
+    GtkWidget       *view;
+    GtkCellRenderer *renderer;
+
+    /* create combo box with text renderer */
+    view = gtk_combo_box_new();
+    gtk_combo_box_set_model(GTK_COMBO_BOX(view), GTK_TREE_MODEL(model));
+    renderer = gtk_cell_renderer_text_new();
+    gtk_cell_layout_pack_start(GTK_CELL_LAYOUT(view), renderer, TRUE);
+    gtk_cell_layout_set_attributes(GTK_CELL_LAYOUT(view),
+                                   renderer,
+                                   "text", COLUMN_VALUE,
+                                   NULL);
+    return view;
+}
+
+/** \brief  Helper to create hex resource combo box
+ *
+ * \param[in]   resource    resource name
+ * \param[in]   model       model for the combo box
+ *
+ * \return  GtkComboBox
+ */
+static GtkWidget *combo_hex_helper(const char   *resource,
+                                   GtkListStore *model)
+{
+    GtkWidget  *view;
+    mediator_t *mediator;
+    gulong      handler;
+
+    view     = combo_hex_view_new(model);
+    mediator = mediator_new(view, resource, G_TYPE_INT);
+
+    set_combo_int_id(GTK_COMBO_BOX(view), mediator_get_current_int(mediator));
+    /* Connect handler and register with mediator. The hex combo box is just
+     * an int combo box with a different presentation of the values, so we
+     * use the int combo as the "parent class".
+     */
+    handler = g_signal_connect(G_OBJECT(view),
+                               "changed",
+                               G_CALLBACK(on_combo_int_changed),
+                               NULL);
+    mediator_set_handler(mediator, handler);
+
+    return view;
+}
+
+
+/******************************************************************************
+ *                      Hex resource combo box - Public API                   *
+ *****************************************************************************/
+
+/** \brief  Create resource-bound combo box showing hex literals
+ *
+ * Create combo box bound to an integer resource that shows a hex string in
+ * the form '$hhhh' for each value in \a list.
+ *
+ * This function creates the combo box with an empty model, which can then
+ * be populated using vice_gtk3_resource_combo_hex_append().
+ *
+ * \return  GtkComboBox
+ */
+GtkWidget *vice_gtk3_resource_combo_hex_new(const char *resource)
+{
+    GtkListStore *model = combo_int_model_new(NULL);
+
+    return combo_hex_helper(resource, model);
+}
+
+
+/** \brief  Create resource-bound combo box showing hex literals
+ *
+ * Create combo box bound to an integer resource that shows a hex string in
+ * the form '$hhhh' for each value in \a list.
+ *
+ * \param[in]   resource    resource name
+ * \param[in]   list        list of values, terminate with <0
+ *
+ * \return  GtkComboBox
+ */
+GtkWidget *vice_gtk3_resource_combo_hex_new_list(const char *resource,
+                                                 const int  *list)
+{
+    return combo_hex_helper(resource, combo_hex_model_list_new(list));
+}
+
+
+/** \brief  Create resource-bound combo box showing hex literals
+ *
+ * Create combo box bound to an integer resource that shows a hex string in
+ * the form '$hhhh' for each value in range \a lower to \a upper (exclusive).
+ *
+ * \param[in]   resource    resource name
+ * \param[in]   lower       range starting value (inclusive)
+ * \param[in]   upper       range ending value (exclusive)
+ * \param[in]   step        increment of value
+ *
+ * \return  GtkComboBox
+ */
+GtkWidget *vice_gtk3_resource_combo_hex_new_range(const char *resource,
+                                                  int         lower,
+                                                  int         upper,
+                                                  int         step)
+{
+    if (upper <= lower) {
+        log_error(LOG_ERR, "%s(): invalid range %d-%d", __func__, lower, upper);
+        return NULL;
+    }
+    if (step < 1) {
+        log_error(LOG_ERR, "%s(): invalid step value %d", __func__, step);
+        return NULL;
+    }
+    return combo_hex_helper(resource,
+                            combo_hex_model_range_new(lower, upper, step));
+}
+
+
+/** \brief  Append value to hex combo box
+ *
+ * \param[in]   combo   hex resource combo box
+ * \param[in]   value   value to apend (will be displayed as "\$hhhhh")
+ */
+void vice_gtk3_resource_combo_hex_append(GtkWidget *combo, int value)
+{
+    GtkListStore *model;
+
+    model = GTK_LIST_STORE(gtk_combo_box_get_model(GTK_COMBO_BOX(combo)));
+    combo_hex_model_append(model, value);
+}
+
+
+/** \brief  Set hex resource combo box ID, triggering resource update
+ *
+ * \param[in]   combo   hex resource combo box
+ * \param[in]   id      new ID for \a combo
+ *
+ * \return  `TRUE` if the combo box ID and resource value could be set
+ */
+gboolean vice_gtk3_resource_combo_hex_set(GtkWidget *combo, int id)
+{
+    return vice_gtk3_resource_combo_int_set(combo, id);
+}
+
+
+/** \brief  Reset hex combo box to the resource factory value
+ *
+ * Set combo box and the bound resource to the resource factory value.
+ *
+ * \param[in]   combo
+ *
+ * \return  `TRUE` if the combo box and the resource could be set
+ */
+gboolean vice_gtk3_resource_combo_hex_factory(GtkWidget *combo)
+{
+    return vice_gtk3_resource_combo_int_factory(combo);
+}
+
+
+/** \brief  Reset hex combo box to its value on instanciation
+ *
+ * Reset \a combo to the value the resource had when the \a combo was created.
+ *
+ * \param[in]   combo
+ *
+ * \return  `TRUE` if the combo box and the resource could be set
+ */
+gboolean vice_gtk3_resource_combo_hex_reset(GtkWidget *combo)
+{
+    return vice_gtk3_resource_combo_int_reset(combo);
+}
+
+
+/** \brief  Synchronized hex combo box with its resource
+ *
+ * Set \a combo to the current value of its resource, without triggering a
+ * resource-set operation.
+ *
+ * \return  `TRUE` if the combo box could be synchronized with its resource
+ */
+gboolean vice_gtk3_resource_combo_hex_sync(GtkWidget *combo)
+{
+    return vice_gtk3_resource_combo_int_sync(combo);
+}
+
+
+/******************************************************************************
+ *                      Combo box for string resources                        *
+ *                                                                            *
+ *      Presents a combo box with strings, and uses strings for keys.         *
+ *****************************************************************************/
+
+/** \brief  Create model for combo box with string (id,value) pairs
+ *
+ * Create model for combo box with column 0 as ID (string) and column 1 as
+ * display value (string)).
+ *
+ * \param[in]   entries list of entries for the model (can be `NULL`)
+ *
+ * \return  new model
+ */
+static GtkListStore *combo_str_model_new(const vice_gtk3_combo_entry_str_t *entries)
+{
+    GtkListStore *model;
+    int           index;
+
+    model = gtk_list_store_new(2, G_TYPE_STRING, G_TYPE_STRING);
+    if (entries != NULL) {
+        for (index = 0; entries[index].id != NULL; index++) {
+            GtkTreeIter iter;
+
+            gtk_list_store_append(model, &iter);
+            gtk_list_store_set(model,
+                               &iter,
+                               COLUMN_ID,    entries[index].id,
+                               COLUMN_VALUE, entries[index].value,
+                               -1);
+        }
+    }
+    return model;
+}
+
+/** \brief  Append row to string resource combo box model
+ *
+ * \param[in]   model   model
+ * \param[in]   id      ID for the row
+ * \param[in]   value   display value for the row
+ */
+static void combo_str_model_append(GtkListStore *model,
+                                   const char   *id,
+                                   const char   *value)
+{
+    if (id != NULL && *id != '\0' && value != NULL && *value != '\0') {
+        GtkTreeIter iter;
+
+        gtk_list_store_append(model, &iter);
+        gtk_list_store_set(model,
+                           &iter,
+                           COLUMN_ID,    id,
+                           COLUMN_VALUE, value,
+                           -1);
+    } else {
+        log_error(LOG_ERR,
+                  "%s(): cannot append row, `id` and `value` must both be"
+                  " non-NULL and non-empty",
+                  __func__);
+    }
+}
+
+/** \brief  Create combo box for string resources and initialize with model
+ *
+ * \param[in]   model   model
+ *
+ * \return  GtkComboBox
+ */
+static GtkWidget *combo_str_view_new(GtkListStore *model)
+{
+    GtkWidget       *view;
+    GtkCellRenderer *renderer;
+
+    view = gtk_combo_box_new();
+    gtk_combo_box_set_model(GTK_COMBO_BOX(view), GTK_TREE_MODEL(model));
+    renderer = gtk_cell_renderer_text_new();
+    gtk_cell_layout_pack_start(GTK_CELL_LAYOUT(view), renderer, TRUE);
+    gtk_cell_layout_set_attributes(GTK_CELL_LAYOUT(view),
+                                   renderer,
+                                   "text", COLUMN_VALUE,
+                                   NULL);
+    /* set ID column so we can use gtk_combo_box_get_active_id() (only works
+     * for string IDs) */
+    gtk_combo_box_set_id_column(GTK_COMBO_BOX(view), COLUMN_ID);
+    return view;
+}
 
 /** \brief  Handler for the 'changed' event of the string combo box
  *
  * Updates the resource connected to the combo box
  *
- * \param[in]   combo       combo box
- * \param[in]   user_data   extra event data (unused)
+ * \param[in]   combo  combo box
+ * \param[in]   data   extra event data (unused)
  */
-static void on_combo_str_changed(GtkWidget *combo, gpointer user_data)
+static void on_combo_str_changed(GtkComboBox *self, gpointer data)
 {
-    const char *id_str;
-    const char *resource;
+    mediator_t *mediator;
+    const char *combo_id;
 
-    resource = resource_widget_get_resource_name(combo);
-    id_str = gtk_combo_box_get_active_id(GTK_COMBO_BOX(combo));
-    resources_set_string(resource, id_str);
+    mediator = mediator_for_widget(GTK_WIDGET(self));
+    combo_id = gtk_combo_box_get_active_id(self);
+    if (combo_id != NULL) {
+        /* update resource and mediator state, call callback on success */
+        if (!mediator_update_string(mediator, combo_id)) {
+            /* failed to set resource, revert widget state */
+            mediator_handler_block(mediator);
+            gtk_combo_box_set_active_id(self,
+                                        mediator_get_current_string(mediator));
+            mediator_handler_unblock(mediator);
+        }
+    }
 }
 
 
-/** \brief  Create a combo box to control a string resource
- *
- * \param[in]   combo   combo box
- * \param[in]   entries list of entries for the combo box
- *
- * \return  GtkComboBoxText
- */
-static GtkWidget *resource_combo_box_str_new_helper(
-        GtkWidget *combo,
-        const vice_gtk3_combo_entry_str_t *entries)
-{
-    int index;
-    const char *current;
-    const char *resource;
-
-    resource = resource_widget_get_resource_name(combo);
-
-    /* get current value of resource */
-    if (resources_get_string(resource, &current) < 0) {
-        current = "";
-    }
-    /* store current resource value (NULL gets allocated as "") */
-    resource_widget_set_string(combo, "ResourceOrig", current);
-
-    /* add entries */
-    for (index = 0; entries[index].name != NULL; index++) {
-        const char *id_str;
-
-        if (entries[index].id == NULL) {
-            id_str = entries[index].name;
-        } else {
-            id_str = entries[index].id;
-        }
-
-        gtk_combo_box_text_append(GTK_COMBO_BOX_TEXT(combo),
-                id_str, entries[index].name);
-        if (strcmp(current, id_str) == 0) {
-            gtk_combo_box_set_active(GTK_COMBO_BOX(combo), index);
-        }
-    }
-
-    /* register methods to be used by the resource widget manager */
-    resource_widget_register_methods(
-            combo,
-            vice_gtk3_resource_combo_box_str_reset,
-            vice_gtk3_resource_combo_box_str_factory,
-            vice_gtk3_resource_combo_box_str_sync);
-
-
-    /* connect signal handlers */
-    g_signal_connect(combo, "changed", G_CALLBACK(on_combo_str_changed), NULL);
-    g_signal_connect(combo, "destroy", G_CALLBACK(on_combo_str_destroy), NULL);
-
-    gtk_widget_show(combo);
-    return combo;
-}
-
-
-/** \brief  Create a combo box to control a string resource
+/** \brief  Create a combo box bound to a string resource
  *
  * \param[in]   resource    resource name
- * \param[in]   entries     list of entries for the combo box
+ * \param[in]   entries     list of entries for the combo box or `NULL`
  *
- * \return  GtkComboBoxText
+ * \return  GtkComboBox
  */
-GtkWidget *vice_gtk3_resource_combo_box_str_new(
+GtkWidget *vice_gtk3_resource_combo_str_new(
         const char *resource,
         const vice_gtk3_combo_entry_str_t *entries)
 {
-    GtkWidget *combo;
+    GtkListStore *model;
+    GtkWidget    *view;
+    mediator_t   *mediator;
+    gulong        handler;
+    const char   *id = NULL;
 
-    combo = gtk_combo_box_text_new();
+    model    = combo_str_model_new(entries);
+    view     = combo_str_view_new(model);
+    mediator = mediator_new(view, resource, G_TYPE_STRING);
 
-    /* store a heap-allocated copy of the resource name in the object */
-    resource_widget_set_resource_name(combo, resource);
+    /* set proper ID */
+    id = mediator_get_resource_string(mediator);
+    gtk_combo_box_set_active_id(GTK_COMBO_BOX(view), id);
 
-    return resource_combo_box_str_new_helper(combo, entries);
+    /* connect signal handler and register with mediator */
+    handler = g_signal_connect(G_OBJECT(view),
+                               "changed",
+                               G_CALLBACK(on_combo_str_changed),
+                               NULL);
+    mediator_set_handler(mediator, handler);
+
+    return view;
 }
 
 
 /** \brief  Create a combo box to control a string resource
  *
  * \param[in]   fmt         resource name, printf-style format string
- * \param[in]   entries     list of entries for the combo box
+ * \param[in]   entries     list of entries for the combo box or `NULL`
  *
  * \return  GtkComboBoxText
  */
-GtkWidget *vice_gtk3_resource_combo_box_str_new_sprintf(
+GtkWidget *vice_gtk3_resource_combo_str_new_sprintf(
         const char *fmt,
         const vice_gtk3_combo_entry_str_t *entries,
         ...)
 {
-    GtkWidget *combo;
-    char *resource;
+    char    resource[256];
     va_list args;
 
-    combo = gtk_combo_box_text_new();
-
     va_start(args, entries);
-    resource = lib_mvsprintf(fmt, args);
-    g_object_set_data(G_OBJECT(combo), "ResourceName", (gpointer)resource);
+    g_vsnprintf(resource, sizeof resource, fmt, args);
     va_end(args);
-
-    return resource_combo_box_str_new_helper(combo, entries);
+    return vice_gtk3_resource_combo_str_new(resource, entries);
 }
 
 
-/** \brief  Create combo box for string \a resource with a \a label
+/** \brief  Append row to string resource combo box
  *
- * \param[in]   resource    resource name
- * \param[in]   entries     list of entries for the combo box
- * \param[in]   label       text for the label
+ * \param[in]   widget  string resource combo box
+ * \param[in]   id      ID for the row
+ * \param[in]   value   display value for the row
  *
- * \return  GtkGrid
+ * \note    \a id and \a value must both be non-NULL and non-empty.
  */
-GtkWidget *vice_gtk3_resource_combo_box_str_new_with_label(
-        const char *resource,
-        const vice_gtk3_combo_entry_str_t *entries,
-        const char *label)
+void vice_gtk3_resource_combo_str_append(GtkWidget  *widget,
+                                         const char *id,
+                                         const char *value)
 {
-    GtkWidget *grid;
-    GtkWidget *lbl;
-    GtkWidget *combo;
+    GtkListStore *model;
 
-    grid = gtk_grid_new();
-    gtk_grid_set_column_spacing(GTK_GRID(grid), 8);
-
-    lbl = gtk_label_new(label);
-    gtk_widget_set_halign(lbl, GTK_ALIGN_START);
-    gtk_grid_attach(GTK_GRID(grid), lbl, 0, 0, 1, 1);
-
-    combo = vice_gtk3_resource_combo_box_str_new(resource, entries);
-    gtk_grid_attach(GTK_GRID(grid), combo, 1, 0, 1, 1);
-
-    gtk_widget_show_all(grid);
-    return grid;
+    model = GTK_LIST_STORE(gtk_combo_box_get_model(GTK_COMBO_BOX(widget)));
+    if (model != NULL) {
+        combo_str_model_append(model, id, value);
+    }
 }
 
 
@@ -633,43 +824,9 @@ GtkWidget *vice_gtk3_resource_combo_box_str_new_with_label(
  *
  * \return  TRUE if the new \a id was set
  */
-gboolean vice_gtk3_resource_combo_box_str_set(GtkWidget *widget, const char *id)
+gboolean vice_gtk3_resource_combo_str_set(GtkWidget *widget, const char *id)
 {
-    GtkWidget *combo;
-
-    if (GTK_IS_GRID(widget)) {
-        combo = gtk_grid_get_child_at(GTK_GRID(widget), 1, 0);
-    } else {
-        combo = widget;
-    }
-    return gtk_combo_box_set_active_id(GTK_COMBO_BOX(combo), id);
-}
-
-
-/** \brief  Get current ID of combo box
- *
- * The ID is not allocated, only the pointer is copied. So to use the value
- * retrieved after the widget is destroyed, a copy needs to be made. Also note
- * that the current value of the resource is returned, not the value of the
- * combo box, so even if the combo box is 'out of sync', the proper resource
- * value will be returned. On failure `FALSE` will be returned and `NULL`stored
- * in \a *dest.
- *
- * \param[in]   widget  string resource combo box
- * \param[out]  dest    object to store ID
- *
- * \return  TRUE if the \a id was set
- */
-gboolean vice_gtk3_resource_combo_box_str_get(GtkWidget *widget, const char **dest)
-{
-    const char *resource;
-
-    resource = resource_widget_get_resource_name(widget);
-    if (resources_get_string(resource, dest) < 0) {
-        *dest = NULL;
-        return FALSE;
-    }
-    return TRUE;
+    return gtk_combo_box_set_active_id(GTK_COMBO_BOX(widget), id);
 }
 
 
@@ -679,16 +836,14 @@ gboolean vice_gtk3_resource_combo_box_str_get(GtkWidget *widget, const char **de
  *
  * \return  TRUE if the factory default was set
  */
-gboolean vice_gtk3_resource_combo_box_str_factory(GtkWidget *widget)
+gboolean vice_gtk3_resource_combo_str_factory(GtkWidget *widget)
 {
-    const char *resource;
-    const char *value;
+    mediator_t *mediator;
+    const char *factory;
 
-    resource = resource_widget_get_resource_name(widget);
-    if (resources_get_default_value(resource, &value) < 0) {
-        return FALSE;
-    }
-    return vice_gtk3_resource_combo_box_str_set(widget, value);
+    mediator = mediator_for_widget(widget);
+    factory  = mediator_get_factory_string(mediator);
+    return gtk_combo_box_set_active_id(GTK_COMBO_BOX(widget), factory);
 }
 
 
@@ -700,12 +855,14 @@ gboolean vice_gtk3_resource_combo_box_str_factory(GtkWidget *widget)
  *
  * \return  TRUE if the combo box was reset
  */
-gboolean vice_gtk3_resource_combo_box_str_reset(GtkWidget *widget)
+gboolean vice_gtk3_resource_combo_str_reset(GtkWidget *widget)
 {
-    const char *orig;
+    mediator_t *mediator;
+    const char *initial;
 
-    orig = resource_widget_get_string(widget, "ResourceOrig");
-    return vice_gtk3_resource_combo_box_str_set(widget, orig);
+    mediator = mediator_for_widget(widget);
+    initial  = mediator_get_initial_string(mediator);
+    return gtk_combo_box_set_active_id(GTK_COMBO_BOX(widget), initial);
 }
 
 
@@ -717,14 +874,20 @@ gboolean vice_gtk3_resource_combo_box_str_reset(GtkWidget *widget)
  *
  * \return  TRUE if the widget was synchronized with its resource
  */
-gboolean vice_gtk3_resource_combo_box_str_sync(GtkWidget *widget)
+gboolean vice_gtk3_resource_combo_str_sync(GtkWidget *widget)
 {
-    const char *resource;
-    const char *current;
+    mediator_t *mediator;
+    const char *res_val;
+    const char *combo_id;
+    gboolean    result = TRUE;
 
-    resource = resource_widget_get_resource_name(widget);
-    if (resources_get_string(resource, &current) < 0) {
-        return FALSE;
+    mediator = mediator_for_widget(widget);
+    res_val  = mediator_get_resource_string(mediator);
+    combo_id = gtk_combo_box_get_active_id(GTK_COMBO_BOX(widget));
+    if (g_strcmp0(res_val, combo_id) != 0) {
+        mediator_handler_block(mediator);
+        result = gtk_combo_box_set_active_id(GTK_COMBO_BOX(widget), res_val);
+        mediator_handler_unblock(mediator);
     }
-    return vice_gtk3_resource_combo_box_str_set(widget, current);
+    return result;
 }

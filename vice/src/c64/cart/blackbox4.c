@@ -72,7 +72,8 @@ static io_source_t blackbox4_io1_device = {
     blackbox4_dump,           /* device state information dump function */
     CARTRIDGE_BLACKBOX4,      /* cartridge ID */
     IO_PRIO_NORMAL,           /* normal priority, device read needs to be checked for collisions */
-    0                         /* insertion order, gets filled in by the registration function */
+    0,                        /* insertion order, gets filled in by the registration function */
+    IO_MIRROR_NONE            /* NO mirroring */
 };
 
 static io_source_t blackbox4_io2_device = {
@@ -88,7 +89,8 @@ static io_source_t blackbox4_io2_device = {
     blackbox4_dump,           /* device state information dump function */
     CARTRIDGE_BLACKBOX4,      /* cartridge ID */
     IO_PRIO_NORMAL,           /* normal priority, device read needs to be checked for collisions */
-    0                         /* insertion order, gets filled in by the registration function */
+    0,                        /* insertion order, gets filled in by the registration function */
+    IO_MIRROR_NONE            /* NO mirroring */
 };
 
 static io_source_list_t *blackbox4_io1_list_item = NULL;
@@ -245,7 +247,7 @@ int blackbox4_snapshot_read_module(snapshot_t *s)
     }
 
     if (0
-        || SMR_B(m, &bb4_rom_enabled) < 0 
+        || SMR_B(m, &bb4_rom_enabled) < 0
         || SMR_BA(m, roml_banks, 0x2000) < 0
         || SMR_BA(m, romh_banks, 0x2000) < 0) {
         goto fail;

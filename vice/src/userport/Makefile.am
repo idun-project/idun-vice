@@ -5,10 +5,11 @@ AM_CPPFLAGS = \
 	-I$(top_srcdir)/src \
 	-I$(top_srcdir)/src/c64/cart \
 	-I$(top_srcdir)/src/lib/p64 \
-	-I$(top_srcdir)/src/rtc \
+	-I$(top_srcdir)/src/core/rtc \
 	-I$(top_srcdir)/src/joyport \
 	-I$(top_srcdir)/src/samplerdrv \
-	-I$(top_srcdir)/src/diag
+	-I$(top_srcdir)/src/diag \
+	-I$(top_srcdir)/src/drive
 
 AM_CFLAGS = @VICE_CFLAGS@
 
@@ -32,6 +33,10 @@ libuserport_a_SOURCES = \
 	userport_diag_586220_harness.h \
 	userport_digimax.c \
 	userport_digimax.h \
+	userport_hks_joystick.c \
+	userport_hks_joystick.h \
+	userport_hummer_joystick.c \
+	userport_hummer_joystick.h \
 	userport_io_sim.c \
 	userport_io_sim.h \
 	userport_joystick.c \
@@ -42,7 +47,14 @@ libuserport_a_SOURCES = \
 	userport_rtc_58321a.h \
 	userport_rtc_ds1307.c \
 	userport_rtc_ds1307.h \
+	userport_spt_joystick.c \
+	userport_spt_joystick.h \
 	userport_superpad64.c \
 	userport_superpad64.h \
+	userport_synergy_joystick.c \
+	userport_synergy_joystick.h \
 	userport_wic64.c \
-	userport_wic64.h
+	userport_wic64.h \
+	userport_woj_joystick.c \
+	userport_woj_joystick.h
+

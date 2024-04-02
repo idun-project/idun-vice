@@ -31,13 +31,42 @@
 #include <string.h>
 #include <ctype.h>
 
+#include "bbrtc.h"
+#include "cardkey.h"
 #include "cmdline.h"
+#include "coplin_keypad.h"
+#include "cx21.h"
+#include "cx85.h"
+#include "inception.h"
 #include "joyport.h"
+#include "joyport_io_sim.h"
+#include "joystick.h"
 #include "lib.h"
+#include "lightpen.h"
+#include "log.h"
 #include "machine.h"
+#include "mouse_1351.h"
+#include "mouse_neos.h"
+#include "mouse_paddle.h"
+#include "mouse_quadrature.h"
+#include "multijoy.h"
+#include "ninja_snespad.h"
+#include "paperclip2.h"
+#include "paperclip64.h"
+#include "paperclip64e.h"
+#include "paperclip64sc.h"
+#include "protopad.h"
 #include "resources.h"
+#include "rushware_keypad.h"
+#include "sampler2bit.h"
+#include "sampler4bit.h"
+#include "script64_dongle.h"
+#include "spaceballs.h"
+#include "trapthem_snespad.h"
 #include "uiapi.h"
 #include "util.h"
+#include "vizawrite64_dongle.h"
+#include "waasoft_dongle.h"
 
 #ifdef DEBUG_JOYPORT
 #define DBG(x) printf x
@@ -46,7 +75,7 @@
 #endif
 
 static joyport_t joyport_device[JOYPORT_MAX_DEVICES];
-static uint16_t joyport_display[11] = { 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0 };
+static uint16_t joyport_display[JOYPORT_MAX_PORTS + 1];
 
 static int joy_port[JOYPORT_MAX_PORTS];
 static joyport_port_props_t port_props[JOYPORT_MAX_PORTS];
@@ -98,6 +127,9 @@ static int joyport_device_is_single_port(int id)
         case JOYPORT_ID_TRAPTHEM_SNESPAD:
         case JOYPORT_ID_BBRTC:
         case JOYPORT_ID_PAPERCLIP64:
+        case JOYPORT_ID_PAPERCLIP64E:
+        case JOYPORT_ID_PAPERCLIP64SC:
+        case JOYPORT_ID_PAPERCLIP2:
         case JOYPORT_ID_SCRIPT64_DONGLE:
         case JOYPORT_ID_VIZAWRITE64_DONGLE:
         case JOYPORT_ID_WAASOFT_DONGLE:
@@ -179,14 +211,14 @@ static int joyport_set_device(int port, int id)
     }
 
     /* all checks done, now disable the current device and enable the new device */
-    if (joyport_device[joy_port[port]].enable) {
-        joyport_device[joy_port[port]].enable(port, 0);
+    if (joyport_device[joy_port[port]].set_enabled) {
+        joyport_device[joy_port[port]].set_enabled(port, JOYPORT_ID_NONE);
         if (joyport_device[joy_port[port]].hook) {
             joystick_set_hook(port, 0, 0);
         }
     }
-    if (joyport_device[id].enable) {
-        joyport_device[id].enable(port, id);
+    if (joyport_device[id].set_enabled) {
+        joyport_device[id].set_enabled(port, id);
         if (joyport_device[id].hook) {
             joystick_set_hook(port, 1, joyport_device[id].hook_mask);
         }
@@ -278,6 +310,41 @@ static void find_pot_ports(void)
     }
 }
 
+/* calculate the paddle value that will show in the registers when both
+   ports are selected at the same time */
+static uint8_t calc_parallel_paddle_value(uint8_t t1, uint8_t t2)
+{
+    const double scale = 470000.0f / 255.0f; /* CBM paddles should use 470kOhm */
+    double r1, r2, r;
+
+    /* first handle the special cases:
+       - either port is directly connected to VCC (value = 0), then
+         the value will be always 0
+       - one port is "open" (value = 255), then the value will come
+         from the other port
+    */
+    if ((t1 == 0) || (t2 == 0)) {
+        return 0;
+    } else if (t1 == 255) {
+        return t2;
+    } else if (t2 == 255) {
+        return t1;
+    }
+    /* we assume the time value is equivalent to the resistor value at the pot
+       input. scale it up to match the actual resistor value */
+    r1 = scale * (double)t1;
+    r2 = scale * (double)t2;
+    /* calculate value of two parallel resistors */
+    r = (r1 * r2) / (r1 + r2);
+    /* scale back to 8bit range */
+    r /= scale;
+    /* clamp the value and return it */
+    if (r > 255.0) {
+        return 255;
+    }
+    return (uint8_t)r;
+}
+
 /* read the X potentiometer value */
 uint8_t read_joyport_potx(void)
 {
@@ -323,7 +390,7 @@ uint8_t read_joyport_potx(void)
         case 2:
             return ret2;
         case 3:
-            return ret1 & ret2;
+            return calc_parallel_paddle_value(ret1, ret2);
         default:
             return 0xff;
     }
@@ -372,7 +439,7 @@ uint8_t read_joyport_poty(void)
         case 2:
             return ret2;
         case 3:
-            return ret1 & ret2;
+            return calc_parallel_paddle_value(ret1, ret2);
         default:
             return 0xff;
     }
@@ -427,7 +494,8 @@ int joyport_device_register(int id, joyport_t *device)
     joyport_device[id].joystick_adapter_id = device->joystick_adapter_id;
     joyport_device[id].device_type = device->device_type;
     joyport_device[id].output_bits = device->output_bits;
-    joyport_device[id].enable = device->enable;
+    joyport_device[id].needs_5v = device->needs_5v;
+    joyport_device[id].set_enabled = device->set_enabled;
     joyport_device[id].read_digital = device->read_digital;
     joyport_device[id].store_digital = device->store_digital;
     joyport_device[id].read_potx = device->read_potx;
@@ -456,6 +524,7 @@ int joyport_port_register(int port, joyport_port_props_t *props)
     port_props[port].has_lp_support = props->has_lp_support;
     port_props[port].has_adapter_support = props->has_adapter_support;
     port_props[port].has_output_support = props->has_output_support;
+    port_props[port].has_5vdc_support = props->has_5vdc_support;
     port_props[port].active = props->active;
 
     return 0;
@@ -483,6 +552,17 @@ static int check_valid_lightpen(int port, int index)
         return 1;
     }
     if (port_props[port].has_lp_support) {
+        return 1;
+    }
+    return 0;
+}
+
+static int check_valid_5vdc(int port, int index)
+{
+    if (!joyport_device[index].needs_5v) {
+        return 1;
+    }
+    if (port_props[port].has_5vdc_support) {
         return 1;
     }
     return 0;
@@ -576,8 +656,8 @@ static int check_valid_io_sim(int port, int index)
     if (joyport_device[index].device_type != JOYPORT_DEVICE_IO_SIMULATION) {
         return 1;
     }
-    /* check for plus4 port 6 */
-    if (port == JOYPORT_6 && machine_class == VICE_MACHINE_PLUS4) {
+    /* check for plus4 sidcart port */
+    if (port == JOYPORT_PLUS4_SIDCART && machine_class == VICE_MACHINE_PLUS4) {
         return 1;
     }
     if (port == JOYPORT_1 || port == JOYPORT_2) {
@@ -604,6 +684,9 @@ static int joyport_valid_devices_compare_names(const void* a, const void* b)
 
 static int joyport_check_valid_devices(int port, int index)
 {
+    if (!check_valid_5vdc(port, index)) {
+        return 0;
+    }
     if (!check_valid_lightpen(port, index)) {
         return 0;
     }
@@ -687,111 +770,32 @@ joyport_desc_t *joyport_get_valid_devices(int port, int sort)
     return retval;
 }
 
-static int joyport_valid_joyport_display(int id)
+/* FIXME: this should also take the port as parameter, and not use the magic
+          negative ids (which should be removed alltogether). We should also
+          loop over all ports instead of these hardcoded IFs */
+void joyport_display_joyport(int port, int id, uint16_t status)
 {
-    switch (id) {
-        case JOYPORT_ID_JOY1:
-        case JOYPORT_ID_JOY2:
-        case JOYPORT_ID_JOY3:
-        case JOYPORT_ID_JOY4:
-        case JOYPORT_ID_JOY5:
-        case JOYPORT_ID_JOY6:
-        case JOYPORT_ID_JOY7:
-        case JOYPORT_ID_JOY8:
-        case JOYPORT_ID_JOY9:
-        case JOYPORT_ID_JOY10:
-            return 1;
-    }
-    return 0;
-}
+    int n;
 
-void joyport_display_joyport(int id, uint16_t status)
-{
-    int i;
-    int all = 1;
-
-    if (joyport_valid_joyport_display(id)) {
-        if (id == JOYPORT_ID_JOY1 && joy_port[0] == JOYPORT_ID_JOYSTICK) {
-            joyport_display[1] = status;
-        }
-        if (id == JOYPORT_ID_JOY2 && joy_port[1] == JOYPORT_ID_JOYSTICK) {
-            joyport_display[2] = status;
-        }
-        if (id == JOYPORT_ID_JOY3 && joy_port[2] == JOYPORT_ID_JOYSTICK) {
-            joyport_display[3] = status;
-        }
-        if (id == JOYPORT_ID_JOY4 && joy_port[3] == JOYPORT_ID_JOYSTICK) {
-            joyport_display[4] = status;
-        }
-        if (id == JOYPORT_ID_JOY5 && joy_port[4] == JOYPORT_ID_JOYSTICK) {
-            joyport_display[5] = status;
-        }
-        if (id == JOYPORT_ID_JOY6 && joy_port[5] == JOYPORT_ID_JOYSTICK) {
-            joyport_display[6] = status;
-        }
-        if (id == JOYPORT_ID_JOY7 && joy_port[6] == JOYPORT_ID_JOYSTICK) {
-            joyport_display[7] = status;
-        }
-        if (id == JOYPORT_ID_JOY8 && joy_port[7] == JOYPORT_ID_JOYSTICK) {
-            joyport_display[8] = status;
-        }
-        if (id == JOYPORT_ID_JOY9 && joy_port[8] == JOYPORT_ID_JOYSTICK) {
-            joyport_display[9] = status;
-        }
-        if (id == JOYPORT_ID_JOY10 && joy_port[9] == JOYPORT_ID_JOYSTICK) {
-            joyport_display[10] = status;
-        }
-    } else {
-        for (i = 0; i < 10; i++) {
-            if (id == joy_port[i]) {
-                all = 0;
+    if (port == JOYPORT_ID_UNKNOWN) {
+        /* the calling function does not "know" the port, only the ID, so we
+           search all ports for the given ID and use the first one found */
+        for (n = 0; n < JOYPORT_MAX_PORTS; n++) {
+            if (id == joy_port[n]) {
+                joyport_display[n + 1] = status;
+                break;
             }
         }
-
-        if (!all) {
-            return;
+    } else if ((port >= 0) && (port < JOYPORT_MAX_PORTS)) {
+        if (id == joy_port[port]) {
+            joyport_display[port + 1] = status;
+        } else {
+            log_error(LOG_DEFAULT, "joyport_display_joyport: device with id '%d' not in port '%d'\n", id, port);
         }
-
-        if (id == joy_port[0]) {
-            joyport_display[1] = status;
-        }
-
-        if (id == joy_port[1]) {
-            joyport_display[2] = status;
-        }
-
-        if (id == joy_port[2]) {
-            joyport_display[3] = status;
-        }
-
-        if (id == joy_port[3]) {
-            joyport_display[4] = status;
-        }
-
-        if (id == joy_port[4]) {
-            joyport_display[5] = status;
-        }
-
-        if (id == joy_port[5]) {
-            joyport_display[6] = status;
-        }
-
-        if (id == joy_port[6]) {
-            joyport_display[7] = status;
-        }
-
-        if (id == joy_port[7]) {
-            joyport_display[8] = status;
-        }
-
-        if (id == joy_port[8]) {
-            joyport_display[9] = status;
-        }
-
-        if (id == joy_port[9]) {
-            joyport_display[10] = status;
-        }
+    } else {
+        log_error(LOG_DEFAULT, "joyport_display_joyport: invalid port '%d'\n", port);
     }
+
     ui_display_joyport(joyport_display);
 }
 
@@ -835,7 +839,7 @@ uint8_t joystick_adapter_activate(uint8_t id, char *name)
     joystick_adapter_id = id;
     joystick_adapter_name = name;
 
-    /* if the joystick adapter is a SNES adapter, make sure the devices on ports 3-10 are 'none' or 'joystick' only */
+    /* if the joystick adapter is a SNES adapter, make sure the devices on ports 3-11 are 'none' or 'joystick' only */
     if (joystick_adapter_is_snes_adapter(id)) {
         for (i = JOYPORT_3; i < JOYPORT_MAX_PORTS; i++) {
             if (joy_port[i] != JOYPORT_ID_NONE && joy_port[i] != JOYPORT_ID_JOYSTICK) {
@@ -859,6 +863,7 @@ void joystick_adapter_deactivate(void)
     /* deactivate all extra joy ports */
     for (i = JOYPORT_3; i < JOYPORT_MAX_PORTS; i++) {
         port_props[i].active = 0;
+        port_props[i].has_5vdc_support = 0;
     }
 
     /* turn plus4 sidcard joy back on if it was still on */
@@ -867,7 +872,7 @@ void joystick_adapter_deactivate(void)
     }
 }
 
-void joystick_adapter_set_ports(int ports)
+void joystick_adapter_set_ports(int ports, int has_5vdc)
 {
     int i;
 
@@ -876,6 +881,7 @@ void joystick_adapter_set_ports(int ports)
     /* activate the extra joy ports */
     for (i = 0; i < ports; i++) {
         port_props[JOYPORT_3 + i].active = 1;
+        port_props[JOYPORT_3 + i].has_5vdc_support = has_5vdc;
     }
 }
 
@@ -1090,6 +1096,309 @@ joyport_map_desc_t *joyport_get_mapping(int port)
 
 /* ------------------------------------------------------------------------- */
 
+/* All machines that can handle a c64 style lightpen/lightgun */
+/* FIXME: Add lightpen support to xcbm5x0 */
+#define VICE_MACHINE_LIGHTPEN (VICE_MACHINE_C64 | VICE_MACHINE_C128 | VICE_MACHINE_VIC20 | VICE_MACHINE_C64SC | VICE_MACHINE_SCPU64)
+
+/* All machines that are c64 compatible */
+#define VICE_MACHINE_C64_COMPATIBLE (VICE_MACHINE_C64 | VICE_MACHINE_C128 | VICE_MACHINE_C64DTV | VICE_MACHINE_C64SC | VICE_MACHINE_SCPU64)
+
+/* All machines that don't have a native numeric keypad */
+#define VICE_MACHINE_NO_NUMPAD (VICE_MACHINE_C64 | VICE_MACHINE_VIC20 | VICE_MACHINE_PLUS4 | VICE_MACHINE_C64DTV | VICE_MACHINE_C64SC | VICE_MACHINE_SCPU64)
+
+/* All machines with a native joyport that provides +5VDC */
+#define VICE_MACHINE_NATIVE_5V_JOYPORTS (VICE_MACHINE_C64 | VICE_MACHINE_C128 | VICE_MACHINE_VIC20 | VICE_MACHINE_CBM5x0 | VICE_MACHINE_PLUS4 | VICE_MACHINE_C64SC | VICE_MACHINE_SCPU64)
+
+/* All machines with 2 native joyports that provides +5VDC */
+#define VICE_MACHINE_NATIVE_5V_2_JOYPORTS (VICE_MACHINE_C64 | VICE_MACHINE_C128 | VICE_MACHINE_CBM5x0 | VICE_MACHINE_PLUS4 | VICE_MACHINE_C64SC | VICE_MACHINE_SCPU64)
+
+/* All machines with a native joyport that provides +5VDC and a userport */
+#define VICE_MACHINE_NATIVE_5V_JOYPORTS_AND_USERPORT (VICE_MACHINE_C64 | VICE_MACHINE_C128 | VICE_MACHINE_VIC20 | VICE_MACHINE_C64SC | VICE_MACHINE_SCPU64)
+
+/* All machines with a native joyport */
+#define VICE_MACHINE_NATIVE_JOYPORTS (VICE_C64DTV VICE_MACHINE_NATIVE_5V_JOYPORTS)
+
+static joyport_init_t joyport_devices_init[] = {
+    { JOYPORT_ID_JOYSTICK,       /* device id */
+      VICE_MACHINE_ALL,          /* emulators this device works on */
+      joystick_joyport_register, /* resources init function */
+      NULL,                      /* resources shutdown function */
+      NULL                       /* cmdline options init function */
+    },
+    { JOYPORT_ID_PADDLES,              /* device id */
+      VICE_MACHINE_NATIVE_5V_JOYPORTS, /* emulators this device works on */
+      paddle_register,                 /* resources init function */
+      NULL,                            /* resources shutdown function */
+      NULL                             /* cmdline options init function */
+    },
+#ifdef HAVE_MOUSE
+    { JOYPORT_ID_MOUSE_1351,           /* device id */
+      VICE_MACHINE_NATIVE_5V_JOYPORTS, /* emulators this device works on */
+      mouse_1351_register,             /* resources init function */
+      NULL,                            /* resources shutdown function */
+      NULL                             /* cmdline options init function */
+    },
+    { JOYPORT_ID_MOUSE_NEOS,           /* device id */
+      VICE_MACHINE_NATIVE_5V_JOYPORTS, /* emulators this device works on */
+      mouse_neos_register,             /* resources init function */
+      NULL,                            /* resources shutdown function */
+      NULL                             /* cmdline options init function */
+    },
+    { JOYPORT_ID_MOUSE_AMIGA,          /* device id */
+      VICE_MACHINE_NATIVE_5V_JOYPORTS, /* emulators this device works on */
+      mouse_amiga_register,            /* resources init function */
+      NULL,                            /* resources shutdown function */
+      NULL                             /* cmdline options init function */
+    },
+    { JOYPORT_ID_MOUSE_CX22,           /* device id */
+      VICE_MACHINE_NATIVE_5V_JOYPORTS, /* emulators this device works on */
+      mouse_cx22_register,             /* resources init function */
+      NULL,                            /* resources shutdown function */
+      NULL                             /* cmdline options init function */
+    },
+    { JOYPORT_ID_MOUSE_ST,             /* device id */
+      VICE_MACHINE_NATIVE_5V_JOYPORTS, /* emulators this device works on */
+      mouse_st_register,               /* resources init function */
+      NULL,                            /* resources shutdown function */
+      NULL                             /* cmdline options init function */
+    },
+    { JOYPORT_ID_MOUSE_SMART,          /* device id */
+      VICE_MACHINE_NATIVE_5V_JOYPORTS, /* emulators this device works on */
+      mouse_smartmouse_register,       /* resources init function */
+      NULL,                            /* resources shutdown function */
+      NULL                             /* cmdline options init function */
+    },
+    { JOYPORT_ID_MOUSE_MICROMYS,       /* device id */
+      VICE_MACHINE_NATIVE_5V_JOYPORTS, /* emulators this device works on */
+      mouse_micromys_register,         /* resources init function */
+      NULL,                            /* resources shutdown function */
+      NULL                             /* cmdline options init function */
+    },
+    { JOYPORT_ID_KOALAPAD,             /* device id */
+      VICE_MACHINE_NATIVE_5V_JOYPORTS, /* emulators this device works on */
+      koalapad_register,               /* resources init function */
+      NULL,                            /* resources shutdown function */
+      NULL                             /* cmdline options init function */
+    },
+#ifdef HAVE_LIGHTPEN
+    { JOYPORT_ID_LIGHTPEN_U,       /* device id */
+      VICE_MACHINE_LIGHTPEN,       /* emulators this device works on */
+      lightpen_u_joyport_register, /* resources init function */
+      NULL,                        /* resources shutdown function */
+      NULL                         /* cmdline options init function */
+    },
+    { JOYPORT_ID_LIGHTPEN_L,       /* device id */
+      VICE_MACHINE_LIGHTPEN,       /* emulators this device works on */
+      lightpen_l_joyport_register, /* resources init function */
+      NULL,                        /* resources shutdown function */
+      NULL                         /* cmdline options init function */
+    },
+    { JOYPORT_ID_LIGHTPEN_DATEL,       /* device id */
+      VICE_MACHINE_LIGHTPEN,           /* emulators this device works on */
+      lightpen_datel_joyport_register, /* resources init function */
+      NULL,                            /* resources shutdown function */
+      NULL                             /* cmdline options init function */
+    },
+    { JOYPORT_ID_LIGHTGUN_Y,       /* device id */
+      VICE_MACHINE_LIGHTPEN,       /* emulators this device works on */
+      lightgun_y_joyport_register, /* resources init function */
+      NULL,                        /* resources shutdown function */
+      NULL                         /* cmdline options init function */
+    },
+    { JOYPORT_ID_LIGHTGUN_L,       /* device id */
+      VICE_MACHINE_LIGHTPEN,       /* emulators this device works on */
+      lightgun_l_joyport_register, /* resources init function */
+      NULL,                        /* resources shutdown function */
+      NULL                         /* cmdline options init function */
+    },
+    { JOYPORT_ID_LIGHTPEN_INKWELL,       /* device id */
+      VICE_MACHINE_LIGHTPEN,             /* emulators this device works on */
+      lightpen_inkwell_joyport_register, /* resources init function */
+      NULL,                              /* resources shutdown function */
+      NULL                               /* cmdline options init function */
+    },
+#ifdef JOYPORT_EXPERIMENTAL_DEVICES
+    { JOYPORT_ID_LIGHTGUN_GUNSTICK,       /* device id */
+      VICE_MACHINE_LIGHTPEN,              /* emulators this device works on */
+      lightgun_gunstick_joyport_register, /* resources init function */
+      NULL,                               /* resources shutdown function */
+      NULL                                /* cmdline options init function */
+    },
+#endif
+#endif
+#endif
+    { JOYPORT_ID_SAMPLER_2BIT,            /* device id */
+      VICE_MACHINE_NATIVE_5V_JOYPORTS,    /* emulators this device works on */
+      joyport_sampler2bit_resources_init, /* resources init function */
+      NULL,                               /* resources shutdown function */
+      NULL                                /* cmdline options init function */
+    },
+    { JOYPORT_ID_SAMPLER_4BIT,            /* device id */
+      VICE_MACHINE_NATIVE_5V_JOYPORTS,    /* emulators this device works on */
+      joyport_sampler4bit_resources_init, /* resources init function */
+      NULL,                               /* resources shutdown function */
+      NULL                                /* cmdline options init function */
+    },
+    { JOYPORT_ID_BBRTC,                  /* device id */
+      VICE_MACHINE_NATIVE_5V_JOYPORTS,   /* emulators this device works on */
+      joyport_bbrtc_resources_init,      /* resources init function */
+      joyport_bbrtc_resources_shutdown,  /* resources shutdown function */
+      joyport_bbrtc_cmdline_options_init /* cmdline options init function */
+    },
+    { JOYPORT_ID_PAPERCLIP64,             /* device id */
+      VICE_MACHINE_C64_COMPATIBLE,        /* emulators this device works on */
+      joyport_paperclip64_resources_init, /* resources init function */
+      NULL,                               /* resources shutdown function */
+      NULL                                /* cmdline options init function */
+    },
+    { JOYPORT_ID_COPLIN_KEYPAD,             /* device id */
+      VICE_MACHINE_NO_NUMPAD,               /* emulators this device works on */
+      joyport_coplin_keypad_resources_init, /* resources init function */
+      NULL,                                 /* resources shutdown function */
+      NULL                                  /* cmdline options init function */
+    },
+    { JOYPORT_ID_CARDCO_KEYPAD,       /* device id */
+      VICE_MACHINE_NO_NUMPAD,         /* emulators this device works on */
+      joyport_cardkey_resources_init, /* resources init function */
+      NULL,                           /* resources shutdown function */
+      NULL                            /* cmdline options init function */
+    },
+    { JOYPORT_ID_CX85_KEYPAD,      /* device id */
+      VICE_MACHINE_NO_NUMPAD,      /* emulators this device works on */
+      joyport_cx85_resources_init, /* resources init function */
+      NULL,                        /* resources shutdown function */
+      NULL                         /* cmdline options init function */
+    },
+    { JOYPORT_ID_RUSHWARE_KEYPAD,             /* device id */
+      VICE_MACHINE_NO_NUMPAD,                 /* emulators this device works on */
+      joyport_rushware_keypad_resources_init, /* resources init function */
+      NULL,                                   /* resources shutdown function */
+      NULL                                    /* cmdline options init function */
+    },
+    { JOYPORT_ID_CX21_KEYPAD,      /* device id */
+      VICE_MACHINE_NO_NUMPAD,      /* emulators this device works on */
+      joyport_cx21_resources_init, /* resources init function */
+      NULL,                        /* resources shutdown function */
+      NULL                         /* cmdline options init function */
+    },
+    { JOYPORT_ID_SCRIPT64_DONGLE,             /* device id */
+      VICE_MACHINE_C64_COMPATIBLE,            /* emulators this device works on */
+      joyport_script64_dongle_resources_init, /* resources init function */
+      NULL,                                   /* resources shutdown function */
+      NULL                                    /* cmdline options init function */
+    },
+    { JOYPORT_ID_VIZAWRITE64_DONGLE,             /* device id */
+      VICE_MACHINE_C64_COMPATIBLE,               /* emulators this device works on */
+      joyport_vizawrite64_dongle_resources_init, /* resources init function */
+      NULL,                                      /* resources shutdown function */
+      NULL                                       /* cmdline options init function */
+    },
+    { JOYPORT_ID_WAASOFT_DONGLE,             /* device id */
+      VICE_MACHINE_C64_COMPATIBLE,           /* emulators this device works on */
+      joyport_waasoft_dongle_resources_init, /* resources init function */
+      NULL,                                  /* resources shutdown function */
+      NULL                                   /* cmdline options init function */
+    },
+    { JOYPORT_ID_TRAPTHEM_SNESPAD,             /* device id */
+      VICE_MACHINE_NATIVE_5V_JOYPORTS,         /* emulators this device works on */
+      joyport_trapthem_snespad_resources_init, /* resources init function */
+      NULL,                                    /* resources shutdown function */
+      NULL                                     /* cmdline options init function */
+    },
+    { JOYPORT_ID_NINJA_SNESPAD,             /* device id */
+      VICE_MACHINE_NATIVE_5V_JOYPORTS,      /* emulators this device works on */
+      joyport_ninja_snespad_resources_init, /* resources init function */
+      NULL,                                 /* resources shutdown function */
+      NULL                                  /* cmdline options init function */
+    },
+    { JOYPORT_ID_SPACEBALLS,                        /* device id */
+      VICE_MACHINE_NATIVE_5V_JOYPORTS_AND_USERPORT, /* emulators this device works on */
+      joyport_spaceballs_resources_init,            /* resources init function */
+      NULL,                                         /* resources shutdown function */
+      NULL                                          /* cmdline options init function */
+    },
+    { JOYPORT_ID_INCEPTION,             /* device id */
+      VICE_MACHINE_NATIVE_5V_JOYPORTS,  /* emulators this device works on */
+      joyport_inception_resources_init, /* resources init function */
+      NULL,                             /* resources shutdown function */
+      NULL                              /* cmdline options init function */
+    },
+    { JOYPORT_ID_MULTIJOY_CONTROL,       /* device id */
+      VICE_MACHINE_NATIVE_5V_2_JOYPORTS, /* emulators this device works on */
+      joyport_multijoy_resources_init,   /* resources init function */
+      NULL,                              /* resources shutdown function */
+      NULL                               /* cmdline options init function */
+    },
+    { JOYPORT_ID_PROTOPAD,             /* device id */
+      VICE_MACHINE_NATIVE_5V_JOYPORTS, /* emulators this device works on */
+      joyport_protopad_resources_init, /* resources init function */
+      NULL,                            /* resources shutdown function */
+      NULL                             /* cmdline options init function */
+    },
+    { JOYPORT_ID_IO_SIMULATION,      /* device id */
+      VICE_MACHINE_ALL,              /* emulators this device works on */
+      joyport_io_sim_resources_init, /* resources init function */
+      NULL,                          /* resources shutdown function */
+      NULL                           /* cmdline options init function */
+    },
+    { JOYPORT_ID_MF_JOYSTICK,          /* device id */
+      VICE_MACHINE_NATIVE_5V_JOYPORTS, /* emulators this device works on */
+      mf_joystick_register,            /* resources init function */
+      NULL,                            /* resources shutdown function */
+      NULL                             /* cmdline options init function */
+    },
+    { JOYPORT_ID_PAPERCLIP64E,             /* device id */
+      VICE_MACHINE_C64_COMPATIBLE,         /* emulators this device works on */
+      joyport_paperclip64e_resources_init, /* resources init function */
+      NULL,                                /* resources shutdown function */
+      NULL                                 /* cmdline options init function */
+    },
+    { JOYPORT_ID_PAPERCLIP64SC,             /* device id */
+      VICE_MACHINE_C64_COMPATIBLE,          /* emulators this device works on */
+      joyport_paperclip64sc_resources_init, /* resources init function */
+      NULL,                                 /* resources shutdown function */
+      NULL                                  /* cmdline options init function */
+    },
+    { JOYPORT_ID_PAPERCLIP2,             /* device id */
+      VICE_MACHINE_C64_COMPATIBLE,       /* emulators this device works on */
+      joyport_paperclip2_resources_init, /* resources init function */
+      NULL,                              /* resources shutdown function */
+      NULL                               /* cmdline options init function */
+    },
+    { JOYPORT_ID_NONE, VICE_MACHINE_NONE, NULL, NULL, NULL },   /* end of the devices list */
+};
+
+static int joyport_devices_resources_init(void)
+{
+    int i = 0;
+
+    while (joyport_devices_init[i].device_id != JOYPORT_ID_NONE) {
+        if (joyport_devices_init[i].emu_mask & machine_class) {
+            if (joyport_devices_init[i].joyport_device_resources_init) {
+                if (joyport_devices_init[i].joyport_device_resources_init() < 0) {
+                    return -1;
+                }
+            }
+        }
+        i++;
+    }
+    return 0;
+}
+
+static void joyport_devices_resources_shutdown(void)
+{
+    int i = 0;
+
+    while (joyport_devices_init[i].device_id != JOYPORT_ID_NONE) {
+        if (joyport_devices_init[i].emu_mask & machine_class) {
+            if (joyport_devices_init[i].joyport_device_resources_shutdown) {
+                joyport_devices_init[i].joyport_device_resources_shutdown();
+            }
+        }
+        i++;
+    }
+}
+
 static int set_joyport_device(int val, void *param)
 {
     int port = vice_ptr_to_int(param);
@@ -1157,6 +1466,12 @@ static const resource_int_t resources_int_port10[] = {
     RESOURCE_INT_LIST_END
 };
 
+static const resource_int_t resources_int_port11[] = {
+    { "JoyPort11Device", JOYPORT_ID_JOYSTICK, RES_EVENT_NO, NULL,
+      &joy_port[JOYPORT_11], set_joyport_device, (void *)JOYPORT_11 },
+    RESOURCE_INT_LIST_END
+};
+
 int joyport_resources_init(void)
 {
     int i;
@@ -1167,6 +1482,14 @@ int joyport_resources_init(void)
     joyport_device[0].joystick_adapter_id = JOYSTICK_ADAPTER_ID_NONE;
     for (i = 0; i < JOYPORT_MAX_PORTS; ++i) {
         joy_port[i] = JOYPORT_ID_NONE;
+    }
+
+    if (machine_class == VICE_MACHINE_PLUS4) {
+        if (port_props[JOYPORT_11].name) {
+            if (resources_register_int(resources_int_port11) < 0) {
+                return -1;
+            }
+        }
     }
 
     if (port_props[JOYPORT_10].name) {
@@ -1229,7 +1552,12 @@ int joyport_resources_init(void)
         }
     }
 
-    return 0;
+    return joyport_devices_resources_init();
+}
+
+void joyport_resources_shutdown(void)
+{
+    joyport_devices_resources_shutdown();
 }
 
 /* ------------------------------------------------------------------------- */
@@ -1284,6 +1612,14 @@ static const struct joyport_opt_s id_match[] = {
     { "paperclip64",      JOYPORT_ID_PAPERCLIP64 },
     { "paperclip",        JOYPORT_ID_PAPERCLIP64 },
     { "pc64",             JOYPORT_ID_PAPERCLIP64 },
+    { "paperclip64e",     JOYPORT_ID_PAPERCLIP64E },
+    { "paperclipe",       JOYPORT_ID_PAPERCLIP64E },
+    { "pc64e",            JOYPORT_ID_PAPERCLIP64E },
+    { "paperclip64sc",    JOYPORT_ID_PAPERCLIP64SC },
+    { "paperclipsc",      JOYPORT_ID_PAPERCLIP64SC },
+    { "pc64sc",           JOYPORT_ID_PAPERCLIP64SC },
+    { "paperclip2",       JOYPORT_ID_PAPERCLIP2 },
+    { "pc2",              JOYPORT_ID_PAPERCLIP2 },
     { "coplin",           JOYPORT_ID_COPLIN_KEYPAD },
     { "coplinkp",         JOYPORT_ID_COPLIN_KEYPAD },
     { "coplinkeypad",     JOYPORT_ID_COPLIN_KEYPAD },
@@ -1326,7 +1662,7 @@ static int is_a_number(const char *str)
     size_t len = strlen(str);
 
     for (i = 0; i < len; i++) {
-        if (!isdigit(str[i])) {
+        if (!isdigit((unsigned char)str[i])) {
             return 0;
         }
     }
@@ -1362,6 +1698,23 @@ static int set_joyport_cmdline_device(const char *param, void *extra_param)
 
 /* ------------------------------------------------------------------------- */
 
+static int joyport_devices_cmdline_options_init(void)
+{
+    int i = 0;
+
+    while (joyport_devices_init[i].device_id != JOYPORT_ID_NONE) {
+        if (joyport_devices_init[i].emu_mask & machine_class) {
+            if (joyport_devices_init[i].joyport_device_cmdline_options_init) {
+                if (joyport_devices_init[i].joyport_device_cmdline_options_init() < 0) {
+                    return -1;
+                }
+            }
+        }
+        i++;
+    }
+    return 0;
+}
+
 static char *build_joyport_string(int port)
 {
     int i = 0;
@@ -1387,7 +1740,7 @@ static char *build_joyport_string(int port)
 static cmdline_option_t cmdline_options_port1[] =
 {
     { "-controlport1device", CALL_FUNCTION, CMDLINE_ATTRIB_NEED_ARGS | CMDLINE_ATTRIB_DYNAMIC_DESCRIPTION,
-      set_joyport_cmdline_device, (void *)JOYPORT_1, NULL, NULL,
+      set_joyport_cmdline_device, (void *)JOYPORT_1, "JoyPort1Device", NULL,
       "Device", NULL },
     CMDLINE_LIST_END
 };
@@ -1395,7 +1748,7 @@ static cmdline_option_t cmdline_options_port1[] =
 static cmdline_option_t cmdline_options_port2[] =
 {
     { "-controlport2device", CALL_FUNCTION, CMDLINE_ATTRIB_NEED_ARGS | CMDLINE_ATTRIB_DYNAMIC_DESCRIPTION,
-      set_joyport_cmdline_device, (void *)JOYPORT_2, NULL, NULL,
+      set_joyport_cmdline_device, (void *)JOYPORT_2, "JoyPort2Device", NULL,
       "Device", NULL },
     CMDLINE_LIST_END
 };
@@ -1403,7 +1756,7 @@ static cmdline_option_t cmdline_options_port2[] =
 static cmdline_option_t cmdline_options_port3[] =
 {
     { "-controlport3device", CALL_FUNCTION, CMDLINE_ATTRIB_NEED_ARGS | CMDLINE_ATTRIB_DYNAMIC_DESCRIPTION,
-      set_joyport_cmdline_device, (void *)JOYPORT_3, NULL, NULL,
+      set_joyport_cmdline_device, (void *)JOYPORT_3, "JoyPort3Device", NULL,
       "Device", NULL },
     CMDLINE_LIST_END
 };
@@ -1411,7 +1764,7 @@ static cmdline_option_t cmdline_options_port3[] =
 static cmdline_option_t cmdline_options_port4[] =
 {
     { "-controlport4device", CALL_FUNCTION, CMDLINE_ATTRIB_NEED_ARGS | CMDLINE_ATTRIB_DYNAMIC_DESCRIPTION,
-      set_joyport_cmdline_device, (void *)JOYPORT_4, NULL, NULL,
+      set_joyport_cmdline_device, (void *)JOYPORT_4, "JoyPort4Device", NULL,
       "Device", NULL },
     CMDLINE_LIST_END
 };
@@ -1419,7 +1772,7 @@ static cmdline_option_t cmdline_options_port4[] =
 static cmdline_option_t cmdline_options_port5[] =
 {
     { "-controlport5device", CALL_FUNCTION, CMDLINE_ATTRIB_NEED_ARGS | CMDLINE_ATTRIB_DYNAMIC_DESCRIPTION,
-      set_joyport_cmdline_device, (void *)JOYPORT_5, NULL, NULL,
+      set_joyport_cmdline_device, (void *)JOYPORT_5, "JoyPort5Device", NULL,
       "Device", NULL },
     CMDLINE_LIST_END
 };
@@ -1427,7 +1780,7 @@ static cmdline_option_t cmdline_options_port5[] =
 static cmdline_option_t cmdline_options_port6[] =
 {
     { "-controlport6device", CALL_FUNCTION, CMDLINE_ATTRIB_NEED_ARGS | CMDLINE_ATTRIB_DYNAMIC_DESCRIPTION,
-      set_joyport_cmdline_device, (void *)JOYPORT_6, NULL, NULL,
+      set_joyport_cmdline_device, (void *)JOYPORT_6, "JoyPort6Device", NULL,
       "Device", NULL },
     CMDLINE_LIST_END
 };
@@ -1435,7 +1788,7 @@ static cmdline_option_t cmdline_options_port6[] =
 static cmdline_option_t cmdline_options_port7[] =
 {
     { "-controlport7device", CALL_FUNCTION, CMDLINE_ATTRIB_NEED_ARGS | CMDLINE_ATTRIB_DYNAMIC_DESCRIPTION,
-      set_joyport_cmdline_device, (void *)JOYPORT_7, NULL, NULL,
+      set_joyport_cmdline_device, (void *)JOYPORT_7, "JoyPort7Device", NULL,
       "Device", NULL },
     CMDLINE_LIST_END
 };
@@ -1443,7 +1796,7 @@ static cmdline_option_t cmdline_options_port7[] =
 static cmdline_option_t cmdline_options_port8[] =
 {
     { "-controlport8device", CALL_FUNCTION, CMDLINE_ATTRIB_NEED_ARGS | CMDLINE_ATTRIB_DYNAMIC_DESCRIPTION,
-      set_joyport_cmdline_device, (void *)JOYPORT_8, NULL, NULL,
+      set_joyport_cmdline_device, (void *)JOYPORT_8, "JoyPort8Device", NULL,
       "Device", NULL },
     CMDLINE_LIST_END
 };
@@ -1451,7 +1804,7 @@ static cmdline_option_t cmdline_options_port8[] =
 static cmdline_option_t cmdline_options_port9[] =
 {
     { "-controlport9device", CALL_FUNCTION, CMDLINE_ATTRIB_NEED_ARGS | CMDLINE_ATTRIB_DYNAMIC_DESCRIPTION,
-      set_joyport_cmdline_device, (void *)JOYPORT_9, NULL, NULL,
+      set_joyport_cmdline_device, (void *)JOYPORT_9, "JoyPort9Device", NULL,
       "Device", NULL },
     CMDLINE_LIST_END
 };
@@ -1459,7 +1812,15 @@ static cmdline_option_t cmdline_options_port9[] =
 static cmdline_option_t cmdline_options_port10[] =
 {
     { "-controlport10device", CALL_FUNCTION, CMDLINE_ATTRIB_NEED_ARGS | CMDLINE_ATTRIB_DYNAMIC_DESCRIPTION,
-      set_joyport_cmdline_device, (void *)JOYPORT_10, NULL, NULL,
+      set_joyport_cmdline_device, (void *)JOYPORT_10, "JoyPort10Device", NULL,
+      "Device", NULL },
+    CMDLINE_LIST_END
+};
+
+static cmdline_option_t cmdline_options_port11[] =
+{
+    { "-controlport11device", CALL_FUNCTION, CMDLINE_ATTRIB_NEED_ARGS | CMDLINE_ATTRIB_DYNAMIC_DESCRIPTION,
+      set_joyport_cmdline_device, (void *)JOYPORT_11, "JoyPort11Device", NULL,
       "Device", NULL },
     CMDLINE_LIST_END
 };
@@ -1557,7 +1918,18 @@ int joyport_cmdline_options_init(void)
             return -1;
         }
     }
-    return 0;
+
+    if (machine_class == VICE_MACHINE_PLUS4) {
+        if (port_props[JOYPORT_11].name) {
+            cf.f = build_joyport_string;
+            cmdline_options_port11[0].description = cf.c;
+            cmdline_options_port11[0].attributes |= (JOYPORT_11 << 8);
+            if (cmdline_register_options(cmdline_options_port11) < 0) {
+                return -1;
+            }
+        }
+    }
+    return joyport_devices_cmdline_options_init();
 }
 
 /* ------------------------------------------------------------------------- */
@@ -1573,7 +1945,7 @@ int joyport_snapshot_write_module(struct snapshot_s *s, int port)
     sprintf(snapshot_name, "JOYPORT%d", port);
 
     m = snapshot_module_create(s, snapshot_name, DUMP_VER_MAJOR, DUMP_VER_MINOR);
- 
+
     if (m == NULL) {
         return -1;
     }

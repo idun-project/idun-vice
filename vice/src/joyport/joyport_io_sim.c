@@ -42,6 +42,10 @@
    This device provides a way of simulating the data input and
    output lines of a joyport device, can be used to test the
    joyport system.
+
+   Works on:
+   - native joystick port(s) (x64/x64sc/xscpu64/x64dtv/x128/xvic/xcbm5x0/xplus4)
+   - sidcart joystick adapter port (xplus4)
 */
 
 /* #define HOST_HARDWARE_IO */
@@ -54,6 +58,7 @@
 static int joyport_io_sim_enabled[JOYPORT_MAX_PORTS] = {0};
 
 #ifndef HOST_HARDWARE_IO
+/* only used for I/O simulation, not for host hardware I/O */
 static uint8_t joyport_io_sim_data_out[JOYPORT_MAX_PORTS] = {0};
 static uint8_t joyport_io_sim_data_in[JOYPORT_MAX_PORTS] = {0};
 
@@ -69,16 +74,17 @@ static joyport_t joyport_io_hw_device;
 static joyport_t joyport_io_sim_device;
 #endif
 
-static int joyport_io_sim_enable(int port, int value)
+static int joyport_io_sim_set_enabled(int port, int enabled)
 {
-    int val = value ? 1 : 0;
+    int new_state = enabled ? 1 : 0;
 
-    if (val == joyport_io_sim_enabled[port]) {
+    if (new_state == joyport_io_sim_enabled[port]) {
         return 0;
     }
 
 #ifndef HOST_HARDWARE_IO
-    if (val) {
+    if (new_state) {
+        /* enabled, clear lines */
         joyport_io_sim_data_out[port] = 0;
         joyport_io_sim_data_in[port] = 0;
         joyport_io_sim_potx[port] = 0;
@@ -86,7 +92,8 @@ static int joyport_io_sim_enable(int port, int value)
     }
 #endif
 
-    joyport_io_sim_enabled[port] = val;
+    /* set the current state */
+    joyport_io_sim_enabled[port] = new_state;
 
     return 0;
 }
@@ -147,6 +154,7 @@ static uint8_t joyport_io_sim_read_poty(int port)
 /* ------------------------------------------------------------------------- */
 
 #ifndef HOST_HARDWARE_IO
+/* only used for I/O simulation, not for host hardware I/O */
 static int joyport_io_sim_write_snapshot(struct snapshot_s *s, int p);
 static int joyport_io_sim_read_snapshot(struct snapshot_s *s, int p);
 #endif
@@ -157,10 +165,11 @@ static joyport_t joyport_io_hw_device = {
     JOYPORT_RES_ID_NONE,          /* device can be used in multiple ports at the same time */
     JOYPORT_IS_NOT_LIGHTPEN,      /* device is NOT a lightpen */
     JOYPORT_POT_OPTIONAL,         /* device does NOT use the potentiometer lines */
+    JOYPORT_5VDC_NOT_NEEDED,      /* device does NOT need +5VDC to work */
     JOYSTICK_ADAPTER_ID_NONE,     /* device is NOT a joystick adapter */
     JOYPORT_DEVICE_IO_SIMULATION, /* device is a SNES adapter */
     0,                            /* output bits are programmable */
-    joyport_io_sim_enable,        /* device enable function */
+    joyport_io_sim_set_enabled,   /* device enable/disable function */
     joyport_io_hw_read,           /* digital line read function */
     joyport_io_hw_store,          /* digital line store function */
     joyport_io_hw_read_potx,      /* pot-x read function */
@@ -177,10 +186,11 @@ static joyport_t joyport_io_sim_device = {
     JOYPORT_RES_ID_NONE,           /* device can be used in multiple ports at the same time */
     JOYPORT_IS_NOT_LIGHTPEN,       /* device is NOT a lightpen */
     JOYPORT_POT_OPTIONAL,          /* device does NOT use the potentiometer lines */
+    JOYPORT_5VDC_NOT_NEEDED,       /* device does NOT need +5VDC to work */
     JOYSTICK_ADAPTER_ID_NONE,      /* device is NOT a joystick adapter */
     JOYPORT_DEVICE_IO_SIMULATION,  /* device is a SNES adapter */
     0,                             /* output bits are programmable */
-    joyport_io_sim_enable,         /* device enable function */
+    joyport_io_sim_set_enabled,    /* device enable/disable function */
     joyport_io_sim_read,           /* digital line read function */
     joyport_io_sim_store,          /* digital line store function */
     joyport_io_sim_read_potx,      /* pot-x read function */
@@ -268,7 +278,7 @@ static int joyport_io_sim_write_snapshot(struct snapshot_s *s, int p)
         return -1;
     }
 
-    if (0 
+    if (0
         || SMW_B(m, joyport_io_sim_data_out[p]) < 0
         || SMW_B(m, joyport_io_sim_data_in[p]) < 0
         || SMW_B(m, joyport_io_sim_potx[p]) < 0

@@ -295,7 +295,7 @@ uint8_t machine_tape_behaviour(void)
     return TAPE_BEHAVIOUR_NORMAL;
 }
 
-#if defined(USE_SDLUI) || defined(USE_SDLUI2)
+#if defined(USE_SDLUI) || defined(USE_SDL2UI)
 char *kbd_get_menu_keyname(void)
 {
     return NULL;
@@ -307,7 +307,16 @@ int crt_getid(const char *filename)
     return -1;
 }
 
+int drive_get_disk_drive_type(int dnr)
+{
+    return DRIVE_TYPE_NONE;
+}
 
-void ui_hotkeys_init(void)
+void tape_image_detach_all(void)
 {
 }
+
+void file_system_detach_disk_all(void)
+{
+}
+

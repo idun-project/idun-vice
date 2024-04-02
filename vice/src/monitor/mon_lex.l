@@ -33,11 +33,6 @@
 
 #include "vice.h"
 
-#ifdef __OS2__
-#define _STDINT_H_INCLUDED
-#define _INTTYPES_H_INCLUDED
-#endif
-
 #include <assert.h>
 #include <stdio.h>
 #include <stdlib.h>
@@ -49,10 +44,6 @@
 
 #ifdef HAVE_IO_H
 #include <io.h>
-#endif
-
-#ifdef AMIGA_MORPHOS
-#undef REG_PC
 #endif
 
 #include "lib.h"
@@ -205,6 +196,7 @@ HDIGIT  [0-9a-f]
         keybuf          { BEGIN(ROL);           return CMD_KEYBUF; }
         list            { BEGIN(INITIAL);       return CMD_LIST; }
         load|l          { BEGIN(FNAME);         return CMD_LOAD; }
+        loadbasic|ldb   { BEGIN(FNAME);         return CMD_BASICLOAD; }
         load_labels|ll  { BEGIN(FNAME);         return CMD_LOAD_LABELS; }
         log             { BEGIN(INITIAL);       return CMD_LOG; }
         logname         { BEGIN(FNAME);         return CMD_LOGNAME; }
@@ -219,6 +211,7 @@ HDIGIT  [0-9a-f]
         next|n          { BEGIN(INITIAL);       return CMD_NEXT; }
         playback|pb     { BEGIN(FNAME);         return CMD_PLAYBACK; }
         print|p         { BEGIN(INITIAL);       return CMD_PRINT; }
+        profile|prof    { BEGIN(INITIAL);       return CMD_PROFILE; }
         pwd             { BEGIN(INITIAL);       return CMD_PWD; }
         quit|q          { BEGIN(INITIAL);       return CMD_QUIT; }
         radix|rad       { BEGIN(RADIX);         return CMD_RADIX; }
@@ -249,7 +242,15 @@ HDIGIT  [0-9a-f]
         verify|v        { BEGIN(FNAME);         return CMD_VERIFY; }
         watch|w         { BEGIN(INITIAL);       return CMD_WATCH; }
         warp            { BEGIN(INITIAL);       return CMD_WARP; }
-        yydebug         { BEGIN(INITIAL);       return CMD_YYDEBUG; }
+
+        yydebug         {
+                BEGIN(INITIAL);
+#if YYDEBUG
+                return CMD_YYDEBUG;
+#else
+                return 0;
+#endif
+            }
         maincpu_trace   { BEGIN(INITIAL);       return CMD_MAINCPU_TRACE; }
 }
  /* this is not a real command, but could be a label name for a label assignment */
@@ -261,6 +262,14 @@ HDIGIT  [0-9a-f]
 on  		{ yylval.i = e_ON; return TOGGLE; }
 off 		{ yylval.i = e_OFF; return TOGGLE; }
 toggle		{ yylval.i = e_TOGGLE; return TOGGLE; }
+
+flat		{ return FLAT; }
+graph		{ return GRAPH; }
+func		{ return FUNC; }
+depth		{ return DEPTH; }
+disass		{ return DISASS; }
+context	{ return PROFILE_CONTEXT; }
+clear		{ return CLEAR; }
 
 load { yylval.i = e_load; return MEM_OP; }
 store { yylval.i = e_store; return MEM_OP; }
@@ -445,21 +454,21 @@ if		{ BEGIN (COND_MODE); return IF; }
 }
 
 <COND_MODE>{
-	== 		{ yylval.i = e_EQU; return COND_OP; }
-	!= 		{ yylval.i = e_NEQ; return COND_OP; }
-	\<=		{ yylval.i = e_LTE; return COND_OP; }
-	\<		{ yylval.i = e_LT;  return COND_OP; }
-	\>		{ yylval.i = e_GT;  return COND_OP; }
-	\>=		{ yylval.i = e_GTE; return COND_OP; }
-	&&		{ yylval.i = e_AND; return COND_OP; }
-	\|\|	{ yylval.i = e_OR;  return COND_OP; }
+        ==    { yylval.i = e_EQU; return COND_OP; }
+        !=    { yylval.i = e_NEQ; return COND_OP; }
+        \<=   { yylval.i = e_LTE; return COND_OP; }
+        \<    { yylval.i = e_LT;  return COND_OP; }
+        \>    { yylval.i = e_GT;  return COND_OP; }
+        \>=   { yylval.i = e_GTE; return COND_OP; }
 
-  \+    { yylval.i = e_ADD; return COND_OP; }
-  -     { yylval.i = e_SUB; return COND_OP; }
-  \*    { yylval.i = e_MUL; return COND_OP; }
-  \/    { yylval.i = e_DIV; return COND_OP; }
-  &     { yylval.i = e_BINARY_AND; return COND_OP; }
-  \|    { yylval.i = e_BINARY_OR; return COND_OP; }
+        \+    { yylval.i = e_ADD; return COND_OP; }
+        -     { yylval.i = e_SUB; return COND_OP; }
+        \*    { yylval.i = e_MUL; return COND_OP; }
+        \/    { yylval.i = e_DIV; return COND_OP; }
+        &     { yylval.i = e_BINARY_AND; return COND_OP; }
+        \|    { yylval.i = e_BINARY_OR; return COND_OP; }
+        &&    { yylval.i = e_LOGICAL_AND; return COND_OP; }
+        \|\|  { yylval.i = e_LOGICAL_OR;  return COND_OP; }
 
 	A 		{ yylval.i = e_A; return MON_REGISTER; }		/* 65xx/c64dtv/658xx/6x09/z80 */
 	X 		{ yylval.i = e_X; return MON_REGISTER; }		/* 65xx/c64dtv/658xx/6x09 */

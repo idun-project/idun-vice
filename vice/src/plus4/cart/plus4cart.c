@@ -25,7 +25,7 @@
  *
  */
 
-#define DEBUGCART
+/* #define DEBUGCART */
 /* #define DEBUGCARTRW */
 
 #include "vice.h"
@@ -77,7 +77,7 @@ c2lo    exp. port (or internal) $8000-$bfff reserved / v364 speech software low
 c2hi    exp. port (or internal) $c000-$ffff reserved / v364 speech software high
 
 TED controls all banking. The cs0 and cs1 are active when the CPU is
-accessing $8000-$bfff and $c000-$ffff respectively, but can be “overridden”
+accessing $8000-$bfff and $c000-$ffff respectively, but can be "overridden"
 by writing anything to TED registers $3e and $3f. Writing anything to $FF3E
 will page in the currently configured ROMs to the upper memory area
 ($8000..$FFFF), and writing anything to $FF3F will page in RAM to the same
@@ -122,6 +122,32 @@ static cartridge_info_t cartlist[] = {
 cartridge_info_t *cartridge_get_info_list(void)
 {
     return &cartlist[0];
+}
+
+/* return cartridge type of main slot
+   returns 0 (CARTRIDGE_CRT) if crt file */
+int cartridge_get_id(int slot)
+{
+    int type = plus4cart_type;
+    DBG(("cartridge_get_id(slot:%d): type:%d\n", slot, type));
+    return type;
+}
+
+/* FIXME: slot arg is ignored right now.
+   this should return a pointer to a filename, or NULL
+*/
+char *cartridge_get_filename_by_slot(int slot)
+{
+    DBG(("cartridge_get_filename_by_slot(slot:%d)\n", slot));
+    return cartfile;
+}
+
+/* FIXME: slot arg is ignored right now.
+   this should return a pointer to a filename, or NULL
+*/
+char *cartridge_get_secondary_filename_by_slot(int slot)
+{
+    return NULL;
 }
 
 /* ---------------------------------------------------------------------*/
@@ -409,7 +435,7 @@ static void cart_power_off(void)
 {
     if (plus4cartridge_reset) {
         /* "Turn off machine before removing cartridge" */
-        machine_trigger_reset(MACHINE_RESET_MODE_HARD);
+        machine_trigger_reset(MACHINE_RESET_MODE_POWER_CYCLE);
     }
 }
 
@@ -481,7 +507,7 @@ void cartridge_set_default(void)
 #if 0
             if (crt_getid(cartfile) > 0) {
                 type = CARTRIDGE_CRT;
-            } else 
+            } else
 #endif
             {
                 type = plus4cart_type;
@@ -515,13 +541,13 @@ int cartridge_detect(const char *filename)
 {
     int type = CARTRIDGE_NONE;
     FILE *fd;
-    size_t len;
+    off_t len;
 
     fd = fopen(filename, "rb");
     if (fd == NULL) {
         return CARTRIDGE_NONE;
     }
-    len = util_file_length(fd);
+    len = archdep_file_size(fd);
 
     if (len == 8192) {
         type = CARTRIDGE_PLUS4_GENERIC_C1LO;
@@ -754,12 +780,70 @@ exiterror:
 /* FIXME: todo */
 void cartridge_trigger_freeze(void)
 {
+#ifdef DEBUGCART
     int delay = lib_unsigned_rand(1, (unsigned int)machine_get_cycles_per_frame());
+#endif
 #if 0
     cart_freeze_alarm_time = maincpu_clk + delay;
     alarm_set(cartridge_freeze_alarm, cart_freeze_alarm_time);
 #endif
     DBG(("cartridge_trigger_freeze delay %d cycles", delay));
+}
+
+
+int cartridge_save_image(int type, const char *filename)
+{
+    return -1;
+}
+
+int cartridge_save_secondary_image(int type, const char *filename)
+{
+    return -1;
+}
+
+int cartridge_flush_image(int type)
+{
+    return -1;
+}
+
+int cartridge_flush_secondary_image(int type)
+{
+    return -1;
+}
+
+int cartridge_can_save_image(int crtid)
+{
+    return 0;
+}
+
+int cartridge_can_flush_image(int crtid)
+{
+    return 0;
+}
+
+int cartridge_can_save_secondary_image(int crtid)
+{
+    return 0;
+}
+
+int cartridge_can_flush_secondary_image(int crtid)
+{
+    return 0;
+}
+
+int cartridge_enable(int crtid)
+{
+    return -1;
+}
+
+int cartridge_disable(int crtid)
+{
+    return -1;
+}
+
+int cartridge_type_enabled(int crtid)
+{
+    return 0;
 }
 
 /* ------------------------------------------------------------------------- */

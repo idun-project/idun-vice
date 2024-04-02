@@ -141,35 +141,34 @@ static cmdline_option_t cmdline_options_chip_palette[] =
     CMDLINE_LIST_END
 };
 
+#if defined(USE_SDLUI) || defined(USE_SDL2UI) || defined(USE_GTK3UI)
 static const char * const cname_chip_fullscreen[] =
 {
-#if defined(USE_SDLUI) || defined(USE_SDLUI2)
     "-", "full", "Fullscreen",
     "+", "full", "Fullscreen",
-#endif
-    "-", "fulldevice", "FullscreenDevice",
     NULL
 };
+#endif
 
+#if defined(USE_SDLUI) || defined(USE_SDL2UI) || defined(USE_GTK3UI)
 static cmdline_option_t cmdline_options_chip_fullscreen[] =
 {
-#if defined(USE_SDLUI) || defined(USE_SDLUI2)
     { NULL, SET_RESOURCE, CMDLINE_ATTRIB_NONE,
       NULL, NULL, NULL, (void *)1,
       NULL, "Enable fullscreen" },
     { NULL, SET_RESOURCE, CMDLINE_ATTRIB_NONE,
       NULL, NULL, NULL, (void *)0,
       NULL, "Disable fullscreen" },
-#endif
-    { NULL, SET_RESOURCE, CMDLINE_ATTRIB_NEED_ARGS,
-      NULL, NULL, NULL, NULL,
-      "<device>", "Select fullscreen device" },
     CMDLINE_LIST_END
 };
+#endif
 
+#if defined(USE_SDLUI) || defined(USE_SDL2UI)
 static const char * const cname_chip_fullscreen_mode[] =
 {
     "-", "fullmode", "FullscreenMode",
+    "-", "fullwidth", "FullscreenCustomWidth",
+    "-", "fullheight", "FullscreenCustomHeight",
     NULL
 };
 
@@ -178,9 +177,101 @@ static cmdline_option_t cmdline_options_chip_fullscreen_mode[] =
     { NULL, SET_RESOURCE, CMDLINE_ATTRIB_NEED_ARGS,
       NULL, NULL, NULL, NULL,
       "<Mode>", "Select fullscreen mode" },
+    { NULL, SET_RESOURCE, CMDLINE_ATTRIB_NEED_ARGS,
+      NULL, NULL, NULL, NULL,
+      "<width>", "Set custom fullscreen resolution width" },
+    { NULL, SET_RESOURCE, CMDLINE_ATTRIB_NEED_ARGS,
+      NULL, NULL, NULL, NULL,
+      "<height>", "Set custom fullscreen resolution height" },
+    CMDLINE_LIST_END
+};
+#endif
+
+/** \brief  Template for [-+]CHIPshowstatusbar command line options
+ */
+static cmdline_option_t cmdline_options_chip_show_statusbar[] =
+{
+    /* -CHIPshowstatusbar */
+    { NULL,                 /* option name: filled in */
+      SET_RESOURCE,         /* set provided resource */
+      CMDLINE_ATTRIB_NONE,  /* boolean option, no arg */
+      NULL,                 /* function to set the resource (not used) */
+      NULL,                 /* extra param for the setter function (not used) */
+      NULL,                 /* resource name: filled in */
+      (void*)1,             /* resource value */
+      NULL,                 /* param name: none */
+      "Show status bar",    /* option description */
+    },
+    /* +CHIPshowstatusbar */
+    { NULL,                 /* option name: filled in */
+      SET_RESOURCE,         /* set provided resource */
+      CMDLINE_ATTRIB_NONE,  /* boolean option, no arg */
+      NULL,                 /* function to set the resource (not used) */
+      NULL,                 /* extra param for the setter function (not used) */
+      NULL,                 /* resource name: filled in */
+      (void*)0,             /* resource value */
+      NULL,                 /* param name: none */
+      "Hide status bar",    /* option description */
+    },
     CMDLINE_LIST_END
 };
 
+/* aspect options */
+static const char * const cname_chip_gloptions[] =
+{
+    "-", "aspectmode", "AspectMode",
+    "-", "aspect", "AspectRatio",
+    "-", "glfilter", "GLFilter",
+    "-", "flipx", "FLipX",
+    "+", "flipx", "FLipX",
+    "-", "flipy", "FLipY",
+    "+", "flipy", "FLipY",
+    "-", "rotate", "Rotate",
+    "+", "rotate", "Rotate",
+    "-", "vsync", "VSync",
+    "+", "vsync", "VSync",
+    NULL
+};
+
+static cmdline_option_t cmdline_options_chip_gloptions[] =
+{
+    { NULL, SET_RESOURCE, CMDLINE_ATTRIB_NEED_ARGS,
+      NULL, NULL, NULL, NULL,
+      "<mode>", "Set aspect ratio mode (0 = off, 1 = custom, 2 = true)" },
+    { NULL, SET_RESOURCE, CMDLINE_ATTRIB_NEED_ARGS,
+      NULL, NULL, NULL, NULL,
+      "<aspect ratio>", "Set custom aspect ratio (0.5 - 2.0)" },
+    { NULL, SET_RESOURCE, CMDLINE_ATTRIB_NEED_ARGS,
+      NULL, NULL, NULL, (resource_value_t)VIDEO_GLFILTER_BICUBIC,
+      "<mode>", "Set OpenGL filtering mode (0 = nearest, 1 = linear, 2 = bicubic)" },
+    { NULL, SET_RESOURCE, CMDLINE_ATTRIB_NONE,
+      NULL, NULL, NULL, (resource_value_t)1,
+      NULL, "Enable X flip" },
+    { NULL, SET_RESOURCE, CMDLINE_ATTRIB_NONE,
+      NULL, NULL, NULL, (resource_value_t)0,
+      NULL, "Disable X flip" },
+    { NULL, SET_RESOURCE, CMDLINE_ATTRIB_NONE,
+      NULL, NULL, NULL, (resource_value_t)1,
+      NULL, "Enable Y flip" },
+    { NULL, SET_RESOURCE, CMDLINE_ATTRIB_NONE,
+      NULL, NULL, NULL, (resource_value_t)0,
+      NULL, "Disable Y flip" },
+    { NULL, SET_RESOURCE, CMDLINE_ATTRIB_NONE,
+      NULL, NULL, NULL, (resource_value_t)1,
+      NULL, "Rotate 90 degrees clockwise" },
+    { NULL, SET_RESOURCE, CMDLINE_ATTRIB_NONE,
+      NULL, NULL, NULL, (resource_value_t)0,
+      NULL, "Do not rotate" },
+    { NULL, SET_RESOURCE, CMDLINE_ATTRIB_NONE,
+      NULL, NULL, NULL, (resource_value_t)1,
+      NULL, "Enable vsync to prevent screen tearing" },
+    { NULL, SET_RESOURCE, CMDLINE_ATTRIB_NONE,
+      NULL, NULL, NULL, (resource_value_t)0,
+      NULL, "Disable vsync to allow screen tearing" },
+    CMDLINE_LIST_END
+};
+
+/* CRT emulation options */
 static const char * const cname_chip_colors[] =
 {
     "-", "saturation", "ColorSaturation",
@@ -211,17 +302,12 @@ static cmdline_option_t cmdline_options_chip_colors[] =
     CMDLINE_LIST_END
 };
 
+/* PAL/NTSC emulation options */
 static const char * const cname_chip_crtemu_palntsc[] =
 {
     "-", "oddlinesphase", "PALOddLinePhase",
     "-", "oddlinesoffset", "PALOddLineOffset",
-    NULL
-};
-
-static const char * const cname_chip_crtemu[] =
-{
-    "-", "crtblur", "PALBlur",
-    "-", "crtscanlineshade", "PALScanLineShade",
+    "-", "crtdelaylinetype", "PALDelaylineType",
     NULL
 };
 
@@ -233,7 +319,18 @@ static cmdline_option_t cmdline_options_chip_crtemu_palntsc[] =
     { NULL, SET_RESOURCE, CMDLINE_ATTRIB_NEED_ARGS,
       NULL, NULL, NULL, NULL,
       "<0-2000>", "Set phase offset for color carrier in odd lines" },
+    { NULL, SET_RESOURCE, CMDLINE_ATTRIB_NEED_ARGS,
+      NULL, NULL, NULL, NULL,
+      "<type>", "Set type of delay line used in the CRT (0: normal, 1: U only (1084 style))." },
     CMDLINE_LIST_END
+};
+
+/* CRT emulation options */
+static const char * const cname_chip_crtemu[] =
+{
+    "-", "crtblur", "PALBlur",
+    "-", "crtscanlineshade", "PALScanLineShade",
+    NULL
 };
 
 static cmdline_option_t cmdline_options_chip_crtemu[] =
@@ -250,7 +347,7 @@ static cmdline_option_t cmdline_options_chip_crtemu[] =
 int video_cmdline_options_chip_init(const char *chipname,
                                     video_chip_cap_t *video_chip_cap)
 {
-    unsigned int i, j;
+    unsigned int i;
 
     if (machine_class == VICE_MACHINE_VSID) {
         return 0;
@@ -312,9 +409,8 @@ int video_cmdline_options_chip_init(const char *chipname,
     }
 
     /* video render filters */
-    /* FIXME: scale2x is not available for all videochips
-              (video_chip_cap->scale2x_allowed) */
 
+    /* <CHIP>Filter */
     for (i = 0; cname_chip_render_filter[i * 3] != NULL; i++) {
         cmdline_options_chip_render_filter[i].name
             = util_concat(cname_chip_render_filter[i * 3], chipname,
@@ -332,6 +428,7 @@ int video_cmdline_options_chip_init(const char *chipname,
         lib_free(cmdline_options_chip_render_filter[i].resource_name);
     }
 
+    /* <CHIP>ExternalPalette */
     for (i = 0; cname_chip_internal_palette[i * 3] != NULL; i++) {
         cmdline_options_chip_internal_palette[i].name
             = util_concat(cname_chip_internal_palette[i * 3], chipname,
@@ -351,6 +448,7 @@ int video_cmdline_options_chip_init(const char *chipname,
         lib_free(cmdline_options_chip_internal_palette[i].resource_name);
     }
 
+    /* <CHIP>PaletteFile */
     for (i = 0; cname_chip_palette[i * 3] != NULL; i++) {
         cmdline_options_chip_palette[i].name
             = util_concat(cname_chip_palette[i * 3], chipname,
@@ -370,46 +468,88 @@ int video_cmdline_options_chip_init(const char *chipname,
     }
 
     /* fullscreen options */
-    if (video_chip_cap->fullscreen.device_num > 0) {
-        for (i = 0; cname_chip_fullscreen[i * 3] != NULL; i++) {
-            cmdline_options_chip_fullscreen[i].name
-                = util_concat(cname_chip_fullscreen[i * 3], chipname,
-                              cname_chip_fullscreen[i * 3 + 1], NULL);
-            cmdline_options_chip_fullscreen[i].resource_name
-                = util_concat(chipname, cname_chip_fullscreen[i * 3 + 2], NULL);
-        }
+#if defined(USE_SDLUI) || defined(USE_SDL2UI) || defined(USE_GTK3UI)
+    /* <CHIP>Fullscreen */
+    for (i = 0; cname_chip_fullscreen[i * 3] != NULL; i++) {
+        cmdline_options_chip_fullscreen[i].name
+            = util_concat(cname_chip_fullscreen[i * 3], chipname,
+                          cname_chip_fullscreen[i * 3 + 1], NULL);
+        cmdline_options_chip_fullscreen[i].resource_name
+            = util_concat(chipname, cname_chip_fullscreen[i * 3 + 2], NULL);
+    }
 
-        if (cmdline_register_options(cmdline_options_chip_fullscreen) < 0) {
-            return -1;
-        }
+    if (cmdline_register_options(cmdline_options_chip_fullscreen) < 0) {
+        return -1;
+    }
 
-        for (i = 0; cname_chip_fullscreen[i * 3] != NULL; i++) {
-            lib_free(cmdline_options_chip_fullscreen[i].name);
-            lib_free(cmdline_options_chip_fullscreen[i].resource_name);
-        }
+    for (i = 0; cname_chip_fullscreen[i * 3] != NULL; i++) {
+        lib_free(cmdline_options_chip_fullscreen[i].name);
+        lib_free(cmdline_options_chip_fullscreen[i].resource_name);
+    }
+#endif
 
-        for (j = 0; j < video_chip_cap->fullscreen.device_num; j++) {
-            for (i = 0; cname_chip_fullscreen_mode[i * 3] != NULL; i++) {
-                cmdline_options_chip_fullscreen_mode[i].name
-                    = util_concat(cname_chip_fullscreen_mode[i * 3], chipname,
-                                  video_chip_cap->fullscreen.device_name[j],
-                                  cname_chip_fullscreen_mode[i * 3 + 1], NULL);
-                cmdline_options_chip_fullscreen_mode[i].resource_name
-                    = util_concat(chipname,
-                                  video_chip_cap->fullscreen.device_name[j],
-                                  cname_chip_fullscreen_mode[i * 3 + 2], NULL);
-            }
+#if defined(USE_SDLUI) || defined(USE_SDL2UI)
+    /* <CHIP>FullscreenMode (SDL only) */
+    for (i = 0; cname_chip_fullscreen_mode[i * 3] != NULL; i++) {
+        cmdline_options_chip_fullscreen_mode[i].name
+            = util_concat(cname_chip_fullscreen_mode[i * 3], chipname,
+                          cname_chip_fullscreen_mode[i * 3 + 1], NULL);
+        cmdline_options_chip_fullscreen_mode[i].resource_name
+            = util_concat(chipname,
+                          cname_chip_fullscreen_mode[i * 3 + 2], NULL);
+    }
 
-            if (cmdline_register_options(cmdline_options_chip_fullscreen_mode)
-                < 0) {
-                return -1;
-            }
+    if (cmdline_register_options(cmdline_options_chip_fullscreen_mode)
+        < 0) {
+        return -1;
+    }
 
-            for (i = 0; cname_chip_fullscreen_mode[i * 3] != NULL; i++) {
-                lib_free(cmdline_options_chip_fullscreen_mode[i].name);
-                lib_free(cmdline_options_chip_fullscreen_mode[i].resource_name);
-            }
-        }
+    for (i = 0; cname_chip_fullscreen_mode[i * 3] != NULL; i++) {
+        lib_free(cmdline_options_chip_fullscreen_mode[i].name);
+        lib_free(cmdline_options_chip_fullscreen_mode[i].resource_name);
+    }
+#endif
+
+    /* show status bar */
+
+    /* <CHIP>ShowStatusbar */
+    cmdline_options_chip_show_statusbar[0].name
+        = util_concat("-", chipname, "showstatusbar", NULL);
+    cmdline_options_chip_show_statusbar[0].resource_name
+        = util_concat(chipname, "ShowStatusbar", NULL);
+    /* hide status bar */
+    cmdline_options_chip_show_statusbar[1].name
+        = util_concat("+", chipname, "showstatusbar", NULL);
+    cmdline_options_chip_show_statusbar[1].resource_name
+        = util_concat(chipname, "ShowStatusbar", NULL);
+    if (cmdline_register_options(cmdline_options_chip_show_statusbar) < 0) {
+        lib_free(cmdline_options_chip_show_statusbar[0].name);
+        lib_free(cmdline_options_chip_show_statusbar[0].resource_name);
+        lib_free(cmdline_options_chip_show_statusbar[1].name);
+        lib_free(cmdline_options_chip_show_statusbar[1].resource_name);
+        return -1;
+    }
+    lib_free(cmdline_options_chip_show_statusbar[0].name);
+    lib_free(cmdline_options_chip_show_statusbar[0].resource_name);
+    lib_free(cmdline_options_chip_show_statusbar[1].name);
+    lib_free(cmdline_options_chip_show_statusbar[1].resource_name);
+
+    /* GL options */
+    for (i = 0; cname_chip_gloptions[i * 3] != NULL; i++) {
+        cmdline_options_chip_gloptions[i].name
+            = util_concat(cname_chip_gloptions[i * 3], chipname,
+                          cname_chip_gloptions[i * 3 + 1], NULL);
+        cmdline_options_chip_gloptions[i].resource_name
+            = util_concat(chipname, cname_chip_gloptions[i * 3 + 2], NULL);
+    }
+
+    if (cmdline_register_options(cmdline_options_chip_gloptions) < 0) {
+        return -1;
+    }
+
+    for (i = 0; cname_chip_gloptions[i * 3] != NULL; i++) {
+        lib_free(cmdline_options_chip_gloptions[i].name);
+        lib_free(cmdline_options_chip_gloptions[i].resource_name);
     }
 
     /* color generator */
@@ -449,21 +589,24 @@ int video_cmdline_options_chip_init(const char *chipname,
         lib_free(cmdline_options_chip_crtemu[i].resource_name);
     }
 
-    for (i = 0; cname_chip_crtemu_palntsc[i * 3] != NULL; i++) {
-        cmdline_options_chip_crtemu_palntsc[i].name
-            = util_concat(cname_chip_crtemu_palntsc[i * 3], chipname,
-                          cname_chip_crtemu_palntsc[i * 3 + 1], NULL);
-        cmdline_options_chip_crtemu_palntsc[i].resource_name
-            = util_concat(chipname, cname_chip_crtemu_palntsc[i * 3 + 2], NULL);
-    }
+    /* PAL/NTSC emulation */
+    if (video_chip_cap->video_has_palntsc) {
+        for (i = 0; cname_chip_crtemu_palntsc[i * 3] != NULL; i++) {
+            cmdline_options_chip_crtemu_palntsc[i].name
+                = util_concat(cname_chip_crtemu_palntsc[i * 3], chipname,
+                            cname_chip_crtemu_palntsc[i * 3 + 1], NULL);
+            cmdline_options_chip_crtemu_palntsc[i].resource_name
+                = util_concat(chipname, cname_chip_crtemu_palntsc[i * 3 + 2], NULL);
+        }
 
-    if (cmdline_register_options(cmdline_options_chip_crtemu_palntsc) < 0) {
-        return -1;
-    }
+        if (cmdline_register_options(cmdline_options_chip_crtemu_palntsc) < 0) {
+            return -1;
+        }
 
-    for (i = 0; cname_chip_crtemu_palntsc[i * 3] != NULL; i++) {
-        lib_free(cmdline_options_chip_crtemu_palntsc[i].name);
-        lib_free(cmdline_options_chip_crtemu_palntsc[i].resource_name);
+        for (i = 0; cname_chip_crtemu_palntsc[i * 3] != NULL; i++) {
+            lib_free(cmdline_options_chip_crtemu_palntsc[i].name);
+            lib_free(cmdline_options_chip_crtemu_palntsc[i].resource_name);
+        }
     }
 
     return 0;

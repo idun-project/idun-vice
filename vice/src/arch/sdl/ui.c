@@ -40,7 +40,9 @@
 #include "archdep.h"
 #include "color.h"
 #include "fullscreenarch.h"
+#include "hotkeys.h"
 #include "joy.h"
+#include "joystick.h"
 #include "kbd.h"
 #include "keyboard.h"
 #include "lib.h"
@@ -52,6 +54,7 @@
 #include "resources.h"
 #include "types.h"
 #include "ui.h"
+#include "uiactions.h"
 #include "uiapi.h"
 #include "uicolor.h"
 #include "uifilereq.h"
@@ -63,6 +66,27 @@
 #include "vsidui_sdl.h"
 #include "vsync.h"
 
+/* action handler includes, should be sorted with the rest later */
+#include "actions-cartridge.h"
+#include "debug.h"
+#ifdef DEBUG
+#include "actions-debug.h"
+#endif
+#include "actions-display.h"
+#include "actions-drive.h"
+#ifdef USE_SDL2UI
+#include "actions-edit.h"
+#endif
+#include "actions-help.h"
+#include "actions-hotkeys.h"
+#include "actions-joystick.h"
+#include "actions-machine.h"
+#include "actions-media.h"
+#include "actions-settings.h"
+#include "actions-snapshot.h"
+#include "actions-speed.h"
+#include "actions-tape.h"
+
 #ifndef SDL_DISABLE
 #define SDL_DISABLE SDL_IGNORE
 #endif
@@ -73,17 +97,27 @@
 #define DBG(x)
 #endif
 
-#ifdef ANDROID_COMPILE 
-extern void keyboard_key_pressed(signed long key);
-#endif
-
-
 static int sdl_ui_ready = 0;
 
 
 static void (*psid_init_func)(void) = NULL;
 static void (*psid_play_func)(int) = NULL;
 
+static const Uint8 hat_map[] = {
+    0, /* SDL_HAT_CENTERED */
+    JOYSTICK_DIRECTION_UP, /* SDL_HAT_UP */
+    JOYSTICK_DIRECTION_RIGHT, /* SDL_HAT_RIGHT */
+    JOYSTICK_DIRECTION_RIGHT|JOYSTICK_DIRECTION_UP, /* SDL_HAT_RIGHTUP */
+    JOYSTICK_DIRECTION_DOWN, /* SDL_HAT_DOWN */
+    0,
+    JOYSTICK_DIRECTION_RIGHT|JOYSTICK_DIRECTION_DOWN, /* SDL_HAT_RIGHTDOWN */
+    0,
+    JOYSTICK_DIRECTION_LEFT, /* SDL_HAT_LEFT */
+    JOYSTICK_DIRECTION_LEFT |JOYSTICK_DIRECTION_UP, /* SDL_HAT_LEFTUP */
+    0,
+    0,
+    JOYSTICK_DIRECTION_LEFT |JOYSTICK_DIRECTION_DOWN, /* SDL_HAT_LEFTDOWN */
+};
 
 /* ----------------------------------------------------------------- */
 /* ui.h */
@@ -91,19 +125,34 @@ static void (*psid_play_func)(int) = NULL;
 /* Misc. SDL event handling */
 void ui_handle_misc_sdl_event(SDL_Event e)
 {
-#ifdef USE_SDLUI2
+#ifdef USE_SDL2UI
     int capslock;
-
+    int wx, wy;
+#ifdef SDL_DEBUG
+    int wh, ww;
+#endif
     if (e.type == SDL_WINDOWEVENT) {
         SDL_Window* window = SDL_GetWindowFromID(e.window.windowID);
         video_canvas_t* canvas = (video_canvas_t*)(SDL_GetWindowData(window, VIDEO_SDL2_CANVAS_INDEX_KEY));
-
+        DBG(("ui_handle_misc_sdl_event: SDL_WINDOWEVENT"));
         switch (e.window.event) {
             case SDL_WINDOWEVENT_RESIZED:
-                DBG(("ui_handle_misc_sdl_event: SDL_WINDOWEVENT_RESIZED (%d,%d)", 
-                     e.window.data1, e.window.data2));
+#ifdef SDL_DEBUG
+                SDL_GetWindowSize(window, &ww, &wh);
+                DBG(("ui_handle_misc_sdl_event: SDL_WINDOWEVENT_RESIZED (%d,%d) (%d,%d) Window %u Canvas: %d",
+                     e.window.data1, e.window.data2, ww, wh, e.window.windowID, canvas->index));
+#endif
                 sdl2_video_resize_event(canvas->index, (unsigned int)e.window.data1, (unsigned int)e.window.data2);
                 video_canvas_refresh_all(sdl_active_canvas);
+                /*resources_set_int_sprintf("Window%dWidth", ww, canvas->index);
+                resources_set_int_sprintf("Window%dHeight", wh, canvas->index);*/
+                break;
+            case SDL_WINDOWEVENT_MOVED:
+                SDL_GetWindowPosition(window, &wx, &wy);
+                DBG(("ui_handle_misc_sdl_event: SDL_WINDOWEVENT_MOVED (%d,%d)  (%d,%d) Window %u Canvas: %d",
+                        e.window.data1, e.window.data2, wx, wy, e.window.windowID, canvas->index));
+                resources_set_int_sprintf("Window%dXpos", wx, canvas->index);
+                resources_set_int_sprintf("Window%dYpos", wy, canvas->index);
                 break;
             case SDL_WINDOWEVENT_FOCUS_GAINED:
                 DBG(("ui_handle_misc_sdl_event: SDL_WINDOWEVENT_FOCUS_GAINED"));
@@ -127,14 +176,14 @@ void ui_handle_misc_sdl_event(SDL_Event e)
                 ui_sdl_quit();
                 break;
         }
-    }
+    } else {
 #endif
     switch (e.type) {
         case SDL_QUIT:
             DBG(("ui_handle_misc_sdl_event: SDL_QUIT"));
             ui_sdl_quit();
             break;
-#ifndef USE_SDLUI2
+#ifndef USE_SDL2UI
         case SDL_VIDEORESIZE:
             DBG(("ui_handle_misc_sdl_event: SDL_VIDEORESIZE (%d,%d)", (unsigned int)e.resize.w, (unsigned int)e.resize.h));
             sdl_video_resize_event((unsigned int)e.resize.w, (unsigned int)e.resize.h);
@@ -166,7 +215,7 @@ void ui_handle_misc_sdl_event(SDL_Event e)
                 if (psid_init_func != NULL && psid_play_func != NULL) {
                     psid_init_func();
                     psid_play_func(0);
-                    machine_trigger_reset(MACHINE_RESET_MODE_SOFT);
+                    machine_trigger_reset(MACHINE_RESET_MODE_RESET_CPU);
                 }
             }
             break;
@@ -183,315 +232,117 @@ void ui_handle_misc_sdl_event(SDL_Event e)
             DBG(("ui_handle_misc_sdl_event: unhandled"));
             break;
     }
+#ifdef USE_SDL2UI
+    } /* not SDL_WINDOWEVENT */
+#endif
 }
 
-#ifdef ANDROID_COMPILE
-#include "loader.h"
-#include "keyboard.h"
-
-extern int loader_loadstate;
-extern int loader_savestate;
-extern int loader_turbo;
-extern int loader_showinfo;
-extern int loader_true_drive;
-extern char savestate_filename[256];
-extern void loader_save_snapshot(char *name);
-extern void loader_load_snapshot(char *name);
-extern void loader_set_warpmode(int on);
-extern void loader_set_statusbar(int val);
-extern void loader_set_drive_true_emulation(int val);
-static int oldx = 0, oldy = 0, down_x, down_y;
-int old_joy_direction = 0;
-extern int mouse_x, mouse_y;
-#endif
-
 /* Main event handler */
-ui_menu_action_t ui_dispatch_events(void)
+void ui_dispatch_events(void)
+{
+    SDL_Event e;
+    int joynum;
+
+    while (SDL_PollEvent(&e)) {
+        switch (e.type) {
+            case SDL_KEYDOWN:
+                ui_display_kbd_status(&e);
+                sdlkbd_press(SDL2x_to_SDL1x_Keys(e.key.keysym.sym), e.key.keysym.mod);
+                break;
+            case SDL_KEYUP:
+                ui_display_kbd_status(&e);
+                sdlkbd_release(SDL2x_to_SDL1x_Keys(e.key.keysym.sym), e.key.keysym.mod);
+                break;
+#ifdef HAVE_SDL_NUMJOYSTICKS
+            case SDL_JOYAXISMOTION:
+                joynum = sdljoy_get_joynum_for_event((VICE_SDL_JoystickID)e.jaxis.which);
+                if (joynum != -1) {
+                    sdljoy_axis_event(joynum, e.jaxis.axis, e.jaxis.value);
+                    joystick_set_axis_value(joynum, e.jaxis.axis, (uint8_t)((~e.jaxis.value + 32768) >> 8));
+                }
+                break;
+            case SDL_JOYBUTTONDOWN:
+                joynum = sdljoy_get_joynum_for_event((VICE_SDL_JoystickID)e.jaxis.which);
+                if (joynum != -1) {
+                    joy_button_event(joynum, e.jbutton.button, 1);
+                }
+                break;
+            case SDL_JOYBUTTONUP:
+                joynum = sdljoy_get_joynum_for_event((VICE_SDL_JoystickID)e.jaxis.which);
+                if (joynum != -1) {
+                    joy_button_event(joynum, e.jbutton.button, 0);
+                }
+                break;
+            case SDL_JOYHATMOTION:
+                joynum = sdljoy_get_joynum_for_event((VICE_SDL_JoystickID)e.jaxis.which);
+                if (joynum != -1) {
+                    joy_hat_event(joynum, e.jhat.hat, hat_map[e.jhat.value]);
+                }
+                break;
+#endif
+            case SDL_MOUSEMOTION:
+                sdl_ui_consume_mouse_event(&e);
+                if (_mouse_enabled) {
+                    mouse_move(e.motion.xrel, e.motion.yrel);
+                }
+                break;
+            case SDL_MOUSEBUTTONDOWN:
+            case SDL_MOUSEBUTTONUP:
+                if (_mouse_enabled) {
+                    mouse_button((int)(e.button.button), (e.button.state == SDL_PRESSED));
+                }
+                break;
+            default:
+                /* SDL_EventState(SDL_VIDEORESIZE, SDL_IGNORE); */
+                ui_handle_misc_sdl_event(e);
+                /* SDL_EventState(SDL_VIDEORESIZE, SDL_ENABLE); */
+                break;
+        }
+    }
+}
+
+ui_menu_action_t ui_dispatch_events_for_menu_action(void)
 {
     SDL_Event e;
     ui_menu_action_t retval = MENU_ACTION_NONE;
     int joynum;
 
-#ifdef ANDROID_COMPILE
-    struct locnet_al_event event1;
-
-    if (loader_showinfo) {
-        int value = loader_showinfo;
-
-        loader_showinfo = 0;
-        loader_set_statusbar((value == 1) ? 1 : 0);
-    }
-    if (loader_true_drive) {
-        int value = loader_true_drive;
-
-        loader_true_drive = 0;
-        loader_set_drive_true_emulation((value == 1) ? 1 : 0);
-    }
-    if (loader_turbo) {
-        int value = loader_turbo;
-
-        loader_turbo = 0;
-        loader_set_warpmode((value == 1) ? 1 : 0);
-    }
-    if (loadf->abort) {
-        loadf->abort = 0;
-        ui_pause_enable();
-        ui_sdl_quit();
-        ui_pause_disable(); /* does this even get called after ui_sdl_quit()? */
-        return MENU_ACTION_NONE;
-    } else if (loader_loadstate) {
-        loader_loadstate = 0;
-        loader_load_snapshot(savestate_filename);
-        ui_pause_disable();
-        return MENU_ACTION_NONE;
-    } else if (loader_savestate) {
-        loader_savestate = 0;
-        loader_save_snapshot(savestate_filename);
-        ui_pause_disable();
-        return MENU_ACTION_NONE;
-    }
-
-    int stopPoll = 0;
-
-    while ((!stopPoll) && Android_PollEvent(&event1)) {
-        struct locnet_al_event *event = &event1;
-
-        switch (event->eventType) {
-            case SDL_MOUSEMOTION:
-                {
-                    /* detect auto calibrate */
-                    if ((event->x == -2048) && (event->y == -2048)) {
-                        down_x = -1;
-                        down_y = -1;
-                        oldx = 0;
-                        oldy = 0;
-                        stopPoll = 1;
-                    /* detect pure relative move */
-                    } else if ((event->down_x == -1024) && (event->down_y == -1024)) {
-                        down_x = 0;
-                        down_y = 0;
-                        oldx = 0;
-                        oldy = 0;
-                    } else if ((down_x != event->down_x) || (down_y != event->down_y)) {
-                        down_x = event->down_x;
-                        down_y = event->down_y;
-                        oldx = down_x;
-                        oldy = down_y;
-                    }
-                    mouse_move((int)(event->x - oldx), (int)(event->y - oldy));
-                    oldx = event->x;
-                    oldy = event->y;
-                }
-                break;
-            case SDL_MOUSEBUTTONDOWN:
-                {
-                    if ((event->down_x >= 0) && (event->down_y >= 0)) {
-                        mouse_x = 640 * event->down_x / 1000.0f - 64;
-                        mouse_y = 400 * (1000 - event->down_y) / 1000.0f - 200;
-                    }
-                    if (event->keycode >= 0) {
-                        mouse_button((int)(event->keycode) ? SDL_BUTTON_RIGHT : SDL_BUTTON_LEFT, 1);
-                    }
-                    stopPoll = 1;
-                }
-                break;
-            case SDL_MOUSEBUTTONUP:
-                {
-                    if (event->keycode >= 0) {
-                        mouse_button((int)(event->keycode) ? SDL_BUTTON_RIGHT : SDL_BUTTON_LEFT, 0);
-                    }
-                    stopPoll = 1;
-                }
-                break;
-            case SDL_JOYAXISMOTION:
-                {
-                    float x = event->x / 256.0f;
-                    float y = event->y / 256.0f;
-                    int left = 0, top = 0, right = 0, bot = 0;
-                    int value;
-
-                    if (y < -DEAD_ZONE) {
-                        top = 1;
-                    }
-                    if (y > DEAD_ZONE) {
-                        bot = 1;
-                    }
-                    if (x < -DEAD_ZONE) {
-                        left = 1;
-                    }
-                    if (x > DEAD_ZONE) {
-                        right = 1;
-                    }
-
-                    value = 0;
-
-                    if (left) {
-                        value |= 4;
-                    }
-                    if (right) {
-                        value |= 8;
-                    }
-                    if (top) {
-                        value |= 1;
-                    }
-                    if (bot) {
-                        value |= 2;
-                    }
-                    retval = sdljoy_axis_event(0, 0, event->x / 256.0f * 32767);
-                    ui_menu_action_t retval2 = sdljoy_axis_event(0, 1, event->y / 256.0f * 32767);
-                    if (retval == MENU_ACTION_NONE) {
-                        retval = retval2;
-                    }
-                    old_joy_direction = value;
-                    stopPoll = 1;
-                }
-                break;
-            case SDL_JOYBUTTONDOWN:
-                {
-                    retval = sdljoy_button_event(0, event->keycode, 1);
-
-                    /* buffer overflow when autofire if stopPoll */
-                    if (!Android_HasRepeatEvent(SDL_JOYBUTTONDOWN, event->keycode)) {
-                        stopPoll = 1;
-                    }
-                }
-                break;
-            case SDL_JOYBUTTONUP:
-                {
-                    retval = sdljoy_button_event(0, event->keycode, 0);
-
-                    /* buffer overflow when autofire if stopPoll */
-                    if (!Android_HasRepeatEvent(SDL_JOYBUTTONUP, event->keycode)) {
-                        stopPoll = 1;
-                    }
-                }
-                break;
-            case SDL_KEYUP:
-            case SDL_KEYDOWN:
-                {
-                    static int ctrl_down = 0;
-                    static int alt_down = 0;
-                    static int shift_down = 0;
-
-                    int down = (event->eventType == SDL_KEYDOWN);
-                    unsigned long modifier = event->modifier;
-                    int ctrl = ((modifier & KEYBOARD_CTRL_FLAG) != 0);
-                    int alt = ((modifier & KEYBOARD_ALT_FLAG) != 0);
-                    int shift = ((modifier & KEYBOARD_SHIFT_FLAG) != 0);
-                    unsigned long kcode = (unsigned long)event->keycode;
-
-                    int kmod = 0;
-
-                    if (ctrl) {
-                        kmod |= KMOD_LCTRL;
-                    }
-                    if (alt) {
-                        kmod |= KMOD_LALT;
-                    }
-                    if (shift) {
-                        kmod |= KMOD_LSHIFT;
-                    }
-                    if (down) {
-                        if (ctrl || (kcode == SDLK_TAB)) {
-                            if (!ctrl_down) {
-                                keyboard_key_pressed((unsigned long)SDLK_TAB);
-                            }
-                            ctrl_down++;
-                        }
-                        if (alt || (kcode == SDLK_LCTRL)) {
-                            if (!alt_down) {
-                                keyboard_key_pressed((unsigned long)SDLK_LCTRL);
-                            }
-                            alt_down++;
-                        }
-                        if (shift || (kcode == SDLK_LSHIFT)) {
-                            if (!shift_down) {
-                                keyboard_key_pressed((unsigned long)SDLK_LSHIFT);
-                            }
-                            shift_down++;
-                        }
-                        ui_display_kbd_status(event);
-                        retval = sdlkbd_press(kcode, 0);
-                    } else {
-                        ui_display_kbd_status(event);
-                        retval = sdlkbd_release(kcode, 0);
-
-                        if (ctrl || (kcode == SDLK_TAB)) {
-                            if (kcode == SDLK_TAB) {
-                                ctrl_down = 0;
-                            }
-                            if (ctrl_down) {
-                                ctrl_down--;
-                            }
-                            if (!ctrl_down) {
-                                keyboard_key_released((unsigned long)SDLK_TAB);
-                            }
-                        }
-                        if (alt || (kcode == SDLK_LCTRL)) {
-                            if (kcode == SDLK_LCTRL) {
-                                alt_down = 0;
-                            }
-                            if (alt_down) {
-                                alt_down--;
-                            }
-                            if (!alt_down) {
-                                keyboard_key_released((unsigned long)SDLK_LCTRL);
-                            }
-                        }
-                        if (shift || (kcode == SDLK_LSHIFT)) {
-                            if (kcode == SDLK_LSHIFT) {
-                                shift_down = 0;
-                            }
-                            if (shift_down) {
-                                shift_down--;
-                            }
-                            if (!shift_down) {
-                                keyboard_key_released((unsigned long)SDLK_LSHIFT);
-                            }
-                        }
-                    }
-                    stopPoll = 1;
-                }
-                break;
-        }
-    }
-#else
     while (SDL_PollEvent(&e)) {
         switch (e.type) {
             case SDL_KEYDOWN:
                 ui_display_kbd_status(&e);
-                retval = sdlkbd_press(SDL2x_to_SDL1x_Keys(e.key.keysym.sym), e.key.keysym.mod);
+                retval = sdlkbd_press_for_menu_action(SDL2x_to_SDL1x_Keys(e.key.keysym.sym), e.key.keysym.mod);
                 break;
             case SDL_KEYUP:
                 ui_display_kbd_status(&e);
-                retval = sdlkbd_release(SDL2x_to_SDL1x_Keys(e.key.keysym.sym), e.key.keysym.mod);
+                retval = sdlkbd_release_for_menu_action(SDL2x_to_SDL1x_Keys(e.key.keysym.sym), e.key.keysym.mod);
                 break;
 #ifdef HAVE_SDL_NUMJOYSTICKS
             case SDL_JOYAXISMOTION:
-                joynum = sdljoy_get_joynum_for_event(e.jaxis.which);
+                joynum = sdljoy_get_joynum_for_event((VICE_SDL_JoystickID)e.jaxis.which);
                 if (joynum != -1) {
-                    retval = sdljoy_axis_event(joynum, e.jaxis.axis, e.jaxis.value);
+                    retval = sdljoy_axis_event_for_menu_action(joynum, e.jaxis.axis, e.jaxis.value);
                 }
                 break;
             case SDL_JOYBUTTONDOWN:
-                joynum = sdljoy_get_joynum_for_event(e.jbutton.which);
+                joynum = sdljoy_get_joynum_for_event((VICE_SDL_JoystickID)e.jbutton.which);
                 if (joynum != -1) {
-                    retval = sdljoy_button_event(joynum, e.jbutton.button, 1);
+                    retval = sdljoy_button_event_for_menu_action(joynum, e.jbutton.button, 1);
                 }
                 break;
             case SDL_JOYBUTTONUP:
-                joynum = sdljoy_get_joynum_for_event(e.jbutton.which);
+                joynum = sdljoy_get_joynum_for_event((VICE_SDL_JoystickID)e.jbutton.which);
                 if (joynum != -1) {
-                    retval = sdljoy_button_event(joynum, e.jbutton.button, 0);
+                    retval = sdljoy_button_event_for_menu_action(joynum, e.jbutton.button, 0);
                 }
                 break;
             case SDL_JOYHATMOTION:
-                joynum = sdljoy_get_joynum_for_event(e.jhat.which);
+                joynum = sdljoy_get_joynum_for_event((VICE_SDL_JoystickID)e.jhat.which);
                 if (joynum != -1) {
-                    retval = sdljoy_hat_event(joynum, e.jhat.hat, e.jhat.value);
+                    retval = sdljoy_hat_event_for_menu_action(joynum, e.jhat.hat, hat_map[e.jhat.value]);
                 }
                 break;
-#ifdef USE_SDLUI2
+#ifdef USE_SDL2UI
             case SDL_JOYDEVICEADDED:
             case SDL_JOYDEVICEREMOVED:
                 retval = sdljoy_rescan();
@@ -522,7 +373,6 @@ ui_menu_action_t ui_dispatch_events(void)
             break;
         }
     }
-#endif
     return retval;
 }
 
@@ -532,7 +382,7 @@ ui_menu_action_t ui_dispatch_events(void)
  * TODO: and perhaps in windowed mode enable it when the mouse is moved.
  */
 
-#ifdef USE_SDLUI2
+#ifdef USE_SDL2UI
 static SDL_Cursor *arrow_cursor = NULL;
 static SDL_Cursor *crosshair_cursor = NULL;
 
@@ -560,7 +410,7 @@ void ui_check_mouse_cursor(void)
     if (_mouse_enabled && !lightpen_enabled && !sdl_menu_state) {
         /* mouse grabbed, not in menu. grab input but do not show a pointer */
         SDL_ShowCursor(SDL_DISABLE);
-#ifndef USE_SDLUI2
+#ifndef USE_SDL2UI
         SDL_WM_GrabInput(SDL_GRAB_ON);
 #else
         set_arrow_cursor();
@@ -569,7 +419,7 @@ void ui_check_mouse_cursor(void)
     } else if (lightpen_enabled && !sdl_menu_state) {
         /* lightpen active, not in menu. show a pointer for the lightpen emulation */
         SDL_ShowCursor(SDL_ENABLE);
-#ifndef USE_SDLUI2
+#ifndef USE_SDL2UI
         SDL_WM_GrabInput(SDL_GRAB_OFF);
 #else
         set_crosshair_cursor();
@@ -579,7 +429,7 @@ void ui_check_mouse_cursor(void)
         if (sdl_active_canvas->fullscreenconfig->enable) {
             /* fullscreen, never show pointer (we really never need it) */
             SDL_ShowCursor(SDL_DISABLE);
-#ifndef USE_SDLUI2
+#ifndef USE_SDL2UI
             SDL_WM_GrabInput(SDL_GRAB_OFF);
 #else
             set_arrow_cursor();
@@ -588,7 +438,7 @@ void ui_check_mouse_cursor(void)
         } else {
             /* windowed */
             SDL_ShowCursor(mouse_pointer_hidden ? SDL_DISABLE : SDL_ENABLE);
-#ifndef USE_SDLUI2
+#ifndef USE_SDL2UI
             SDL_WM_GrabInput(SDL_GRAB_OFF);
 #else
             set_arrow_cursor();
@@ -602,7 +452,7 @@ void ui_set_mouse_grab_window_title(int enabled)
 {
     char title[256];
     char name[32];
-    char *mouse_key = kbd_get_path_keyname("Machine settings&Mouse emulation&Grab mouse events");
+    char *mouse_key = ui_action_get_hotkey_label(ACTION_MOUSE_GRAB_TOGGLE);
 
     if (machine_class != VICE_MACHINE_C64SC) {
         strcpy(name, machine_get_name());
@@ -610,12 +460,16 @@ void ui_set_mouse_grab_window_title(int enabled)
         strcpy(name, "C64 (x64sc)");
     }
     if (enabled && mouse_key != NULL) {
-        snprintf(title, 256, "VICE: %s%s Use %s to disable mouse grab.",
+        snprintf(title, sizeof(title), "VICE: %s%s Use %s to disable mouse grab.",
             name, archdep_extra_title_text(), mouse_key);
-        lib_free(mouse_key);
     } else {
-        snprintf(title, 256, "VICE: %s%s", name, archdep_extra_title_text());
-    }        
+        snprintf(title, sizeof(title), "VICE: %s%s", name, archdep_extra_title_text());
+    }
+    title[sizeof(title) - 1] = '\0';
+
+    if (mouse_key != NULL) {
+        lib_free(mouse_key);
+    }
 
     sdl_ui_set_window_title(title);
 }
@@ -712,12 +566,8 @@ static int set_start_minimized(int val, void *param)
     return 0;
 }
 
-#ifdef __sortix__
-#define DEFAULT_MENU_KEY SDLK_END
-#endif
-
 #ifndef DEFAULT_MENU_KEY
-# ifdef MACOSX_SUPPORT
+# ifdef MACOS_COMPILE
 #  define DEFAULT_MENU_KEY SDLK_F10
 # else
 #  define DEFAULT_MENU_KEY SDLK_F12
@@ -778,11 +628,11 @@ void ui_sdl_quit(void)
 /* Initialization  */
 int ui_resources_init(void)
 {
-#ifdef USE_SDLUI2
+#ifdef USE_SDL2UI
     int i;
 #endif
     DBG(("%s", __func__));
-#ifdef USE_SDLUI2
+#ifdef USE_SDL2UI
     /* this converts the default keycodes as needed */
     for (i = 0; i < 13; i++) {
         resources_int[i].factory_value = SDL2x_to_SDL1x_Keys(resources_int[i].factory_value);
@@ -801,8 +651,6 @@ int ui_resources_init(void)
 void ui_resources_shutdown(void)
 {
     DBG(("%s", __func__));
-    joy_arch_resources_shutdown();
-    sdlkbd_resources_shutdown();
 }
 
 static const cmdline_option_t cmdline_options[] =
@@ -877,12 +725,6 @@ static const cmdline_option_t cmdline_options[] =
 
 static const cmdline_option_t statusbar_cmdline_options[] =
 {
-    { "-statusbar", SET_RESOURCE, CMDLINE_ATTRIB_NONE,
-      NULL, NULL, "SDLStatusbar", (resource_value_t)1,
-      NULL, "Enable statusbar" },
-    { "+statusbar", SET_RESOURCE, CMDLINE_ATTRIB_NONE,
-      NULL, NULL, "SDLStatusbar", (resource_value_t)0,
-      NULL, "Disable statusbar" },
 #if 0
     { "-kbdstatusbar", SET_RESOURCE, CMDLINE_ATTRIB_NONE,
       NULL, NULL, "KbdStatusbar", (resource_value_t)1,
@@ -893,6 +735,25 @@ static const cmdline_option_t statusbar_cmdline_options[] =
 #endif
     CMDLINE_LIST_END
 };
+
+#if 0
+/** \brief  UI action dispatch handler
+ *
+ * Calls the handler in \a map when a UI action is triggered from the UI actions
+ * system (from menu items, hoykeys or joystick buttons).
+ *
+ * \param[in]   map     action map
+ */
+static void action_dispatch(const ui_action_map_t *map)
+{
+    printf("%s(): calling handler for action %d (%s)\n",
+           __func__, map->action, ui_action_get_name(map->action));
+
+    /* no need to check for threading or other stuff, everything in SDL runs in
+     * the same thread */
+    map->handler(map->param);
+}
+#endif
 
 int ui_cmdline_options_init(void)
 {
@@ -918,20 +779,51 @@ int ui_init(void)
     return 0;
 }
 
-int ui_init_finish(void)
-{
-    DBG(("%s", __func__));
-    return 0;
-}
-
 int ui_init_finalize(void)
 {
     DBG(("%s", __func__));
 
     if (!console_mode) {
         sdl_ui_init_finalize();
-#ifndef USE_SDLUI2
-        SDL_WM_SetCaption(sdl_active_canvas->viewport->title, "VICE");
+
+        /* Iterate menu structure and store pointers to items with action IDs.
+         * Not sure if this is the correct place to call it, might be too late.
+         */
+        hotkeys_iterate_menu();
+#if 0
+        /* set the UI action dispatch handler (currently not required, the
+         * default handler is sufficient for now) */
+        ui_actions_set_dispatch(action_dispatch);
+#endif
+        /* register actions valid for all emus including VSID */
+#ifdef DEBUG
+        actions_debug_register();
+#endif
+        actions_help_register();
+        actions_hotkeys_register();
+        actions_machine_register();
+        actions_settings_register();
+
+        /* register actions valid for all emus except VSID */
+        if (machine_class != VICE_MACHINE_VSID) {
+            actions_cartridge_register();
+            actions_display_register();
+            actions_drive_register();
+            /* only SDL2 supports clipboard operations */
+#ifdef USE_SDL2UI
+            actions_edit_register();
+#endif
+            actions_joystick_register();
+            actions_media_register();
+            actions_speed_register();
+            actions_snapshot_register();
+            actions_tape_register();
+        }
+        /* cannot register VSID-specific actions here, that causes linker errors */
+#if 0
+        if (machine_class == VICE_MACHINE_VSID) {
+            actions_vsid_register();
+        }
 #endif
         sdl_ui_ready = 1;
     }
@@ -941,7 +833,7 @@ int ui_init_finalize(void)
 void ui_shutdown(void)
 {
     DBG(("%s", __func__));
-#ifdef USE_SDLUI2
+#ifdef USE_SDL2UI
     if (arrow_cursor) {
         SDL_FreeCursor(arrow_cursor);
         arrow_cursor = NULL;
@@ -994,10 +886,10 @@ ui_jam_action_t ui_jam_dialog(const char *format, ...)
 
     retval = message_box("VICE CPU JAM", "a CPU JAM has occured, choose the action to take", MESSAGE_CPUJAM);
     if (retval == 0) {
-        return UI_JAM_RESET;
+        return UI_JAM_RESET_CPU;
     }
     if (retval == 1) {
-        return UI_JAM_HARD_RESET;
+        return UI_JAM_POWER_CYCLE;
     }
     if (retval == 2) {
         return UI_JAM_NONE;
@@ -1010,6 +902,15 @@ ui_jam_action_t ui_jam_dialog(const char *format, ...)
     }
     return UI_JAM_NONE;
 }
+
+
+/** \brief  Activate the menu from a joystick button
+ */
+void arch_ui_activate(void)
+{
+    sdl_ui_activate();
+}
+
 
 /* ----------------------------------------------------------------- */
 /* uicolor.h */
@@ -1036,13 +937,6 @@ int uicolor_set_palette(struct video_canvas_s *c, const struct palette_s *palett
     return 0;
 }
 
-
-/* FIXME: temporary stub to support calling ui_hotkeys_init() from src/main.c
- */
-void ui_hotkeys_init(void)
-{
-    /* NOP */
-}
 
 /* ---------------------------------------------------------------------*/
 /* vsidui_sdl.h */

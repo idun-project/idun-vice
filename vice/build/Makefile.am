@@ -1,4 +1,2 @@
 SUBDIRS = \
-	android \
-	beos \
-	mingw
+	beos

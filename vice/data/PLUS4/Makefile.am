@@ -1,14 +1,14 @@
 plus4dir = $(VICE_DATADIR)/PLUS4
 
 roms = \
-	3plus1hi \
-	3plus1lo \
-	basic \
-	kernal \
-	kernal.005 \
-	kernal.232 \
-	kernal.364 \
-	c2lo.364
+	3plus1-317053-01.bin \
+	3plus1-317054-01.bin \
+	basic-318006-01.bin \
+	kernal-318004-05.bin \
+	kernal-318005-05.bin \
+	kernal-318004-01.bin \
+	kernal-364.bin \
+	c2lo-364.bin
 
 romsets = \
 	default.vrs
@@ -16,14 +16,15 @@ romsets = \
 palettes = \
 	yape-pal.vpl \
 	yape-ntsc.vpl \
-	colodore_ted.vpl
-
-gtk3_hotkeys = \
-	gtk3-hotkeys.vhk \
-	gtk3-hotkeys-mac.vhk
+	colodore_ted.vpl \
+	ITU-R_BT601_CRT.vpl \
+	ITU-R_BT709_HDTV.vpl \
+	ITU-R_BT2020.vpl
 
 gtk3_keymaps = \
 	gtk3_pos.vkm \
+	gtk3_pos_de.vkm \
+	gtk3_pos_es.vkm \
 	gtk3_sym.vkm \
 	gtk3_sym_fr.vkm \
 	gtk3_sym_de.vkm \
@@ -38,15 +39,22 @@ sdl_keymaps = \
 	sdl_pos_fr.vkm \
 	sdl_pos.vkm
 
-sdl_hotkeys = \
-	sdl-hotkeys.vhk
+if USE_SDLUI
+plus4_DATA = $(roms) $(romsets) $(palettes) $(sdl_keymaps)
+EXTRA_DIST = $(plus4_DATA) $(gtk3_keymaps)
+endif
 
-if SDL_COMPILE
-plus4_DATA = $(roms) $(romsets) $(palettes) $(sdl_keymaps) $(sdl_hotkeys)
+if USE_SDL2UI
+plus4_DATA = $(roms) $(romsets) $(palettes) $(sdl_keymaps)
+EXTRA_DIST = $(plus4_DATA) $(gtk3_keymaps)
+endif
 
-EXTRA_DIST = $(plus4_DATA) $(gtk3_keymaps) $(gtk3_hotkeys)
-else
-plus4_DATA = $(roms) $(romsets) $(palettes) $(gtk3_keymaps) $(gtk3_hotkeys)
+if USE_GTK3UI
+plus4_DATA = $(roms) $(romsets) $(palettes) $(gtk3_keymaps)
+EXTRA_DIST = $(plus4_DATA) $(sdl_keymaps)
+endif
 
-EXTRA_DIST = $(plus4_DATA) $(sdl_keymaps) $(sdl_hotkeys)
+if USE_HEADLESSUI
+plus4_DATA = $(roms) $(romsets) $(palettes)
+EXTRA_DIST = $(plus4_DATA) $(sdl_keymaps) $(gtk3_keymaps)
 endif

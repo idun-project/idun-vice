@@ -48,7 +48,7 @@
    Black Box V8
 
    32k or 64k, 2 or 4 16K banks
-   
+
    writing to IO2 sets the cartridge config:
    A0 - EXROM
    A1 - GAME
@@ -76,7 +76,8 @@ static io_source_t final3_io2_device = {
     blackbox8_dump,           /* device state information dump function */
     CARTRIDGE_BLACKBOX8,      /* cartridge ID */
     IO_PRIO_NORMAL,           /* normal priority, device read needs to be checked for collisions */
-    0                         /* insertion order, gets filled in by the registration function */
+    0,                        /* insertion order, gets filled in by the registration function */
+    IO_MIRROR_NONE            /* NO mirroring */
 };
 
 static io_source_list_t *final3_io2_list_item = NULL;
@@ -253,7 +254,7 @@ int blackbox8_snapshot_read_module(snapshot_t *s)
 
     if (0
         || SMR_B_INT(m, &bb8_rom_banks) < 0
-        || SMR_B(m, &regval) < 0 
+        || SMR_B(m, &regval) < 0
         || SMR_BA(m, roml_banks, 0x2000 * bb8_rom_banks) < 0
         || SMR_BA(m, romh_banks, 0x2000 * bb8_rom_banks) < 0) {
         goto fail;

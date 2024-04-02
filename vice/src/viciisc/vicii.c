@@ -161,9 +161,9 @@ static int vicii_get_crt_type(void)
     switch (video) {
         case MACHINE_SYNC_PAL:
         case MACHINE_SYNC_PALN:
-            return 1; /* PAL */
+            return VIDEO_CRT_TYPE_PAL;
         default:
-            return 0; /* NTSC */
+            return VIDEO_CRT_TYPE_NTSC;
     }
 }
 
@@ -220,17 +220,6 @@ static int init_raster(void)
         log_error(vicii.log, "Cannot load palette.");
         return -1;
     }
-
-#if 0
-    raster_set_title(raster, machine_name);
-#else
-    /* hack */
-    if (machine_class != VICE_MACHINE_C64SC) {
-        raster_set_title(raster, machine_name);
-    } else {
-        raster_set_title(raster, "C64 (x64sc)");
-    }
-#endif
 
     if (raster_realize(raster) < 0) {
         return -1;
@@ -660,7 +649,7 @@ int vicii_dump(void)
     }
 
     mon_out("Scroll X/Y: %d/%d, RC %d, Idle: %d, ", vicii.regs[0x16] & 0x07, vicii.regs[0x11] & 0x07, vicii.rc, vicii.idle_state);
-    mon_out("%dx%d\n", 39 + ((vicii.regs[0x16] >> 3) & 1), 24 + ((vicii.regs[0x11] >> 3) & 1));
+    mon_out("%dx%d\n", 38 + ((vicii.regs[0x16] >> 2) & 2), 24 + ((vicii.regs[0x11] >> 3) & 1));
 
     mon_out("VC $%03x, VCBASE $%03x, VMLI %2d, Phi1 $%02x\n",
             (unsigned int)vicii.vc, (unsigned int)vicii.vcbase,

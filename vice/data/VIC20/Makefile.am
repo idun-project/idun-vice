@@ -1,10 +1,12 @@
 vic20dir = $(VICE_DATADIR)/VIC20
 
 roms = \
-	basic \
-	chargen \
-	chargen-jp \
-	kernal
+	basic-901486-01.bin \
+	chargen-901460-03.bin \
+	chargen-901460-02.bin \
+	kernal.901486-02.bin \
+	kernal.901486-06.bin \
+	kernal.901486-07.bin
 
 romsets = \
 	default.vrs
@@ -15,10 +17,6 @@ palettes = \
 	mike-ntsc.vpl \
 	colodore_vic.vpl \
 	PALette.vpl
-
-gtk3_hotkeys = \
-	gtk3-hotkeys.vhk
-	gtk3-hotkeys-mac.vhk
 
 gtk3_keymaps = \
 	gtk3_pos_it.vkm \
@@ -36,15 +34,22 @@ sdl_keymaps = \
 	sdl_pos_fr.vkm \
 	sdl_pos_fi.vkm
 
-sdl_hotkeys = \
-	sdl-hotkeys.vhk
+if USE_SDLUI
+vic20_DATA = $(roms) $(romsets) $(palettes) $(sdl_keymaps)
+EXTRA_DIST = $(vic20_DATA) $(gtk3_keymaps)
+endif
 
-if SDL_COMPILE
-vic20_DATA = $(roms) $(romsets) $(palettes) $(sdl_keymaps) $(sdl_hotkeys)
+if USE_SDL2UI
+vic20_DATA = $(roms) $(romsets) $(palettes) $(sdl_keymaps)
+EXTRA_DIST = $(vic20_DATA) $(gtk3_keymaps)
+endif
 
-EXTRA_DIST = $(vic20_DATA) $(gtk3_keymaps) $(gtk3_hotkeys)
-else
-vic20_DATA = $(roms) $(romsets) $(palettes) $(gtk3_keymaps) $(gtk3_hotkeys)
+if USE_GTK3UI
+vic20_DATA = $(roms) $(romsets) $(palettes) $(gtk3_keymaps)
+EXTRA_DIST = $(vic20_DATA) $(sdl_keymaps)
+endif
 
-EXTRA_DIST = $(vic20_DATA) $(sdl_keymaps) $(sdl_hotkeys)
+if USE_HEADLESSUI
+vic20_DATA = $(roms) $(romsets) $(palettes)
+EXTRA_DIST = $(vic20_DATA) $(sdl_keymaps) $(gtk3_keymaps)
 endif

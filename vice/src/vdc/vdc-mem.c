@@ -454,6 +454,11 @@ void vdc_store(uint16_t addr, uint8_t value)
             /* We need to redraw the current line if this changes,
             as cache will be wrong. Uses xsmooth_color hack (see reg 25) */
             vdc.raster.xsmooth_color++;
+            vdc.skip_after_line = vdc.regs[27];
+            /* emulate quirk of v0, where 0 means 0 and all other values mean one more! */
+            if ((vdc.revision == VDC_REVISION_0) && (vdc.regs[27])) {
+                vdc.skip_after_line++;
+            }
 #ifdef REG_DEBUG
             log_message(vdc.log, "Row/Adrs. Increment %i.", vdc.regs[27]);
 #endif
@@ -615,7 +620,7 @@ uint8_t vdc_ram_read(uint16_t addr)
     if (!(vdc.regs[28] & 0x10)) {
         return vdc.ram[vdc_64k_to_16k_map(addr & vdc.vdc_address_mask)];
     }
-    /* otherwise return the default linear memory layout for the 4164 chip setting */
+    /* otherwise return the default linear memory layout for the 4464 chip setting */
     return vdc.ram[addr & vdc.vdc_address_mask];
 }
 
@@ -628,7 +633,7 @@ void vdc_ram_store(uint16_t addr, uint8_t value)
 }
 
 
-int vdc_dump(void *context, uint16_t addr)
+int vdc_dump(void)
 {
     unsigned int r, c, regnum=0, location, size;
 

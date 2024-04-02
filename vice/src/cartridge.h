@@ -36,85 +36,108 @@
 */
 
 /* init the cartridge system */
-extern void cartridge_init(void);
-extern int cartridge_resources_init(void);
-extern int cartridge_cmdline_options_init(void);
+void cartridge_init(void);
+int cartridge_resources_init(void);
+int cartridge_cmdline_options_init(void);
+
 /* shutdown the cartridge system */
-extern void cartridge_shutdown(void);
-extern void cartridge_resources_shutdown(void);
+void cartridge_shutdown(void);
+void cartridge_resources_shutdown(void);
 
 /* init the cartridge config so the cartridge can start (or whatever) */
-extern void cartridge_init_config(void);
+void cartridge_init_config(void);
 
 /* detect cartridge type (takes crt and bin files) */
-extern int cartridge_detect(const char *filename);
+int cartridge_detect(const char *filename);
+
 /* attach (and enable) a cartridge by type and filename (takes crt and bin files) */
-extern int cartridge_attach_image(int type, const char *filename);
+int cartridge_attach_image(int type, const char *filename);
+
 /* enable cartridge by type. loads default image if any.
    should be used by the UI instead of using the resources directly */
-extern int cartridge_enable(int type);
+int cartridge_enable(int type);
 
 /* disable cartridge by type */
-extern int cartridge_disable(int type);
+int cartridge_disable(int type);
 
 /* detaches/disables the cartridge with the associated id. pass -1 to detach all */
-extern void cartridge_detach_image(int type);
+void cartridge_detach_image(int type);
+
+/* FIXME: slot arg is ignored right now.
+   this should return a valid cartridge ID for a given slot, or CARTRIDGE_NONE
+*/
+int cartridge_get_id(int slot);
+
+/* FIXME: slot arg is ignored right now.
+   this should return a pointer to a filename, or NULL
+*/
+char *cartridge_get_filename_by_slot(int slot);
+char *cartridge_get_secondary_filename_by_slot(int slot);
 
 /* FIXME: this should also be made a generic function that takes the type */
 /* set current "Main Slot" cart as default */
-extern void cartridge_set_default(void);
+void cartridge_set_default(void);
 
 void cartridge_unset_default(void);
 
 /* reset button pressed in UI */
-extern void cartridge_reset(void);
+void cartridge_reset(void);
+
 /* powerup / hardreset */
-extern void cartridge_powerup(void);
+void cartridge_powerup(void);
 
 /* FIXME: this should also be made a generic function that takes the type */
 /* freeze button pressed in UI */
-extern void cartridge_trigger_freeze(void);
+void cartridge_trigger_freeze(void);
 
 /* FIXME: this should also be made a generic function that takes the type */
 /* trigger a freeze, but don't trigger the cartridge logic (which might release it). used by monitor */
-extern void cartridge_trigger_freeze_nmi_only(void);
+void cartridge_trigger_freeze_nmi_only(void);
 
 /* FIXME: this should also be made a generic function that takes the type */
-extern void cartridge_release_freeze(void);
+void cartridge_release_freeze(void);
 
-extern const char *cartridge_get_file_name(int type);
-extern int cartridge_type_enabled(int type);
+const char *cartridge_get_filename_by_type(int type);
+int cartridge_type_enabled(int type);
 
-/* save the (rom/ram)image of the give cart type to a file */
-extern int cartridge_save_image(int type, const char *filename);
-extern int cartridge_bin_save(int type, const char *filename);
-extern int cartridge_crt_save(int type, const char *filename);
-extern int cartridge_flush_image(int type);
+/* save the primary (rom/ram)image of the give cart type to a file */
+int cartridge_save_image(int type, const char *filename);
+int cartridge_bin_save(int type, const char *filename);
+int cartridge_crt_save(int type, const char *filename);
+int cartridge_flush_image(int type);
 
 /* returns 1 when cartridge (ROM) image can be flushed */
-extern int cartridge_can_flush_image(int crtid);
+int cartridge_can_flush_image(int crtid);
+
 /* returns 1 when cartridge (ROM) image can be saved */
-extern int cartridge_can_save_image(int crtid);
+int cartridge_can_save_image(int crtid);
+
+/* save the secondary image of the give cart type to a file */
+int cartridge_save_secondary_image(int type, const char *filename);
+int cartridge_flush_secondary_image(int type);
+
+int cartridge_can_flush_secondary_image(int crtid);
+int cartridge_can_save_secondary_image(int crtid);
 
 /* load/write snapshot modules for attached cartridges */
 struct snapshot_s;
-extern int cartridge_snapshot_read_modules(struct snapshot_s *s);
-extern int cartridge_snapshot_write_modules(struct snapshot_s *s);
+int cartridge_snapshot_read_modules(struct snapshot_s *s);
+int cartridge_snapshot_write_modules(struct snapshot_s *s);
 
 /* setup context */
 struct machine_context_s;
-extern void cartridge_setup_context(struct machine_context_s *machine_context);
+void cartridge_setup_context(struct machine_context_s *machine_context);
 
 /* generic cartridge memory peek for the monitor */
-extern uint8_t cartridge_peek_mem(uint16_t addr);
+uint8_t cartridge_peek_mem(uint16_t addr);
 
 /* mmu translation */
-extern void cartridge_mmu_translate(unsigned int addr, uint8_t **base, int *start, int *limit);
+void cartridge_mmu_translate(unsigned int addr, uint8_t **base, int *start, int *limit);
 
 /* Initialize RAM for power-up.  */
-extern void cartridge_ram_init(void);
+void cartridge_ram_init(void);
 
-extern void cartridge_sound_chip_init(void);
+void cartridge_sound_chip_init(void);
 
 /* Carts that don't have a rom image */
 #define CARTRIDGE_DIGIMAX            -100 /* digimax.c */
@@ -238,18 +261,20 @@ extern void cartridge_sound_chip_init(void);
 #define CARTRIDGE_IEEEFLASH64          75 /* ieeeflash64.c */
 #define CARTRIDGE_TURTLE_GRAPHICS_II   76 /* turtlegraphics.c */
 #define CARTRIDGE_FREEZE_FRAME_MK2     77 /* freezeframe2.c */
-#define CARTRIDGE_LAST                 77 /* cartconv: last cartridge in list */
+#define CARTRIDGE_PARTNER64            78 /* partner64.c */
+#define CARTRIDGE_HYPERBASIC           79 /* hyperbasic.c */
+#define CARTRIDGE_LAST                 79 /* cartconv: last cartridge in list */
 
 /* list of canonical names for the c64 cartridges:
    note: often it is hard to determine "the" official name, let alone the way it
    should be capitalized. because of that we go by the following rules:
    - if even the actual spelling and/or naming is unclear, then the most "common"
-     variant is choosen ("Expert Cartridge" vs "The Expert")
+     variant is chosen ("Expert Cartridge" vs "The Expert")
    - in many cases the name is printed all uppercase both on screen and in other
      sources (manual, adverts). we refrain from doing the same here and convert
      to Camel Case ("ACTION REPLAY V5" -> "Action Replay V5"), *except* if the
      cart name constitutes an actual name (as in noun) by itself ("ISEPIC", "EXOS").
-     additionally common abrevations such as RAM or EPROM will get written uppercase
+     additionally common abbreviations such as RAM or EPROM will get written uppercase
      if in doubt.
    - although generally these cartridge names should never get translated, some
      generic stuff is translated to english ("EPROM Karte" -> "EPROM Cart")
@@ -269,6 +294,7 @@ extern void cartridge_sound_chip_init(void);
 #define CARTRIDGE_NAME_CAPTURE            "Capture" /* see manual http://rr.pokefinder.org/wiki/Capture */
 #define CARTRIDGE_NAME_COMAL80            "Comal 80" /* http://www.retroport.de/C64_C128_Hardware.html */
 #define CARTRIDGE_NAME_CPM                "CP/M cartridge"
+#define CARTRIDGE_NAME_DREAN              "Drean"
 #define CARTRIDGE_NAME_MIDI_DATEL         "Datel MIDI"
 #define CARTRIDGE_NAME_DEBUGCART          "Debug Cartridge"
 #define CARTRIDGE_NAME_DELA_EP64          "Dela EP64"
@@ -299,7 +325,7 @@ extern void cartridge_sound_chip_init(void);
 #define CARTRIDGE_NAME_GEORAM             "GEO-RAM" /* http://www.retroport.de/Rex.html */
 #define CARTRIDGE_NAME_GMOD2              "GMod2" /* http://wiki.icomp.de/wiki/GMod2 */
 #define CARTRIDGE_NAME_GMOD3              "GMod3" /* http://wiki.icomp.de/wiki/GMod3 */
-#define CARTRIDGE_NAME_DREAN              "Drean"
+#define CARTRIDGE_NAME_HYPERBASIC         "Hyper-BASIC"
 #define CARTRIDGE_NAME_IDE64              "IDE64" /* see http://www.ide64.org/ */
 #define CARTRIDGE_NAME_IDUNIO             "Idun Cartridge I/O" /* see http://github.com/idun-project/idun-cart */
 #define CARTRIDGE_NAME_IEEE488            "IEEE-488 Interface"
@@ -312,18 +338,18 @@ extern void cartridge_sound_chip_init(void);
 #define CARTRIDGE_NAME_MAGIC_DESK         "Magic Desk" /* also: "Domark, Hes Australia" */
 #define CARTRIDGE_NAME_MAGIC_FORMEL       "Magic Formel" /* http://rr.pokefinder.org/wiki/Magic_Formel */
 #define CARTRIDGE_NAME_MAGIC_VOICE        "Magic Voice" /* all lowercase on cart ? */
-#define CARTRIDGE_NAME_MAX_BASIC          "MAX Basic"
 #define CARTRIDGE_NAME_MIDI_MAPLIN        "Maplin MIDI"
+#define CARTRIDGE_NAME_MAX_BASIC          "MAX Basic"
 #define CARTRIDGE_NAME_MIKRO_ASSEMBLER    "Mikro Assembler"
 #define CARTRIDGE_NAME_MMC64              "MMC64" /* see manual */
 #define CARTRIDGE_NAME_MMC_REPLAY         "MMC Replay" /* see manual */
-#define CARTRIDGE_NAME_MIDI_NAMESOFT      "Namesoft MIDI"
-#define CARTRIDGE_NAME_MIDI_PASSPORT      "Passport MIDI"
-#define CARTRIDGE_NAME_MIDI_SEQUENTIAL    "Sequential MIDI"
 #define CARTRIDGE_NAME_MULTIMAX           "MultiMAX" /* http://www.multimax.co/ */
+#define CARTRIDGE_NAME_MIDI_NAMESOFT      "Namesoft MIDI"
 #define CARTRIDGE_NAME_NORDIC_REPLAY      "Nordic Replay" /* "Retro Replay v2" see manual */
 #define CARTRIDGE_NAME_OCEAN              "Ocean"
 #define CARTRIDGE_NAME_PAGEFOX            "Pagefox"
+#define CARTRIDGE_NAME_PARTNER64          "Partner 64"
+#define CARTRIDGE_NAME_MIDI_PASSPORT      "Passport MIDI"
 #define CARTRIDGE_NAME_P64                "Prophet64" /* see http://www.prophet64.com/ */
 #define CARTRIDGE_NAME_RAMCART            "RamCart" /* see cc65 driver */
 #define CARTRIDGE_NAME_RAMLINK            "RAMLink"
@@ -337,6 +363,7 @@ extern void cartridge_sound_chip_init(void);
 #define CARTRIDGE_NAME_RETRO_REPLAY       "Retro Replay" /* see manual */
 #define CARTRIDGE_NAME_ROSS               "ROSS"
 #define CARTRIDGE_NAME_SDBOX              "SD-BOX" /* http://c64.com.pl/index.php/sdbox106.html */
+#define CARTRIDGE_NAME_MIDI_SEQUENTIAL    "Sequential MIDI"
 #define CARTRIDGE_NAME_SFX_SOUND_EXPANDER "SFX Sound Expander" /* http://www.floodgap.com/retrobits/ckb/secret/cbm-sfx-fmbport.jpg */
 #define CARTRIDGE_NAME_SFX_SOUND_SAMPLER  "SFX Sound Sampler" /* http://www.floodgap.com/retrobits/ckb/secret/cbm-ssm-box.jpg */
 #define CARTRIDGE_NAME_SILVERROCK_128     "Silverrock 128KiB Cartridge"
@@ -364,9 +391,34 @@ extern void cartridge_sound_chip_init(void);
  * C128 cartridge system
  */
 
-#define CARTRIDGE_C128_WARPSPEED128 1
-#define CARTRIDGE_C128_LAST 1
+/* #define CARTRIDGE_NONE               -1 */
+/* #define CARTRIDGE_CRT                 0 */
 
+/* first unique number after the C64 cartridges */
+#define CARTRIDGE_C128_FIRST_UNIQUE     (CARTRIDGE_LAST + 1)
+
+/* since the C128 cartridge system must coexist with the C64 cartridge
+   system, we add a constant offset using the following macros */
+#define CARTRIDGE_C128_MAKEID(x)        ((x) + CARTRIDGE_C128_FIRST_UNIQUE)
+#define CARTRIDGE_C128_ISID(x)          ((x) >= CARTRIDGE_C128_FIRST_UNIQUE)
+
+/* the following must match the CRT IDs */
+#define CARTRIDGE_C128_GENERIC 0        /* external function rom */
+#define CARTRIDGE_C128_WARPSPEED128 1
+#define CARTRIDGE_C128_PARTNER128 2
+#define CARTRIDGE_C128_COMAL80 3
+#define CARTRIDGE_C128_MAGICDESK128 4
+#define CARTRIDGE_C128_GMOD2C128 5
+#define CARTRIDGE_C128_LAST 5
+
+#define CARTRIDGE_C128_NAME_GENERIC       "generic function ROM"
+#define CARTRIDGE_C128_NAME_GENERIC_16KB  "generic 16KiB function ROM"
+#define CARTRIDGE_C128_NAME_GENERIC_32KB  "generic 32KiB function ROM"
+
+#define CARTRIDGE_C128_NAME_COMAL80       "Comal 80 (C128)"
+#define CARTRIDGE_C128_NAME_GMOD2C128     "Gmod2-C128"
+#define CARTRIDGE_C128_NAME_MAGICDESK128  "Magic Desk 128"
+#define CARTRIDGE_C128_NAME_PARTNER128    "Partner 128"
 #define CARTRIDGE_C128_NAME_WARPSPEED128  "Warp Speed 128"
 
 /*
@@ -431,7 +483,7 @@ extern void cartridge_sound_chip_init(void);
 #define CARTRIDGE_VIC20_TYPEDEF(h, s1, s0, b1, b2, b3, b5) \
     (0x8000 | ((h) << 6) | ((s1) << 5) | ((s0) << 4) | ((b1) << 3) | ((b2) << 2) | ((b3) << 1) | ((b5) << 0))
 
-/* block 1 */    
+/* block 1 */
 #define CARTRIDGE_VIC20_4KB_2000        CARTRIDGE_VIC20_TYPEDEF(0, 1, 0,  1, 0, 0, 0)
 #define CARTRIDGE_VIC20_8KB_2000        CARTRIDGE_VIC20_TYPEDEF(0, 1, 1,  1, 0, 0, 0)
 #define CARTRIDGE_VIC20_4KB_3000        CARTRIDGE_VIC20_TYPEDEF(1, 1, 0,  1, 0, 0, 0)
@@ -450,15 +502,15 @@ extern void cartridge_sound_chip_init(void);
 #define CARTRIDGE_VIC20_2KB_B000        CARTRIDGE_VIC20_TYPEDEF(1, 0, 1,  0, 0, 0, 1)
 
 /* block 1 + block 2 */
-#define CARTRIDGE_VIC20_16KB_2000       CARTRIDGE_VIC20_TYPEDEF(0, 1, 1,  1, 1, 0, 0) 
+#define CARTRIDGE_VIC20_16KB_2000       CARTRIDGE_VIC20_TYPEDEF(0, 1, 1,  1, 1, 0, 0)
 /* block 1 + block 5 */
-#define CARTRIDGE_VIC20_16KB_2000_A000  CARTRIDGE_VIC20_TYPEDEF(0, 1, 1,  1, 0, 0, 1) 
+#define CARTRIDGE_VIC20_16KB_2000_A000  CARTRIDGE_VIC20_TYPEDEF(0, 1, 1,  1, 0, 0, 1)
 /* block 2 + block 3 */
-#define CARTRIDGE_VIC20_16KB_4000       CARTRIDGE_VIC20_TYPEDEF(0, 1, 1,  0, 1, 1, 0) 
+#define CARTRIDGE_VIC20_16KB_4000       CARTRIDGE_VIC20_TYPEDEF(0, 1, 1,  0, 1, 1, 0)
 /* block 2 + block 5 */
-#define CARTRIDGE_VIC20_16KB_4000_A000  CARTRIDGE_VIC20_TYPEDEF(0, 1, 1,  0, 1, 0, 1) 
+#define CARTRIDGE_VIC20_16KB_4000_A000  CARTRIDGE_VIC20_TYPEDEF(0, 1, 1,  0, 1, 0, 1)
 /* block 3 + block 5 */
-#define CARTRIDGE_VIC20_16KB_6000       CARTRIDGE_VIC20_TYPEDEF(0, 1, 1,  0, 0, 1, 1) 
+#define CARTRIDGE_VIC20_16KB_6000       CARTRIDGE_VIC20_TYPEDEF(0, 1, 1,  0, 0, 1, 1)
 
 /* block 1,2,3,5 */
 #define CARTRIDGE_VIC20_32KB_2000       CARTRIDGE_VIC20_TYPEDEF(0, 1, 1,  1, 1, 1, 1)
@@ -471,7 +523,7 @@ extern void cartridge_sound_chip_init(void);
 #define CARTRIDGE_VIC20_NAME_FP              "Vic Flash Plugin" /* http://www.ktverkko.fi/~msmakela/8bit/vfp/index.en.html */
 #define CARTRIDGE_VIC20_NAME_IO2_RAM         "I/O-2 RAM"
 #define CARTRIDGE_VIC20_NAME_IO3_RAM         "I/O-3 RAM"
-#define CARTRIDGE_VIC20_NAME_IEEE488         "IEEE488"
+#define CARTRIDGE_VIC20_NAME_IEEE488         "VIC-1112 IEEE-488 Interface"  /*https://sleepingelephant.com/denial/wiki/index.php/File:Chipitos.be-VIC-1112.jpg */
 #define CARTRIDGE_VIC20_NAME_MIDI            "MIDI"
 #define CARTRIDGE_VIC20_NAME_SIDCART         "SIDCART"
 
@@ -565,6 +617,6 @@ typedef struct {
 #define CARTRIDGE_GROUP_GAME            0x0008
 #define CARTRIDGE_GROUP_UTIL            0x0010
 
-extern cartridge_info_t *cartridge_get_info_list(void);
+cartridge_info_t *cartridge_get_info_list(void);
 
 #endif

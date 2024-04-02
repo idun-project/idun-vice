@@ -1,5 +1,5 @@
 /*
- * paperclip64c.c - Paperclip 64 joyport dongle emulation.
+ * paperclip64.c - Paperclip 64D joyport dongle emulation.
  *
  * Written by
  *  Marco van den Heuvel <blackystardust68@yahoo.com>
@@ -35,24 +35,26 @@
 #include "resources.h"
 #include "snapshot.h"
 
-/* Control port <--> paperclip64 connections:
+/* Control port <--> paperclip64D connections:
 
-   cport | paperclip64 | I/O
-   -------------------------
-     1   |    PROM O0  |  I
-     2   |    PROM O1  |  I
-     3   | COUNTER CLK |  O
-     4   | COUNTER CLR |  O
-     6   |   PROM CE   |  O
+   cport | paperclip64D | I/O
+   --------------------------
+     1   |    PROM O0   |  I
+     2   |    PROM O1   |  I
+     3   | COUNTER CLK  |  O
+     4   | COUNTER CLR  |  O
+     6   |   PROM CE    |  O
+     7   |    +5VDC     |  Power
+     8   |     GND      |  Ground
 
    Works on:
-   - native joystick port(s) (x64/x64sc/xscpu64/x64dtv/x128)
+   - native joystick port(s) (x64/x64sc/xscpu64/x128)
  */
 
 /* Paperclip64D Dongle description:
 
-   This emulation currently does not work for the software using it,
-   help/more information is needed to fix this.
+   This emulation works only for the "paperclip64d" files. Other versions
+   require different dongles (ie. "paperclip64d-sc" is different).
 
    Documentation/information used for making the emulation:
 
@@ -78,8 +80,7 @@
 
    Be aware that the current emulation keeps the 'old' bits set between steps 1 and 2.
 
-   The emulation 'shows' the correct bit pattern when using the monitor to check what the code gets from the port,
-   but it does not work (good enough) for the actual software.
+   The "key" sequence is found below in the code; it has 60 values.
 */
 
 static int paperclip64_enabled[JOYPORT_MAX_PORTS] = {0};
@@ -89,7 +90,7 @@ static int counter[JOYPORT_MAX_PORTS] = {0};
 static uint8_t command[JOYPORT_MAX_PORTS] = {0xff};
 static uint8_t output_enable[JOYPORT_MAX_PORTS] = {0};
 
-static const uint8_t keys[64] = {
+static const uint8_t keys[60] = {
     3, 2, 0, 0, 1, 3, 2, 1,
     3, 2, 1, 2, 1, 2, 1, 2,
     0, 1, 2, 0, 1, 3, 3, 2,
@@ -97,24 +98,26 @@ static const uint8_t keys[64] = {
     3, 3, 2, 0, 1, 2, 0, 1,
     2, 1, 2, 1, 2, 1, 3, 2,
     1, 3, 2, 0, 0, 1, 3, 3,
-    3, 3, 3, 3, 3, 3, 3, 3
+    3, 3, 3, 3
 };
 
 /* ------------------------------------------------------------------------- */
 
-static int joyport_paperclip64_enable(int port, int value)
+static int joyport_paperclip64_set_enabled(int port, int enabled)
 {
-    int val = value ? 1 : 0;
+    int new_state = enabled ? 1 : 0;
 
-    if (val == paperclip64_enabled[port]) {
+    if (new_state == paperclip64_enabled[port]) {
         return 0;
     }
 
-    if (val) {
+    if (new_state) {
+        /* enabled, set command to 0 */
         command[port] = 0;
     }
 
-    paperclip64_enabled[port] = val;
+    /* set current state */
+    paperclip64_enabled[port] = new_state;
 
     return 0;
 }
@@ -124,6 +127,7 @@ static uint8_t paperclip64_read(int port)
     uint8_t retval = 0xff;
 
     if (output_enable[port]) {
+        /* if the output is enabled, return current key bits */
         retval &= (keys[counter[port]] | 0xfc);
     }
     return retval;
@@ -145,14 +149,16 @@ static void paperclip64_store(int port, uint8_t val)
     reset = !(val & 8);
 
     if (reset) {
+        /* reset line asserted, set counter to 0 */
         counter[port] = 0;
     } else {
         clk = val & JOYPORT_LEFT;   /* clock line is on joyport 'left' pin */
         old_clk = command[port] & JOYPORT_LEFT;
 
         if (old_clk && !clk) {
+            /* clock line asserted, increment key position */
             counter[port]++;
-            if (counter[port] == 0x3c) {
+            if (counter[port] == 60) {
                 counter[port] = 0;
             }
         }
@@ -162,6 +168,7 @@ static void paperclip64_store(int port, uint8_t val)
 
 static void paperclip64_powerup(int port)
 {
+    /* reset counter */
     counter[port] = 0;
 }
 
@@ -172,23 +179,24 @@ static int paperclip64_write_snapshot(struct snapshot_s *s, int port);
 static int paperclip64_read_snapshot(struct snapshot_s *s, int port);
 
 static joyport_t joyport_paperclip64_device = {
-    "Dongle (Paperclip64)",     /* name of the device */
-    JOYPORT_RES_ID_NONE,        /* device can be used in multiple ports at the same time */
-    JOYPORT_IS_NOT_LIGHTPEN,    /* device is NOT a lightpen */
-    JOYPORT_POT_OPTIONAL,       /* device does NOT use the potentiometer lines */
-    JOYSTICK_ADAPTER_ID_NONE,   /* device is NOT a joystick adapter */
-    JOYPORT_DEVICE_C64_DONGLE,  /* device is a C64 Dongle */
-    0x1C,                       /* bits 4, 3 and 2 are output bits */
-    joyport_paperclip64_enable, /* device enable function */
-    paperclip64_read,           /* digital line read function */
-    paperclip64_store,          /* digital line store function */
-    NULL,                       /* NO pot-x read function */
-    NULL,                       /* NO pot-y read function */
-    paperclip64_powerup,        /* powerup function */
-    paperclip64_write_snapshot, /* device write snapshot function */
-    paperclip64_read_snapshot,  /* device read snapshot function */
-    NULL,                       /* NO device hook function */
-    0                           /* NO device hook function mask */
+    "Dongle (Paperclip64)",          /* name of the device */
+    JOYPORT_RES_ID_NONE,             /* device can be used in multiple ports at the same time */
+    JOYPORT_IS_NOT_LIGHTPEN,         /* device is NOT a lightpen */
+    JOYPORT_POT_OPTIONAL,            /* device does NOT use the potentiometer lines */
+    JOYPORT_5VDC_REQUIRED,           /* device NEEDS +5VDC to work */
+    JOYSTICK_ADAPTER_ID_NONE,        /* device is NOT a joystick adapter */
+    JOYPORT_DEVICE_C64_DONGLE,       /* device is a C64 Dongle */
+    0x1C,                            /* bits 4, 3 and 2 are output bits */
+    joyport_paperclip64_set_enabled, /* device enable/disable function */
+    paperclip64_read,                /* digital line read function */
+    paperclip64_store,               /* digital line store function */
+    NULL,                            /* NO pot-x read function */
+    NULL,                            /* NO pot-y read function */
+    paperclip64_powerup,             /* powerup function */
+    paperclip64_write_snapshot,      /* device write snapshot function */
+    paperclip64_read_snapshot,       /* device read snapshot function */
+    NULL,                            /* NO device hook function */
+    0                                /* NO device hook function mask */
 };
 
 /* ------------------------------------------------------------------------- */

@@ -46,13 +46,6 @@
 #define ARCHDEP_TED_DSCAN     1
 #endif
 
-/* Video chip double buffering.  */
-#define ARCHDEP_VICII_DBUF 0
-#define ARCHDEP_VDC_DBUF   0
-#define ARCHDEP_VIC_DBUF   0
-#define ARCHDEP_CRTC_DBUF  0
-#define ARCHDEP_TED_DBUF   0
-
 /* No key symcode.  */
 #define ARCHDEP_KEYBOARD_SYM_NONE SDLK_UNKNOWN
 
@@ -62,29 +55,21 @@
 /* define if the platform supports the monitor in a seperate window */
 /* #define ARCHDEP_SEPERATE_MONITOR_WINDOW */
 
+/** \brief  Default state of mouse grab
+ */
+#define ARCHDEP_MOUSE_ENABLE_DEFAULT    0
+
+/** \brief  Factory value of the CHIPShowStatusbar resource
+ */
+#define ARCHDEP_SHOW_STATUSBAR_FACTORY  0
+
 /* FIXME: Ugly hack for preventing SDL crash using -help */
 extern int sdl_help_shutdown;
 
 /******************************************************************************/
 
-#ifdef AMIGA_SUPPORT
-/* FIXME: naming? */
-extern int load_libs(void);
-extern void close_libs(void);
-
-#include "archdep_amiga.h"
-/* This platform supports choosing drives. */
-#define SDL_CHOOSE_DRIVES
-#endif
-
 #ifdef BEOS_COMPILE
 #include "archdep_beos.h"
-#endif
-
-#ifdef __OS2__
-#include "archdep_os2.h"
-/* This platform supports choosing drives. */
-#define SDL_CHOOSE_DRIVES
 #endif
 
 #if defined(UNIX_COMPILE) && !defined(CEGCC_COMPILE)
@@ -93,7 +78,7 @@ extern void close_libs(void);
 #define ALLOW_NATIVE_MONITOR
 #endif
 
-#ifdef WIN32_COMPILE
+#ifdef WINDOWS_COMPILE
 #include "archdep_win32.h"
 /* This platform supports choosing drives. */
 #define SDL_CHOOSE_DRIVES

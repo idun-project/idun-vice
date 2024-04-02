@@ -167,7 +167,8 @@ static io_source_t vfp_device = {
     vic_fp_mon_dump,         /* device state information dump function */
     CARTRIDGE_VIC20_FP,      /* cartridge ID */
     IO_PRIO_NORMAL,          /* normal priority, device read needs to be checked for collisions */
-    0                        /* insertion order, gets filled in by the registration function */
+    0,                       /* insertion order, gets filled in by the registration function */
+    IO_MIRROR_NONE           /* NO mirroring */
 };
 
 static io_source_list_t *vfp_list_item = NULL;
@@ -337,12 +338,14 @@ void vic_fp_config_setup(uint8_t *rawcart)
 static int zfile_load(const char *filename, uint8_t *dest, size_t size)
 {
     FILE *fd;
+    off_t len;
 
     fd = zfile_fopen(filename, MODE_READ);
     if (!fd) {
         return -1;
     }
-    if (util_file_length(fd) != size) {
+    len = archdep_file_size(fd);
+    if (len < 0 || (size_t)len != size) {
         zfile_fclose(fd);
         return -1;
     }

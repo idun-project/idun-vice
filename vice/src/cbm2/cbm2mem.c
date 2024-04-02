@@ -105,12 +105,14 @@ static int *mem_read_limit_tab_ptr;
 
 int cbm2_init_ok = 0;
 
-/* Current watchpoint state. 
+/* Current watchpoint state.
           0 = no watchpoints
     bit0; 1 = watchpoints active
     bit1; 2 = watchpoints trigger on dummy accesses
 */
 static int watchpoints_active = 0;
+
+static void mem_update_tab_ptrs(int flag);
 
 /* ------------------------------------------------------------------------- */
 
@@ -138,11 +140,8 @@ void cbm2mem_set_bank_exec(int val)
     if (val != cbm2mem_bank_exec) {
         cbm2mem_bank_exec = val;
 
-        _mem_read_tab_ptr = _mem_read_tab[cbm2mem_bank_exec];
-        _mem_write_tab_ptr = _mem_write_tab[cbm2mem_bank_exec];
-        _mem_read_tab_ptr_dummy = _mem_read_tab[cbm2mem_bank_exec];
-        _mem_write_tab_ptr_dummy = _mem_write_tab[cbm2mem_bank_exec];
-        
+        mem_update_tab_ptrs(watchpoints_active);
+
         _mem_read_base_tab_ptr = _mem_read_base_tab[cbm2mem_bank_exec];
         mem_read_limit_tab_ptr = mem_read_limit_tab[(cbm2mem_bank_exec < 15)
                                                     ? 0 : 1];
@@ -182,8 +181,9 @@ void cbm2mem_set_bank_ind(int val)
 
     if (val != cbm2mem_bank_ind) {
         cbm2mem_bank_ind = val;
-        _mem_read_ind_tab_ptr = _mem_read_tab[cbm2mem_bank_ind];
-        _mem_write_ind_tab_ptr = _mem_write_tab[cbm2mem_bank_ind];
+
+        mem_update_tab_ptrs(watchpoints_active);
+
         /* set all register mirror locations */
         for (i = 0; i < 16; i++) {
             mem_ram[(i << 16) + 1] = val;
@@ -418,6 +418,20 @@ static void store_watch(uint16_t addr, uint8_t value)
     _mem_write_tab[cbm2mem_bank_exec][addr >> 8](addr, value);
 }
 
+static uint8_t zero_read_ind_watch(uint16_t addr)
+{
+    addr &= 0xff;
+    monitor_watch_push_load_addr(addr, e_comp_space);
+    return _mem_read_tab[cbm2mem_bank_ind][0](addr);
+}
+
+static void zero_store_ind_watch(uint16_t addr, uint8_t value)
+{
+    addr &= 0xff;
+    monitor_watch_push_store_addr(addr, e_comp_space);
+    _mem_write_tab[cbm2mem_bank_ind][0](addr, value);
+}
+
 static uint8_t read_ind_watch(uint16_t addr)
 {
     monitor_watch_push_load_addr(addr, e_comp_space);
@@ -520,7 +534,7 @@ static uint8_t read_io(uint16_t addr)
     return last_access;
 }
 
-/* called by mem_toggle_watchpoints() */
+/* called by mem_toggle_watchpoints(), cbm2mem_set_bank_exec(), cbm2mem_set_bank_ind() */
 static void mem_update_tab_ptrs(int flag)
 {
     if (flag) {
@@ -558,10 +572,6 @@ void mem_toggle_watchpoints(int flag, void *context)
 {
     mem_update_tab_ptrs(flag);
     watchpoints_active = flag;
-    if (!flag) {
-        cbm2mem_set_bank_exec(cbm2mem_bank_exec);
-        cbm2mem_set_bank_ind(cbm2mem_bank_ind);
-    }
 }
 
 /* ------------------------------------------------------------------------- */
@@ -632,9 +642,10 @@ void mem_initialize_memory(void)
         _mem_write_tab_watch[i] = store_watch;
         _mem_write_ind_tab_watch[i] = store_ind_watch;
     }
-    /* FIXME: what about _ind_tab_watch ? */
     _mem_read_tab_watch[0] = zero_read_watch;
     _mem_write_tab_watch[0] = zero_store_watch;
+    _mem_read_ind_tab_watch[0] = zero_read_ind_watch;
+    _mem_write_ind_tab_watch[0] = zero_store_ind_watch;
 }
 
 void mem_initialize_memory_bank(int i)
@@ -868,7 +879,7 @@ void mem_set_basic_text(uint16_t start, uint16_t end)
 }
 
 /* this function should always read from the screen currently used by the kernal
-   for output, normally this does just return system ram - except when the 
+   for output, normally this does just return system ram - except when the
    videoram is not memory mapped.
    used by autostart to "read" the kernal messages
 */
@@ -942,6 +953,11 @@ static uint8_t peek_bank_io(uint16_t addr)
 
 /* Exported banked memory access functions for the monitor.  */
 
+#define BANK_RAM_00     0x00    /* Only RAM */
+#define BANK_RAM_0F     0x0F    /* Only RAM */
+#define BANK_ROMIO      16      /* Like bank 15 but with ROM and I/O in place */
+#define BANK_CPU        17      /* What the CPU sees in its exec bank */
+
 #define MAXBANKS (2 + 16 + 2)
 
 static const char *banknames[MAXBANKS + 1] = {
@@ -954,9 +970,9 @@ static const char *banknames[MAXBANKS + 1] = {
 };
 
 static const int banknums[MAXBANKS + 1] = {
-    17, 17,
+    BANK_CPU, BANK_CPU,
     0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15,
-    16, 16,
+    BANK_ROMIO, BANK_ROMIO,
     -1
 };
 
@@ -1028,15 +1044,15 @@ int mem_bank_flags_from_bank(int bank)
 uint8_t mem_bank_read(int bank, uint16_t addr, void *context)
 {
     switch (bank) {
-        case 17:                /* current */
+        case BANK_CPU:                /* current */
             return mem_read(addr);
-        case 16:                 /* romio */
-            if (addr >= 0xd000 && addr < 0xe000) {
+        case BANK_ROMIO:              /* romio */
+            if (addr >= 0xD000 && addr < 0xE000) {
                 return read_io(addr);
             }
             return _mem_read_tab[15][addr >> 8](addr);
         default:
-            if (bank >= 0 && bank < 15) {
+            if (bank >= BANK_RAM_00 && bank <= BANK_RAM_0F) {
                 return read_ram_tab[bank](addr);
             }
     }
@@ -1046,22 +1062,35 @@ uint8_t mem_bank_read(int bank, uint16_t addr, void *context)
 /* used by monitor if sfx off */
 uint8_t mem_bank_peek(int bank, uint16_t addr, void *context)
 {
-    if (bank == 16) {
-        if (addr >= 0xc000 && addr < 0xe000) {
+    if (bank == BANK_ROMIO ||
+        (bank == BANK_CPU && cbm2mem_bank_exec == BANK_RAM_0F) ) {
+        if (addr >= 0xD000 && addr < 0xE000) {
             return peek_bank_io(addr);
         }
     }
+    /* For other cases we access only RAM or banking registers,
+     * so there are no side effects; just fall back to read. */
     return mem_bank_read(bank, addr, context);
+}
+
+int mem_get_current_bank_config(void) {
+    return cbm2mem_bank_exec == BANK_RAM_0F ? BANK_ROMIO
+                                            : cbm2mem_bank_exec;
+    /* return BANK_CPU; could be another option */
+}
+
+uint8_t mem_peek_with_config(int config, uint16_t addr, void *context) {
+    return mem_bank_peek(config, addr, context);
 }
 
 void mem_bank_write(int bank, uint16_t addr, uint8_t byte, void *context)
 {
     switch (bank) {
-        case 17:                 /* current */
+        case BANK_CPU:                 /* current */
             mem_store(addr, byte);
             return;
-        case 16:
-            if (addr >= 0xd000 && addr <= 0xdfff) {
+        case BANK_ROMIO:
+            if (addr >= 0xD000 && addr <= 0xDFFF) {
                 store_io(addr, byte);
                 return;
             }
@@ -1098,14 +1127,14 @@ mem_ioreg_list_t *mem_ioreg_list_get(void *context)
 void mem_get_screen_parameter(uint16_t *base, uint8_t *rows, uint8_t *columns, int *bank)
 {
     *base = 0xd000;
-    *bank = 16;
+    *bank = BANK_ROMIO;
     *columns = crtc_peek_register(CRTC_REG_HDISP);
     *rows = crtc_peek_register(CRTC_REG_VDISP);
 }
 
 /* used by autostart to locate and "read" kernal output on the current screen
  * this function should return whatever the kernal currently uses, regardless
- * what is currently visible/active in the UI 
+ * what is currently visible/active in the UI
  */
 void mem_get_cursor_parameter(uint16_t *screen_addr, uint8_t *cursor_column, uint8_t *line_length, int *blinking)
 {
@@ -1150,7 +1179,8 @@ static io_source_t crtc_device = {
     crtc_dump,             /* chip state information dump function */
     IO_CART_ID_NONE,       /* not a cartridge */
     IO_PRIO_HIGH,          /* high priority, chip never involved in collisions */
-    0                      /* insertion order, gets filled in by the registration function */
+    0,                     /* insertion order, gets filled in by the registration function */
+    IO_MIRROR_NONE         /* NO mirroring */
 };
 
 static io_source_t sid_device = {
@@ -1166,7 +1196,8 @@ static io_source_t sid_device = {
     sid_dump,              /* chip state information dump function */
     IO_CART_ID_NONE,       /* not a cartridge */
     IO_PRIO_HIGH,          /* high priority, chip never involved in collisions */
-    0                      /* insertion order, gets filled in by the registration function */
+    0,                     /* insertion order, gets filled in by the registration function */
+    IO_MIRROR_NONE         /* NO mirroring */
 };
 
 static io_source_t cia_device = {
@@ -1182,7 +1213,8 @@ static io_source_t cia_device = {
     cia1_dump,             /* chip state information dump function */
     IO_CART_ID_NONE,       /* not a cartridge */
     IO_PRIO_HIGH,          /* high priority, chip never involved in collisions */
-    0                      /* insertion order, gets filled in by the registration function */
+    0,                     /* insertion order, gets filled in by the registration function */
+    IO_MIRROR_NONE         /* NO mirroring */
 };
 
 static io_source_t acia_device = {
@@ -1198,7 +1230,8 @@ static io_source_t acia_device = {
     acia1_dump,            /* chip state information dump function */
     IO_CART_ID_NONE,       /* not a cartridge */
     IO_PRIO_HIGH,          /* high priority, chip never involved in collisions */
-    0                      /* insertion order, gets filled in by the registration function */
+    0,                     /* insertion order, gets filled in by the registration function */
+    IO_MIRROR_NONE         /* NO mirroring */
 };
 
 static io_source_t tpi1_device = {
@@ -1214,7 +1247,8 @@ static io_source_t tpi1_device = {
     tpi1_dump,             /* chip state information dump function */
     IO_CART_ID_NONE,       /* not a cartridge */
     IO_PRIO_HIGH,          /* high priority, chip never involved in collisions */
-    0                      /* insertion order, gets filled in by the registration function */
+    0,                     /* insertion order, gets filled in by the registration function */
+    IO_MIRROR_NONE         /* NO mirroring */
 };
 
 static io_source_t tpi2_device = {
@@ -1230,7 +1264,8 @@ static io_source_t tpi2_device = {
     tpi2_dump,             /* chip state information dump function */
     IO_CART_ID_NONE,       /* not a cartridge */
     IO_PRIO_HIGH,          /* high priority, chip never involved in collisions */
-    0                      /* insertion order, gets filled in by the registration function */
+    0,                     /* insertion order, gets filled in by the registration function */
+    IO_MIRROR_NONE         /* NO mirroring */
 };
 
 static io_source_list_t *crtc_list_item = NULL;
@@ -1250,3 +1285,4 @@ void cbm2io_init(void)
     tpi1_list_item = io_source_register(&tpi1_device);
     tpi2_list_item = io_source_register(&tpi2_device);
 }
+

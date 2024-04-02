@@ -43,6 +43,7 @@
 #include "cbm2cart.h"
 #include "cbm2mem.h"
 #include "cbm2model.h"
+#include "cbm2rom.h"
 #include "cia.h"
 #include "machine.h"
 #include "resources.h"
@@ -60,17 +61,17 @@ struct model_s {
 };
 
 static const struct model_s cbm2models[] = {
-    { MACHINE_SYNC_PAL,  HAS_VICII,  64, CBM2_BASIC500, CBM2_CHARGEN500, CBM2_KERNAL500, LINE_6x0_50HZ  }, /* 510 */
-    { MACHINE_SYNC_NTSC, HAS_VICII,  64, CBM2_BASIC500, CBM2_CHARGEN500, CBM2_KERNAL500, LINE_6x0_60HZ  }, /* 510 */
-    { MACHINE_SYNC_PAL,  HAS_CRTC,  128, CBM2_BASIC128, CBM2_CHARGEN600, CBM2_KERNAL,    LINE_6x0_50HZ  }, /* 610 */
-    { MACHINE_SYNC_NTSC, HAS_CRTC,  128, CBM2_BASIC128, CBM2_CHARGEN600, CBM2_KERNAL,    LINE_6x0_60HZ  }, /* 610 */
-    { MACHINE_SYNC_PAL,  HAS_CRTC,  256, CBM2_BASIC256, CBM2_CHARGEN600, CBM2_KERNAL,    LINE_6x0_50HZ  }, /* 620 */
-    { MACHINE_SYNC_NTSC, HAS_CRTC,  256, CBM2_BASIC256, CBM2_CHARGEN600, CBM2_KERNAL,    LINE_6x0_60HZ  }, /* 620 */
-    { MACHINE_SYNC_PAL,  HAS_CRTC, 1024, CBM2_BASIC256, CBM2_CHARGEN600, CBM2_KERNAL,    LINE_6x0_50HZ  }, /* 620+ */
-    { MACHINE_SYNC_NTSC, HAS_CRTC, 1024, CBM2_BASIC256, CBM2_CHARGEN600, CBM2_KERNAL,    LINE_6x0_60HZ  }, /* 620+ */
-    { MACHINE_SYNC_NTSC, HAS_CRTC,  128, CBM2_BASIC128, CBM2_CHARGEN700, CBM2_KERNAL,    LINE_7x0_50HZ  }, /* 710 */
-    { MACHINE_SYNC_NTSC, HAS_CRTC,  256, CBM2_BASIC256, CBM2_CHARGEN700, CBM2_KERNAL,    LINE_7x0_50HZ  }, /* 720 */
-    { MACHINE_SYNC_NTSC, HAS_CRTC, 1024, CBM2_BASIC256, CBM2_CHARGEN700, CBM2_KERNAL,    LINE_7x0_50HZ  }, /* 720+ */
+    { MACHINE_SYNC_PAL,  HAS_VICII,  64, CBM2_BASIC500_NAME, CBM2_CHARGEN500_NAME, CBM2_KERNAL500_NAME, LINE_6x0_50HZ  }, /* 510 */
+    { MACHINE_SYNC_NTSC, HAS_VICII,  64, CBM2_BASIC500_NAME, CBM2_CHARGEN500_NAME, CBM2_KERNAL500_NAME, LINE_6x0_60HZ  }, /* 510 */
+    { MACHINE_SYNC_PAL,  HAS_CRTC,  128, CBM2_BASIC128_NAME, CBM2_CHARGEN600_NAME, CBM2_KERNAL_NAME,    LINE_6x0_50HZ  }, /* 610 */
+    { MACHINE_SYNC_NTSC, HAS_CRTC,  128, CBM2_BASIC128_NAME, CBM2_CHARGEN600_NAME, CBM2_KERNAL_NAME,    LINE_6x0_60HZ  }, /* 610 */
+    { MACHINE_SYNC_PAL,  HAS_CRTC,  256, CBM2_BASIC256_NAME, CBM2_CHARGEN600_NAME, CBM2_KERNAL_NAME,    LINE_6x0_50HZ  }, /* 620 */
+    { MACHINE_SYNC_NTSC, HAS_CRTC,  256, CBM2_BASIC256_NAME, CBM2_CHARGEN600_NAME, CBM2_KERNAL_NAME,    LINE_6x0_60HZ  }, /* 620 */
+    { MACHINE_SYNC_PAL,  HAS_CRTC, 1024, CBM2_BASIC256_NAME, CBM2_CHARGEN600_NAME, CBM2_KERNAL_NAME,    LINE_6x0_50HZ  }, /* 620+ */
+    { MACHINE_SYNC_NTSC, HAS_CRTC, 1024, CBM2_BASIC256_NAME, CBM2_CHARGEN600_NAME, CBM2_KERNAL_NAME,    LINE_6x0_60HZ  }, /* 620+ */
+    { MACHINE_SYNC_NTSC, HAS_CRTC,  128, CBM2_BASIC128_NAME, CBM2_CHARGEN700_NAME, CBM2_KERNAL_NAME,    LINE_7x0_50HZ  }, /* 710 */
+    { MACHINE_SYNC_NTSC, HAS_CRTC,  256, CBM2_BASIC256_NAME, CBM2_CHARGEN700_NAME, CBM2_KERNAL_NAME,    LINE_7x0_50HZ  }, /* 720 */
+    { MACHINE_SYNC_NTSC, HAS_CRTC, 1024, CBM2_BASIC256_NAME, CBM2_CHARGEN700_NAME, CBM2_KERNAL_NAME,    LINE_7x0_50HZ  }, /* 720+ */
 };
 
 /* ------------------------------------------------------------------------- */
@@ -131,6 +132,7 @@ static void cbm2model_set_temp(int model, int *video_sync, int *ramsize, int *ha
 void cbm2model_set(int model)
 {
     int old_model;
+    int pf;
 
     old_model = cbm2model_get();
 
@@ -142,6 +144,17 @@ void cbm2model_set(int model)
 
     resources_set_int("ModelLine", cbm2models[model].line);
     resources_set_int("MachineVideoStandard", cbm2models[model].video);
+    /* Determine the power net frequency for this model. */
+    switch(cbm2models[model].video) {
+        case MACHINE_SYNC_PAL:
+        case MACHINE_SYNC_PALN:
+            pf = 50;
+            break;
+        default:
+            pf = 60;
+            break;
+    }
+    resources_set_int("MachinePowerFrequency", pf);
     resources_set_int("RamSize", cbm2models[model].ramsize);
 
     resources_set_string("KernalName", cbm2models[model].kernalname);

@@ -46,7 +46,7 @@
 
 /*
    Blackbox V3
-   
+
     - 8k ROM (2764)
     - IO1 accesses disable the cartridge ROM (writes only?)
     - IO2 accesses enable the cartridge ROM (writes only?)
@@ -72,7 +72,8 @@ static io_source_t blackbox3_io1_device = {
     blackbox3_dump,           /* device state information dump function */
     CARTRIDGE_BLACKBOX3,      /* cartridge ID */
     IO_PRIO_NORMAL,           /* normal priority, device read needs to be checked for collisions */
-    0                         /* insertion order, gets filled in by the registration function */
+    0,                        /* insertion order, gets filled in by the registration function */
+    IO_MIRROR_NONE            /* NO mirroring */
 };
 
 static io_source_t blackbox3_io2_device = {
@@ -88,7 +89,8 @@ static io_source_t blackbox3_io2_device = {
     blackbox3_dump,           /* device state information dump function */
     CARTRIDGE_BLACKBOX3,      /* cartridge ID */
     IO_PRIO_NORMAL,           /* normal priority, device read needs to be checked for collisions */
-    0                         /* insertion order, gets filled in by the registration function */
+    0,                        /* insertion order, gets filled in by the registration function */
+    IO_MIRROR_NONE            /* NO mirroring */
 };
 
 static io_source_list_t *blackbox3_io1_list_item = NULL;
@@ -112,7 +114,7 @@ void blackbox3_io2_store(uint16_t addr, uint8_t value)
     /* printf("io2 write %04x %02x\n", addr, value); */
     bb3_rom_enabled = 1;
     cart_config_changed_slotmain(CMODE_8KGAME, CMODE_8KGAME, CMODE_READ);
-    
+
 }
 
 /* FIXME: Add EXROM, GAME lines to the dump */
@@ -241,7 +243,7 @@ int blackbox3_snapshot_read_module(snapshot_t *s)
     }
 
     if (0
-        || SMR_B(m, &bb3_rom_enabled) < 0 
+        || SMR_B(m, &bb3_rom_enabled) < 0
         || SMR_BA(m, roml_banks, 0x2000) < 0) {
         goto fail;
     }

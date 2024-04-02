@@ -7,7 +7,8 @@ MISC_DOX = \
 	Doxygen-Howto.txt \
 	iec-bus.txt \
 	Release-Howto.txt \
-	vice.texi
+	vice.texi \
+	gpl.texi
 
 TEXI_TOOLS = \
 	fixdates.sh
@@ -32,19 +33,22 @@ VICE_DOX = @VICE_PDF_FILE_NAME@
 # info_TEXINFOS = vice.texi
 # AM_MAKEINFOFLAGS = -D$(PLATFORM_DOX_FLAGS)
 
-dist_doc_DATA = $(MISC_DOX) $(VICE_DOX)
+dist_doc_DATA = $(VICE_DOX)
 
-EXTRA_DIST = $(DOC_TOOLS) $(TEXI_TOOLS) $(STYLE_TOOLS)
+EXTRA_DIST = $(MISC_DOX) $(DOC_TOOLS) $(TEXI_TOOLS) $(STYLE_TOOLS)
 
-if UNIX_MACOSX_COMPILE
+
+if MACOS_COMPILE
 # Use brew supplied texi2dvi over buggy Apple version
 export PATH := /usr/local/opt/texinfo/bin:$(PATH)
 endif
 
 .vice-texi-charset-ok:	$(srcdir)/vice.texi
 	@if [ "`file --mime-encoding $<`" != "$<: iso-8859-1" ]; then \
-		echo "ERROR: vice.texi contains content that is not valid iso-8859-x" >&2; \
-		false; \
+		if [ "`file --mime-encoding $<`" != "$<: us-ascii" ]; then \
+			echo "ERROR: vice.texi contains content that is not valid iso-8859-x" >&2; \
+			false; \
+		fi; \
 	fi
 	@touch .vice-texi-charset-ok
 
@@ -60,7 +64,12 @@ if ENABLE_PDF_DOCS
 $(builddir)/vice.pdf:	.vice-texi-charset-ok
 	@LC_ALL=C sed 's/@heading NO WARRANTY/@center NO WARRANTY/g' <$(srcdir)/vice.texi >vicepdf.texi
 	@$(srcdir)/fixdates.sh vicepdf.texi `grep "VICEDATE_YEAR " $(top_srcdir)/src/vicedate.h | cut -d " " -f 3`
-	@LC_ALL=C $(TEXI2DVI) -I $(srcdir) -q --clean --pdf "--texinfo=@set $(PLATFORM_DOX_FLAGS) " -o $(builddir)/vice.pdf vicepdf.texi
+	@if $(AM_V_P); then \
+		LC_ALL=C $(TEXI2DVI) -I $(srcdir) -V --clean --pdf "--texinfo=@set $(PLATFORM_DOX_FLAGS) " -o $(builddir)/vice.pdf vicepdf.texi; \
+	else \
+		LC_ALL=C $(TEXI2DVI) -I $(srcdir) -q --clean --pdf "--texinfo=@set $(PLATFORM_DOX_FLAGS) " -o $(builddir)/vice.pdf vicepdf.texi; \
+	fi
+
 	@rm -f vicepdf.texi
 endif
 

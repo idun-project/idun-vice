@@ -41,7 +41,6 @@
 #endif
 
 #include "archdep.h"
-#include "archdep_exit.h"
 #include "cmdline.h"
 #include "debug.h"
 #include "fixpoint.h"
@@ -49,11 +48,11 @@
 #include "log.h"
 #include "machine.h"
 #include "maincpu.h"
+#include "mainlock.h"
 #include "monitor.h"
 #include "resources.h"
 #include "sound.h"
 #include "types.h"
-#include "tick.h"
 #include "uiapi.h"
 #include "util.h"
 #include "vsync.h"
@@ -77,12 +76,6 @@ static void sounddev_close(const sound_device_t **dev);
 
 /* ------------------------------------------------------------------------- */
 
-typedef struct sound_register_devices_s {
-    const char *name;
-    int (*init)(void);
-    int is_playback_device;
-} sound_register_devices_t;
-
 /* This table is used to specify the order of inits of the playback and recording devices */
 static const sound_register_devices_t sound_register_devices[] = {
 
@@ -90,81 +83,67 @@ static const sound_register_devices_t sound_register_devices[] = {
        priority (most wanted first) */
 
 #ifdef USE_PULSE
-    { "pulse", sound_init_pulse_device, SOUND_PLAYBACK_DEVICE },
-#endif
-#ifdef USE_ARTS
-    { "arts", sound_init_arts_device, SOUND_PLAYBACK_DEVICE },
+    { "pulse", "Pulseaudio sound output", sound_init_pulse_device, SOUND_PLAYBACK_DEVICE },
 #endif
 #ifdef USE_ALSA
-    { "alsa", sound_init_alsa_device, SOUND_PLAYBACK_DEVICE },
+    { "alsa", "ALSA sound output", sound_init_alsa_device, SOUND_PLAYBACK_DEVICE },
 #endif
 #ifdef USE_COREAUDIO
-    { "coreaudio", sound_init_coreaudio_device, SOUND_PLAYBACK_DEVICE },
+    { "coreaudio", "Mac OS X Audio output", sound_init_coreaudio_device, SOUND_PLAYBACK_DEVICE },
 #endif
 
 /* Don't use the NetBSD/SUN sound driver for OpenBSD */
-#if defined(HAVE_SYS_AUDIOIO_H) && !defined(__OpenBSD__)
-#if defined(__NetBSD__)
-    { "netbsd", sound_init_sun_device, SOUND_PLAYBACK_DEVICE },
+#if defined(HAVE_SYS_AUDIOIO_H) && !defined(OPENBSD_COMPILE)
+#if defined(NETBSD_COMPILE)
+    { "netbsd", "NetBSD sound output", sound_init_sun_device, SOUND_PLAYBACK_DEVICE },
 #else
-    /* Really? */
-    { "sun", sound_init_sun_device, SOUND_PLAYBACK_DEVICE },
-#endif /* __NetBSD__*/
+    { "sun", "Solaris sound output", sound_init_sun_device, SOUND_PLAYBACK_DEVICE },
+#endif /* NETBSD_COMPILE */
 #endif /* HAVE_SYS_AUDIOIO_H */
 
-#ifdef WIN32_COMPILE
+#ifdef WINDOWS_COMPILE
 #ifdef USE_DXSOUND
-    { "dx", sound_init_dx_device, SOUND_PLAYBACK_DEVICE },
+    { "dx", "DirectSound sound output", sound_init_dx_device, SOUND_PLAYBACK_DEVICE },
 #endif
-#if !defined(__XBOX__)
-    { "wmm", sound_init_wmm_device, SOUND_PLAYBACK_DEVICE },
-#endif
-#endif
-
-#if defined(__OS2__) && !defined(USE_SDLUI)
-    { "dart", sound_init_dart_device, SOUND_PLAYBACK_DEVICE },
+    { "wmm", "Windows Waveout sound output", sound_init_wmm_device, SOUND_PLAYBACK_DEVICE },
 #endif
 
 #ifdef BEOS_COMPILE
-    { "beos", sound_init_beos_device, SOUND_PLAYBACK_DEVICE },
-    { "bsp", sound_init_bsp_device, SOUND_PLAYBACK_DEVICE },
-#endif
-
-#if defined(AMIGA_SUPPORT) && defined(HAVE_DEVICES_AHI_H)
-    { "ahi", sound_init_ahi_device, SOUND_PLAYBACK_DEVICE },
+    { "beos", "BeOS sound output", sound_init_beos_device, SOUND_PLAYBACK_DEVICE },
+    { "bsp", "BeOS Media Kit sound output", sound_init_bsp_device, SOUND_PLAYBACK_DEVICE },
 #endif
 
     /* SDL driver last, after all platform specific ones */
 #ifdef USE_SDL_AUDIO
-    { "sdl", sound_init_sdl_device, SOUND_PLAYBACK_DEVICE },
+    { "sdl", "SDL sound output", sound_init_sdl_device, SOUND_PLAYBACK_DEVICE },
 #endif
 
     /* the dummy device acts as a "guard" against the drivers that create files,
        since the list will be searched top-down, and the dummy driver always
        works, no files will be created accidently */
-    { "dummy", sound_init_dummy_device, SOUND_PLAYBACK_DEVICE },
+    { "dummy", "Dummy sound output (no sound)", sound_init_dummy_device, SOUND_PLAYBACK_DEVICE },
 
-    { "fs", sound_init_fs_device, SOUND_RECORD_DEVICE },
-    { "dump", sound_init_dump_device, SOUND_RECORD_DEVICE },
-    { "wav", sound_init_wav_device, SOUND_RECORD_DEVICE },
-    { "voc", sound_init_voc_device, SOUND_RECORD_DEVICE },
-    { "iff", sound_init_iff_device, SOUND_RECORD_DEVICE },
-    { "aiff", sound_init_aiff_device, SOUND_RECORD_DEVICE },
+    { "fs", "Raw sound recording", sound_init_fs_device, SOUND_RECORD_DEVICE },
+    { "dump", "Sound chip state recording", sound_init_dump_device, SOUND_RECORD_DEVICE },
+    { "wav", "RIFF/WAV sound recording", sound_init_wav_device, SOUND_RECORD_DEVICE },
+    { "voc", "Creative Voice VOC sound recording", sound_init_voc_device, SOUND_RECORD_DEVICE },
+    { "iff", "AmigaOS IFF/8SVX sound recording", sound_init_iff_device, SOUND_RECORD_DEVICE },
+    { "aiff", "Apple AIFF sound recording", sound_init_aiff_device, SOUND_RECORD_DEVICE },
 
 #ifdef USE_LAMEMP3
-    { "mp3", sound_init_mp3_device, SOUND_RECORD_DEVICE },
+    { "mp3", "MP3 sound recording", sound_init_mp3_device, SOUND_RECORD_DEVICE },
 #endif
 
 #ifdef USE_FLAC
-    { "flac", sound_init_flac_device, SOUND_RECORD_DEVICE },
+    { "flac", "FLAC sound recording", sound_init_flac_device, SOUND_RECORD_DEVICE },
 #endif
 
 #ifdef USE_VORBIS
-    { "ogg", sound_init_vorbis_device, SOUND_RECORD_DEVICE },
+    { "ogg", "OGG sound recording", sound_init_vorbis_device, SOUND_RECORD_DEVICE },
 #endif
 
-    { "soundmovie", sound_init_movie_device, SOUND_RECORD_DEVICE },
-    { NULL, NULL, 0 }
+    { "soundmovie", "Movie sound recording", sound_init_movie_device, SOUND_MOVIE_RECORD_DEVICE },
+    { NULL, NULL, NULL, 0 }
 };
 
 /* ------------------------------------------------------------------------- */
@@ -186,6 +165,62 @@ uint16_t sound_chip_register(sound_chip_t *chip)
 }
 
 /* ------------------------------------------------------------------------- */
+
+typedef struct {
+    /* Number of sound output channels */
+    int sound_output_channels;
+
+    /* Number of sound chip channels (for multiple SIDs) */
+    int sound_chip_channels;
+
+    /* sid itself */
+    sound_t *psid[SOUND_SIDS_MAX];
+
+    /* number of clocks between each sample. used value */
+    soundclk_t clkstep;
+
+    /* number of clocks between each sample. original value */
+    soundclk_t origclkstep;
+
+    /* factor between those two clksteps */
+    soundclk_t clkfactor;
+
+    /* time of last sample generated */
+    soundclk_t fclk;
+
+    /* time of last write to sid. used for pdev->dump() */
+    CLOCK wclk;
+
+    /* time of last call to sound_run_sound() */
+    CLOCK lastclk;
+
+    /* sample buffer */
+    int16_t *buffer;
+
+    /* sample buffer pointer */
+    int bufptr;
+
+    /* pointer to playback device structure in use */
+    const sound_device_t *playdev;
+
+    /* pointer to playback device structure in use */
+    const sound_device_t *recdev;
+
+    /* number of samples in a fragment */
+    int fragsize;
+
+    /* number of fragments in kernel buffer */
+    int fragnr;
+
+    /* number of samples in kernel buffer */
+    int bufsize;
+
+    /* is the device suspended? */
+    int issuspended;
+    int16_t lastsample[SOUND_OUTPUT_CHANNELS_MAX];
+} snddata_t;
+
+static snddata_t snddata;
 
 static sound_t *sound_machine_open(int chipno)
 {
@@ -224,6 +259,37 @@ static void sound_machine_close(sound_t *psid)
     }
 }
 
+#ifdef SOUND_SYSTEM_FLOAT
+static float *sound_buffer[SOUND_CHIPS_MAX][SOUND_CHIP_CHANNELS_MAX];
+
+static void free_sound_buffers(void)
+{
+    int i, j;
+
+    /* free buffers */
+    for (i = 0; i < SOUND_CHIPS_MAX; i++) {
+        for (j = 0; j < SOUND_CHIP_CHANNELS_MAX; j++) {
+            if (sound_buffer[i][j]) {
+                lib_free(sound_buffer[i][j]);
+                sound_buffer[i][j] = NULL;
+            }
+        }
+    }
+}
+
+static void malloc_sound_buffers(int size)
+{
+    int i, j;
+
+    /* allocate all possibly needed buffers */
+    for (i = 0; i < SOUND_CHIPS_MAX; i++) {
+        for (j = 0; j < SOUND_CHIP_CHANNELS_MAX; j++) {
+            sound_buffer[i][j] = lib_malloc(size);
+        }
+    }
+}
+#endif
+
 /*
     There is some inconsistency about when the buffer should be overwritten and
     when mixed. Usually it's overwritten by SID and other cycle based engines,
@@ -234,6 +300,143 @@ static void sound_machine_close(sound_t *psid)
 */
 static int sound_machine_calculate_samples(sound_t **psid, int16_t *pbuf, int nr, int soc, int scc, CLOCK *delta_t)
 {
+/* FIXME: fix mono stream to stereo mixing next */
+#ifdef SOUND_SYSTEM_FLOAT
+    int i, j, k;
+    int temp;
+    int primary_sound_rendered = 0;
+    int sound_channels[SOUND_CHIPS_MAX];
+    float *addition_buffer = NULL;
+    CLOCK initial_delta_t = *delta_t;
+    CLOCK delta_t_for_other_chips;
+
+    /* get the sound channels of the enabled sound devices */
+    for (i = 0; i < (offset >> 5); i++) {
+        if (sound_calls[i]->chip_enabled) {
+            sound_channels[i] = sound_calls[i]->channels();
+        } else {
+            sound_channels[i] = 0;
+        }
+    }
+
+    /* do special treatment of first sound device in case it is cycle based */
+    if (sound_calls[0]->cycle_based() || (!sound_calls[0]->cycle_based() && sound_calls[0]->chip_enabled)) {
+        temp = sound_calls[0]->calculate_samples(psid, sound_buffer[0][0], nr, 0, delta_t);
+        primary_sound_rendered = 1;
+    } else {
+        temp = nr;
+    }
+
+    /* check if the first sound device has multiple channels, and render them if needed */
+    if (primary_sound_rendered) {
+        if (sound_channels[0] > 1) {
+            for (k = 1; k < sound_channels[0]; k++) {
+                delta_t_for_other_chips = initial_delta_t;
+                sound_calls[0]->calculate_samples(psid, sound_buffer[0][k], nr, k, &delta_t_for_other_chips);
+            }
+        }
+    }
+
+    /* have remaining enabled devices calculate their samples */
+    for (i = 1; i < (offset >> 5); i++) {
+        if (sound_calls[i]->chip_enabled) {
+            delta_t_for_other_chips = initial_delta_t;
+            sound_calls[i]->calculate_samples(psid, sound_buffer[i][0], temp, 0, &delta_t_for_other_chips);
+        }
+    }
+
+    /* allocate buffer to hold added samples */
+    addition_buffer = lib_malloc(snddata.bufsize * soc * sizeof(float));
+
+    if (soc == SOUND_OUTPUT_MONO) {
+
+        /* Add all samples together for enabled sound devices and output in mono */
+        for (j = 0; j < temp; j++) {
+            addition_buffer[j] = 0.0;
+            for (i = 0; i < (offset >> 5); i++) {
+                if (sound_calls[i]->chip_enabled) {
+                    addition_buffer[j] += sound_buffer[i][0][j];
+                    if (sound_channels[i] > 1) {
+                        for (k = 1; k < sound_channels[i]; k++) {
+                            addition_buffer[j] += sound_buffer[i][k][j];
+                        }
+                    }
+                }
+            }
+        }
+    } else {
+
+        /* Add all samples together for enabled sound devices and output in stereo */
+        for (j = 0; j < temp; j++) {
+
+            /* left first */
+            addition_buffer[j * soc] = 0.0;
+            for (i = 0; i < (offset >> 5); i++) {
+                if (sound_calls[i]->chip_enabled) {
+                    if (sound_calls[i]->sound_chip_channel_mixing[0].left_channel_volume) {
+                        if (sound_calls[i]->sound_chip_channel_mixing[0].left_channel_volume == 100) {
+                            addition_buffer[j * soc] += sound_buffer[i][0][j];
+                        } else {
+                            addition_buffer[j * soc] += (sound_buffer[i][0][j] * sound_calls[i]->sound_chip_channel_mixing[0].left_channel_volume / 100.0);
+                        }
+                    }
+                    if (sound_channels[i] > 1) {
+                        for (k = 1; k < sound_channels[i]; k++) {
+                            if (sound_calls[i]->sound_chip_channel_mixing[k].left_channel_volume == 100) {
+                                addition_buffer[j * soc] += sound_buffer[i][k][j];
+                            } else {
+                                addition_buffer[j * soc] += (sound_buffer[i][k][j] * sound_calls[i]->sound_chip_channel_mixing[k].left_channel_volume / 100.0);
+                            }
+                        }
+                    }
+                }
+            }
+
+            /* now right */
+            addition_buffer[(j * soc) + 1] = 0.0;
+            for (i = 0; i < (offset >> 5); i++) {
+                if (sound_calls[i]->chip_enabled) {
+                    if (sound_calls[i]->sound_chip_channel_mixing[0].right_channel_volume) {
+                        if (sound_calls[i]->sound_chip_channel_mixing[0].right_channel_volume == 100) {
+                            addition_buffer[(j * soc) + 1] += sound_buffer[i][0][j];
+                        } else {
+                            addition_buffer[(j * soc) + 1] += (sound_buffer[i][0][j] * sound_calls[i]->sound_chip_channel_mixing[0].right_channel_volume / 100.0);
+                        }
+                    }
+                    if (sound_channels[i] > 1) {
+                        for (k = 1; k < sound_channels[i]; k++) {
+                            if (sound_calls[i]->sound_chip_channel_mixing[k].right_channel_volume == 100) {
+                                addition_buffer[(j * soc) + 1] += sound_buffer[i][k][j];
+                            } else {
+                                addition_buffer[(j * soc) + 1] += (sound_buffer[i][k][j] * sound_calls[i]->sound_chip_channel_mixing[k].right_channel_volume / 100.0);
+                            }
+                        }
+                    }
+                }
+            }
+
+        }
+    }
+
+    /* clip the addition buffer if needed */
+    for (j = 0; j < (temp * soc); j++) {
+        if (addition_buffer[j] < -1.0) {
+            addition_buffer[j] = -1.0;
+        } else if (addition_buffer[j] > 1.0) {
+            addition_buffer[j] = 1.0;
+        }
+    }
+
+    /* convert floats to int16_t for output */
+    for (j = 0; j < (temp * soc); j++) {
+        pbuf[j] = (int16_t)(addition_buffer[j] * 32767.0);
+    }
+
+    /* free addition buffer */
+    lib_free(addition_buffer);
+
+    return temp;
+#else
     int i;
     int temp;
     CLOCK initial_delta_t = *delta_t;
@@ -253,6 +456,7 @@ static int sound_machine_calculate_samples(sound_t **psid, int16_t *pbuf, int nr
         }
     }
     return temp;
+#endif
 }
 
 static void sound_machine_store(sound_t *psid, uint16_t addr, uint8_t val)
@@ -299,9 +503,11 @@ static int sound_machine_channels(void)
     int temp;
 
     for (i = 0; i < (offset >> 5); i++) {
-        temp = sound_calls[i]->channels();
-        if (temp > retval) {
-            retval = temp;
+        if (sound_calls[i]->chip_enabled) {
+            temp = sound_calls[i]->channels();
+            if (temp > retval) {
+                retval = temp;
+            }
         }
     }
     return retval;
@@ -464,11 +670,11 @@ static int set_volume(int val, void *param)
         volume = 0;
     }
 
-    if (volume > 100) {
-        volume = 100;
+    if (volume > MASTER_VOLUME_MAX) {
+        volume = MASTER_VOLUME_MAX;
     }
 
-    amp = (int)((exp((double)volume / 100.0 * log(2.0)) - 1.0) * 4096.0);
+    amp = (int)((exp((double)volume / ((double)MASTER_VOLUME_ONE) * log(2.0)) - 1.0) * 4096.0);
 
     ui_display_volume(volume);
 
@@ -497,7 +703,7 @@ static const resource_int_t resources_int[] = {
       (void *)&buffer_size, set_buffer_size, NULL },
     { "SoundFragmentSize", SOUND_FRAGMENT_SIZE, RES_EVENT_NO, NULL,
       (void *)&fragment_size, set_fragment_size, NULL },
-    { "SoundVolume", 100, RES_EVENT_NO, NULL,
+    { "SoundVolume", MASTER_VOLUME_DEFAULT, RES_EVENT_NO, NULL,
       (void *)&volume, set_volume, NULL },
     { "SoundOutput", ARCHDEP_SOUND_OUTPUT_MODE, RES_EVENT_NO, NULL,
       (void *)&output_option, set_output_option, NULL },
@@ -591,7 +797,7 @@ int sound_cmdline_options_init(void)
     record_devices_cmdline = lib_strdup("Specify recording sound driver. (");
 
     for (i = 0; sound_register_devices[i].name; i++) {
-        if (sound_register_devices[i].is_playback_device) {
+        if (sound_register_devices[i].device_type == SOUND_PLAYBACK_DEVICE) {
             if (started_playback) {
                 temp = util_concat(playback_devices_cmdline, "/", sound_register_devices[i].name, NULL);
             } else {
@@ -627,6 +833,48 @@ int sound_cmdline_options_init(void)
 
 /* ------------------------------------------------------------------------- */
 
+static int sound_valid_devices_compare_names(const void* a, const void* b)
+{
+    const sound_desc_t *arg1 = (const sound_desc_t*)a;
+    const sound_desc_t *arg2 = (const sound_desc_t*)b;
+
+    return strcmp(arg1->name, arg2->name);
+}
+
+sound_desc_t *sound_get_valid_devices(int type, int sort)
+{
+    sound_desc_t *retval = NULL;
+    int i;
+    int valid = 0;
+    int j = 0;
+
+    for (i = 0; sound_register_devices[i].name; ++i) {
+        if (sound_register_devices[i].device_type == type) {
+               ++valid;
+        }
+    }
+
+
+    retval = lib_malloc(((size_t)valid + 1) * sizeof(sound_desc_t));
+    for (i = 0; sound_register_devices[i].name; ++i) {
+        if (sound_register_devices[i].device_type == type) {
+            retval[j].name = sound_register_devices[i].name;
+            retval[j].description = sound_register_devices[i].ui_display_name;
+            retval[j].device_type = sound_register_devices[i].device_type;
+            ++j;
+        }
+    }
+    retval[j].name = NULL;
+
+    if (sort) {
+        qsort(retval, valid, sizeof(sound_desc_t), sound_valid_devices_compare_names);
+    }
+
+    return retval;
+}
+
+/* ------------------------------------------------------------------------- */
+
 /* timing constants */
 static unsigned int cycles_per_sec;
 static unsigned int cycles_per_rfsh;
@@ -637,62 +885,6 @@ static double speed_percent;
 
 /* Flag: Is warp mode enabled?  */
 static int warp_mode_enabled;
-
-typedef struct {
-    /* Number of sound output channels */
-    int sound_output_channels;
-
-    /* Number of sound chip channels (for multiple SIDs) */
-    int sound_chip_channels;
-
-    /* sid itself */
-    sound_t *psid[SOUND_SIDS_MAX];
-
-    /* number of clocks between each sample. used value */
-    soundclk_t clkstep;
-
-    /* number of clocks between each sample. original value */
-    soundclk_t origclkstep;
-
-    /* factor between those two clksteps */
-    soundclk_t clkfactor;
-
-    /* time of last sample generated */
-    soundclk_t fclk;
-
-    /* time of last write to sid. used for pdev->dump() */
-    CLOCK wclk;
-
-    /* time of last call to sound_run_sound() */
-    CLOCK lastclk;
-
-    /* sample buffer */
-    int16_t *buffer;
-
-    /* sample buffer pointer */
-    int bufptr;
-
-    /* pointer to playback device structure in use */
-    const sound_device_t *playdev;
-
-    /* pointer to playback device structure in use */
-    const sound_device_t *recdev;
-
-    /* number of samples in a fragment */
-    int fragsize;
-
-    /* number of fragments in kernel buffer */
-    int fragnr;
-
-    /* number of samples in kernel buffer */
-    int bufsize;
-
-    /* is the device suspended? */
-    int issuspended;
-    int16_t lastsample[SOUND_CHANNELS_MAX];
-} snddata_t;
-
-static snddata_t snddata;
 
 /* device registration code */
 #define MAX_SOUND_DEVICES 24
@@ -727,13 +919,11 @@ const char *sound_device_name(unsigned int num)
 static int sound_error(const char *msg)
 {
     sound_close();
-    
+
     log_message(sound_log, "%s", msg);
 
     if (!console_mode && !video_disabled_mode) {
-        char *txt = lib_msprintf("Sound: %s", msg);
-        ui_error(txt);
-        lib_free(txt);
+        ui_error("Sound: %s", msg);
     }
 
     playback_enabled = 0;
@@ -819,7 +1009,7 @@ static int sid_open(void)
             /* already open */
             continue;
         }
-        
+
         if (!(snddata.psid[c] = sound_machine_open(c))) {
             return sound_error("Cannot open SID engine");
         }
@@ -851,7 +1041,7 @@ static int sid_init(void)
     snddata.fclk = SOUNDCLK_CONSTANT(maincpu_clk);
     snddata.wclk = maincpu_clk;
     snddata.lastclk = maincpu_clk;
-    
+
     for (c = 0; c < snddata.sound_chip_channels; c++) {
         if (!sound_machine_init(snddata.psid[c], speed, cycles_per_sec) || !playback_enabled) {
             return sound_error("Cannot initialize SID engine");
@@ -950,7 +1140,7 @@ int sound_open(void)
 
     /* find pdev */
     for (i = 0; (pdev = sound_devices[i]); i++) {
-        if (!playname || (pdev->name && !strcasecmp(playname, pdev->name))) {
+        if (!playname || (pdev->name && !util_strcasecmp(playname, pdev->name))) {
             break;
         }
     }
@@ -978,13 +1168,13 @@ int sound_open(void)
     fragnr = (int)((speed * bufsize + fragsize - 1) / fragsize);
 
     if (pdev) {
-        
+
         snddata.playdev = pdev;
         snddata.fragsize = fragsize;
         snddata.fragnr = fragnr;
         snddata.bufsize = fragsize * fragnr;
         snddata.bufptr = 0;
-        
+
         if (pdev->init) {
             channels_cap = channels;
             if (pdev->init(playparam, &speed, &fragsize, &fragnr, &channels_cap)) {
@@ -1002,7 +1192,17 @@ int sound_open(void)
                 snddata.sound_output_channels = channels;
             }
         }
+        if (snddata.buffer) {
+            lib_free(snddata.buffer);
+            snddata.buffer = NULL;
+#ifdef SOUND_SYSTEM_FLOAT
+            free_sound_buffers();
+#endif
+        }
         snddata.buffer = lib_malloc(snddata.bufsize * snddata.sound_output_channels * sizeof(int16_t));
+#ifdef SOUND_SYSTEM_FLOAT
+        malloc_sound_buffers(snddata.bufsize * snddata.sound_output_channels * sizeof(float));
+#endif
         snddata.issuspended = 0;
 
         for (c = 0; c < snddata.sound_output_channels; c++) {
@@ -1048,7 +1248,7 @@ int sound_open(void)
     sound_state_changed = FALSE;
 
     for (i = 0; (rdev = sound_devices[i]); i++) {
-        if (recname && rdev->name && !strcasecmp(recname, rdev->name)) {
+        if (recname && rdev->name && !util_strcasecmp(recname, rdev->name)) {
             break;
         }
     }
@@ -1065,7 +1265,7 @@ int sound_open(void)
         }
 
         if (rdev->bufferspace != NULL) {
-            ui_error("Warning! Recording device %s seems to be a realtime device!");
+            ui_error("Warning! Recording device %s seems to be a realtime device!", recname);
         }
 
         if (rdev->init) {
@@ -1115,6 +1315,9 @@ void sound_close(void)
     sound_playdev_reopen = FALSE;
     sound_is_timing_source = FALSE;
 
+#ifdef SOUND_SYSTEM_FLOAT
+    free_sound_buffers();
+#endif
     lib_free(snddata.buffer);
     snddata.buffer = NULL;
     snddata.bufsize = 0;
@@ -1232,11 +1435,29 @@ void sound_reset(void)
 }
 
 /* flush all generated samples from buffer to sounddevice. */
-bool sound_flush()
+bool sound_flush(void)
 {
     int c, i, nr, space;
     char *state;
-    
+
+    /*
+     * It's possible when changing settings via UI to end up
+     * flushing sound on the ui thread, which is a problem
+     * because it will 'yield' the mainlock during the flush.
+     *
+     * The 'yield' mechanism is build to only work when the
+     * the vice thread is yielding to the ui thread, so the
+     * result is that the ui thread hangs forever.
+     */
+
+    /* clang 15 warns the goto is never executed when compiling the headless
+     * or SDL UIs */
+#if defined(USE_GTK3UI)
+    if (!mainlock_is_vice_thread()) {
+        goto done;
+    }
+#endif
+
     if (!playback_enabled) {
         if (sdev_open) {
             sound_close();
@@ -1293,21 +1514,21 @@ bool sound_flush()
 
     /*
      * At this point we have to block until we have written at least one fragment.
-     * 
+     *
      * The 'push against the audio device' sync method depends on this.
      */
-    
+
     while (!warp_mode_enabled) {
 
         if (snddata.playdev->bufferspace) {
-            space = snddata.playdev->bufferspace();            
+            space = snddata.playdev->bufferspace();
         } else {
             /* We are using a blocking driver like simple pulse - write everything we have. */
             space = nr;
         }
 
         space -= space % snddata.fragsize;
-        
+
         if (space) {
             if (nr > space) {
                 /* Write as much as we can */
@@ -1315,7 +1536,7 @@ bool sound_flush()
             }
 
             mainlock_yield_begin();
-            
+
             /* Flush buffer, all channels are already mixed into it. */
             if (snddata.playdev->write(snddata.buffer, nr * snddata.sound_output_channels)) {
                 sound_error("write to sound device failed.");
@@ -1332,12 +1553,12 @@ bool sound_flush()
                     goto done;
                 }
             }
-            
+
             /* Successful write to audio device, exit loop. */
             mainlock_yield_end();
             break;
         }
-        
+
         /* We can't write yet, try again after a minimal sleep. */
         mainlock_yield_and_sleep(tick_per_second() / 1000);
     }
@@ -1346,7 +1567,7 @@ bool sound_flush()
 
     /*
      * Move any incomplete fragments back to the start of the sample buffer
-     */ 
+     */
 
     for (c = 0; c < snddata.sound_output_channels; c++) {
         snddata.lastsample[c] = snddata.buffer[(nr - 1) * snddata.sound_output_channels + c];
@@ -1355,7 +1576,7 @@ bool sound_flush()
                 snddata.buffer[(i + nr) * snddata.sound_output_channels + c];
         }
     }
-    
+
 done:
 
     /*
@@ -1519,7 +1740,7 @@ void sound_set_relative_speed(int value)
 {
     double natural_fps;
     double new_percent;
-    
+
     if (value < 0) {
         natural_fps = (double)machine_get_cycles_per_second() / machine_get_cycles_per_frame();
         new_percent = 100.0 * (double)(0 - value) / natural_fps;
@@ -1568,6 +1789,42 @@ void sound_dac_init(sound_dac_t *dac, int speed)
 /* FIXME: this should use bandlimited step synthesis. Sadly, VICE does not
  * have an easy-to-use infrastructure for blep generation. We should write
  * this code. */
+#ifdef SOUND_SYSTEM_FLOAT
+/* FIXME */
+int sound_dac_calculate_samples(sound_dac_t *dac, float *pbuf, int value, int nr)
+{
+    int i;
+    int off = 0;
+    float sample;
+
+    /* A simple high pass digital filter is employed here to get rid of the DC offset,
+       which would cause distortion when mixed with other signal. This filter is formed
+       on the actual hardware by the combination of output decoupling capacitor and load
+       resistance.
+    */
+    if (nr) {
+        dac->output = dac->alpha * (dac->output + (float)(value - dac->value));
+        dac->value = value;
+
+        if (!(int)dac->output) {
+            return nr;
+        }
+
+        sample = (int)dac->output / 32767.0;
+
+        pbuf[off] = sample;
+        off ++;
+    }
+
+    for (i = 1; i < nr; i++) {
+        dac->output *= dac->alpha;
+        sample = (int)dac->output / 32767.0;
+        pbuf[off] = sample;
+        off ++;
+    }
+    return nr;
+}
+#else
 int sound_dac_calculate_samples(sound_dac_t *dac, int16_t *pbuf, int value, int nr, int soc, int cs)
 {
     int i, sample;
@@ -1584,10 +1841,10 @@ int sound_dac_calculate_samples(sound_dac_t *dac, int16_t *pbuf, int value, int 
         if (!sample) {
             return nr;
         }
-        if (cs & 1) {
+        if (cs == SOUND_CHANNEL_1 || cs == SOUND_CHANNELS_1_AND_2) {
             pbuf[off] = sound_audio_mix(pbuf[off], sample);
         }
-        if (cs & 2) {
+        if (cs == SOUND_CHANNEL_2 || cs == SOUND_CHANNELS_1_AND_2) {
             pbuf[off + 1] = sound_audio_mix(pbuf[off + 1], sample);
         }
         off += soc;
@@ -1596,16 +1853,17 @@ int sound_dac_calculate_samples(sound_dac_t *dac, int16_t *pbuf, int value, int 
     for (i = 1; i < nr; i++) {
         dac->output *= dac->alpha;
         sample = (int)dac->output;
-        if (cs & 1) {
+        if (cs == SOUND_CHANNEL_1 || cs == SOUND_CHANNELS_1_AND_2) {
             pbuf[off] = sound_audio_mix(pbuf[off], sample);
         }
-        if (cs & 2) {
+        if (cs == SOUND_CHANNEL_2 || cs == SOUND_CHANNELS_1_AND_2) {
             pbuf[off + 1] = sound_audio_mix(pbuf[off + 1], sample);
         }
         off += soc;
     }
     return nr;
 }
+#endif
 
 /* recording related functions, equivalent to screenshot_... */
 void sound_stop_recording(void)

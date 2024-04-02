@@ -27,48 +27,19 @@
  */
 
 #include "vice.h"
+#include <gtk/gtk.h>
 
-#include <stdio.h>
-
-#include "debug_gtk3.h"
 #include "c128model.h"
 #include "crtcontrolwidget.h"
 #include "machine.h"
 #include "machinemodelwidget.h"
 #include "resources.h"
-#include "sampler.h"
+#include "settings_model.h"
 #include "ui.h"
 #include "uimachinewindow.h"
-#include "settings_sampler.h"
 #include "vdc.h"
 #include "vicii.h"
 #include "videomodelwidget.h"
-#include "widgethelpers.h"
-
-#include "clockportdevicewidget.h"
-#include "clockport.h"
-
-#include "cartridge.h"
-#include "reu.h"
-#include "reuwidget.h"
-#include "ramcartwidget.h"
-#include "dqbbwidget.h"
-#include "expertwidget.h"
-#include "isepicwidget.h"
-#include "gmod2widget.h"
-#include "gmod3widget.h"
-#include "mmcrwidget.h"
-#include "mmc64widget.h"
-#include "retroreplaywidget.h"
-#include "easyflashwidget.h"
-#include "rrnetmk3widget.h"
-#include "uicart.h"
-#include "carthelpers.h"
-#include "tapecart.h"
-#include "tapeportdeviceswidget.h"
-#include "c128model.h"
-#include "settings_model.h"
-#include "crtpreviewwidget.h"
 
 #include "c128ui.h"
 
@@ -87,15 +58,14 @@ static const char *c128_model_list[] = {
     NULL
 };
 
-
 /** \brief  List of VIC-II models
  *
  * Used in the VIC-II model widget
  */
 static const vice_gtk3_radiogroup_entry_t c128_vicii_models[] = {
-    { "PAL", MACHINE_SYNC_PAL },
-    { "NTSC", MACHINE_SYNC_NTSC },
-    { NULL, -1 }
+    { "PAL",    MACHINE_SYNC_PAL },
+    { "NTSC",   MACHINE_SYNC_NTSC },
+    { NULL,     -1 }
 };
 
 
@@ -154,8 +124,9 @@ int c128ui_init_early(void)
  */
 int c128ui_init(void)
 {
-    int forty;
-    int hide_vdc;
+    GtkWidget *window;
+    int        forty = 0;
+    int        hide_vdc = 0;
 
     machine_model_widget_getter(c128model_get);
     machine_model_widget_setter(c128model_set);
@@ -165,66 +136,28 @@ int c128ui_init(void)
     video_model_widget_set_resource("MachineVideoStandard");
     video_model_widget_set_models(c128_vicii_models);
 
-    settings_sampler_set_devices_getter(sampler_get_devices);
-    clockport_device_widget_set_devices((void *)clockport_supported_devices);
-
-    /* I/O extension function pointers */
-    carthelpers_set_functions(
-            cartridge_save_image,
-            cartridge_flush_image,
-            cartridge_type_enabled,
-            cartridge_enable,
-            cartridge_disable,
-            cartridge_can_save_image,
-            cartridge_can_flush_image,
-            cartridge_set_default,
-            cartridge_unset_default,
-            cartridge_get_info_list);
-
-    /* ui_cart_set_detect_func(cartridge_detect); only cbm2/plus4 */
-    ui_cart_set_list_func(cartridge_get_info_list);
-    ui_cart_set_attach_func(cartridge_attach_image);
-    ui_cart_set_freeze_func(cartridge_trigger_freeze);
-    ui_cart_set_detach_func(cartridge_detach_image);
-    ui_cart_set_set_default_func(cartridge_set_default);
-    ui_cart_set_unset_default_func(cartridge_unset_default);
-
-    /* set tapecart flush function */
-    tapeport_devices_widget_set_tapecart_flush_func(tapecart_flush_tcrt);
-
     /* set model getter for the model settings dialog */
     settings_model_widget_set_model_func(c128model_get);
 
     /* push VDC display to front depending on 40/80 key */
-    if (resources_get_int("C128ColumnKey", &forty) >= 0) {
-        GtkWidget *window;
-
-        if (forty) {
-            window = ui_get_window_by_index(0); /* VICIIe */
-        } else {
-            window = ui_get_window_by_index(1); /* VDC */
-        }
-        if (window != NULL) {
-            gtk_window_present(GTK_WINDOW(window));
-        }
+    resources_get_int("C128ColumnKey", &forty);
+    if (forty) {
+        window = ui_get_window_by_index(PRIMARY_WINDOW); /* VICIIe */
+    } else {
+        window = ui_get_window_by_index(SECONDARY_WINDOW); /* VDC */
+    }
+    if (window != NULL) {
+        gtk_window_present(GTK_WINDOW(window));
     }
 
     /* Hide VDC window, ignoring the stuff before this */
-    if (resources_get_int("C128HideVDC", &hide_vdc) >= 0) {
-        GtkWidget *window;
-
-        if (hide_vdc) {
-            window = ui_get_window_by_index(1); /* VDC */
-            if (window != NULL) {
-                gtk_widget_hide(window);
-            }
+    resources_get_int("C128HideVDC", &hide_vdc);
+    if (hide_vdc) {
+        window = ui_get_window_by_index(SECONDARY_WINDOW); /* VDC */
+        if (window != NULL) {
+            gtk_widget_hide(window);
         }
     }
-
-    /* crt preview widget functions */
-    crt_preview_widget_set_open_func(crt_open);
-    crt_preview_widget_set_chip_func(crt_read_chip_header);
-
 
     return 0;
 }

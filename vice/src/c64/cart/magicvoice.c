@@ -320,7 +320,7 @@ static void set_eos(t6721_state *state)
  LA05-124 Gate Array
 
  4bit parallel to serial converter/buffer:
- 
+
 18 in   t6721 DTRD
 20 in   t6721 phi2
  6 in   t6721 APD (reset, will also reset FIFO)
@@ -834,7 +834,8 @@ static io_source_t magicvoice_io2_device = {
     magicvoice_io2_dump,        /* device state information dump function */
     CARTRIDGE_MAGIC_VOICE,      /* cartridge ID */
     IO_PRIO_NORMAL,             /* normal priority, device read needs to be checked for collisions */
-    0                           /* insertion order, gets filled in by the registration function */
+    0,                          /* insertion order, gets filled in by the registration function */
+    IO_MIRROR_NONE              /* NO mirroring */
 };
 
 static io_source_list_t *magicvoice_io2_list_item = NULL;
@@ -847,8 +848,13 @@ static const export_resource_t export_res = {
 /* Some prototypes are needed */
 static int magicvoice_sound_machine_init(sound_t *psid, int speed, int cycles_per_sec);
 static void magicvoice_sound_machine_close(sound_t *psid);
-static int magicvoice_sound_machine_calculate_samples(sound_t **psid, int16_t *pbuf, int nr, int sound_output_channels, int sound_chip_channels, CLOCK *delta_t);
 static void magicvoice_sound_machine_reset(sound_t *psid, CLOCK cpu_clk);
+
+#ifdef SOUND_SYSTEM_FLOAT
+static int magicvoice_sound_machine_calculate_samples(sound_t **psid, float *pbuf, int nr, int sound_chip_channels, CLOCK *delta_t);
+#else
+static int magicvoice_sound_machine_calculate_samples(sound_t **psid, int16_t *pbuf, int nr, int sound_output_channels, int sound_chip_channels, CLOCK *delta_t);
+#endif
 
 static int magicvoice_sound_machine_cycle_based(void)
 {
@@ -860,9 +866,19 @@ static int magicvoice_sound_machine_channels(void)
     return 1;
 }
 
+#ifdef SOUND_SYSTEM_FLOAT
+/* stereo mixing placement of the MagicVoice cartridge sound */
+static sound_chip_mixing_spec_t magicvoice_sound_mixing_spec[SOUND_CHIP_CHANNELS_MAX] = {
+    {
+        100, /* left channel volume % in case of stereo output, default output to both */
+        100  /* right channel volume % in case of stereo output, default output to both */
+    }
+};
+#endif
+
 /* MagicVoice cartridge sound chip */
 static sound_chip_t magicvoice_sound_chip = {
-    NULL,                                       /* NO sound chip open function */ 
+    NULL,                                       /* NO sound chip open function */
     magicvoice_sound_machine_init,              /* sound chip init function */
     magicvoice_sound_machine_close,             /* sound chip close function */
     magicvoice_sound_machine_calculate_samples, /* sound chip calculate samples function */
@@ -871,6 +887,9 @@ static sound_chip_t magicvoice_sound_chip = {
     magicvoice_sound_machine_reset,             /* sound chip reset function, currently only used for debug */
     magicvoice_sound_machine_cycle_based,       /* sound chip 'is_cycle_based()' function, sound chip is NOT cycle based */
     magicvoice_sound_machine_channels,          /* sound chip 'get_amount_of_channels()' function, sound chip has 1 channel */
+#ifdef SOUND_SYSTEM_FLOAT
+    magicvoice_sound_mixing_spec,               /* stereo mixing placement specs */
+#endif
     0                                           /* chip enabled, toggled when sound chip is (de-)activated */
 };
 
@@ -1096,7 +1115,8 @@ static int set_magicvoice_enabled(int value, void *param)
             /* if the param is != NULL, then we should load the default image file */
             if (magicvoice_filename) {
                 if (*magicvoice_filename) {
-                    if (cartridge_attach_image(CARTRIDGE_MAGIC_VOICE, magicvoice_filename) < 0) {
+                    if ((cartridge_attach_image(CARTRIDGE_CRT, magicvoice_filename) < 0) &&
+                        (cartridge_attach_image(CARTRIDGE_MAGIC_VOICE, magicvoice_filename) < 0)) {
                         DBG(("MV: set_enabled did not register\n"));
                         return -1;
                     }
@@ -1364,6 +1384,7 @@ int magicvoice_bin_attach(const char *filename, uint8_t *rawcart)
     if (util_file_load(filename, rawcart, MV_ROM_SIZE, UTIL_FILE_LOAD_SKIP_ADDRESS) < 0) {
         return -1;
     }
+    set_magicvoice_filename(filename, NULL); /* set the resource */
     return magicvoice_common_attach();
 }
 
@@ -1388,7 +1409,7 @@ int magicvoice_bin_attach(const char *filename, uint8_t *rawcart)
  * $000040 CHIP ROM   #000 $8000 $4000 $4010
  *
  */
-int magicvoice_crt_attach(FILE *fd, uint8_t *rawcart)
+int magicvoice_crt_attach(FILE *fd, uint8_t *rawcart, const char *filename)
 {
     int i;
     crt_chip_header_t chip;
@@ -1414,6 +1435,7 @@ int magicvoice_crt_attach(FILE *fd, uint8_t *rawcart)
     if (i != 1 && i != 2) {
         return -1;
     }
+    set_magicvoice_filename(filename, NULL); /* set the resource */
     return magicvoice_common_attach();
 }
 
@@ -1462,6 +1484,27 @@ void magicvoice_reset(void)
 /*
     called periodically for every sound fragment that is played
 */
+#ifdef SOUND_SYSTEM_FLOAT
+/* FIXME */
+static int magicvoice_sound_machine_calculate_samples(sound_t **psid, float *pbuf, int nr, int scc, CLOCK *delta_t)
+{
+    int i;
+    float *buffer;
+
+    buffer = lib_malloc(nr * sizeof(float));
+
+    t6721_update_output(t6721, buffer, nr);
+
+    /* mix generated samples to output */
+    for (i = 0; i < nr; i++) {
+        pbuf[i] = buffer[i];
+    }
+
+    lib_free(buffer);
+
+    return nr;
+}
+#else
 static int magicvoice_sound_machine_calculate_samples(sound_t **psid, int16_t *pbuf, int nr, int soc, int scc, CLOCK *delta_t)
 {
     int i;
@@ -1474,7 +1517,7 @@ static int magicvoice_sound_machine_calculate_samples(sound_t **psid, int16_t *p
     /* mix generated samples to output */
     for (i = 0; i < nr; i++) {
         pbuf[i * soc] = sound_audio_mix(pbuf[i * soc], buffer[i]);
-        if (soc > 1) {
+        if (soc == SOUND_OUTPUT_STEREO) {
             pbuf[(i * soc) + 1] = sound_audio_mix(pbuf[(i * soc) + 1], buffer[i]);
         }
     }
@@ -1483,6 +1526,7 @@ static int magicvoice_sound_machine_calculate_samples(sound_t **psid, int16_t *p
 
     return nr;
 }
+#endif
 
 static void magicvoice_sound_machine_reset(sound_t *psid, CLOCK cpu_clk)
 {

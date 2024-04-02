@@ -6,7 +6,7 @@
 
 /*
  *  HVSClib - a library to work with High Voltage SID Collection files
- *  Copyright (C) 2018-2021  Bas Wassink <b.wassink@ziggo.nl>
+ *  Copyright (C) 2018-2022  Bas Wassink <b.wassink@ziggo.nl>
  *
  *  This program is free software; you can redistribute it and/or modify
  *  it under the terms of the GNU General Public License as published by
@@ -25,6 +25,7 @@
 
 #include <stdio.h>
 #include <stdlib.h>
+#include <stdbool.h>
 #include <inttypes.h>
 #include <string.h>
 #include <limits.h>
@@ -32,8 +33,14 @@
 #include <ctype.h>
 
 #include "hvsc.h"
-
 #include "hvsc_defs.h"
+
+#ifndef HVSC_STANDALONE
+#include "lib.h"
+#include "util.h"
+#include "md5.h"
+#endif
+
 
 #include "base.h"
 
@@ -51,7 +58,6 @@
  */
 static const char *hvsc_err_messages[HVSC_ERR_CODE_COUNT] = {
     "OK",
-    "out of memory error",
     "I/O error",
     "file too large error",
     "libgcrypt error",
@@ -164,18 +170,76 @@ void hvsc_perror(const char *prefix)
 }
 
 
+void *hvsc_malloc(size_t size)
+{
+#ifndef HVSC_STANDALONE
+    return lib_malloc(size);
+#else
+    void *ptr = malloc(size);
+    if (ptr == NULL) {
+        fprintf(stderr, "%s(): failed to allocate %zu bytes.\n", __func__, size);
+        abort();
+    }
+    return ptr;
+#endif
+}
+
+
+void *hvsc_calloc(size_t nmemb, size_t size)
+{
+#ifndef HVSC_STANDALONE
+    return lib_calloc(nmemb, size);
+#else
+    void *ptr = calloc(nmemb, size);
+    if (ptr == NULL) {
+        fprintf(stderr, "%s(): failed to allocate %zu bytes.\n", __func__, size);
+        abort();
+    }
+    return ptr;
+#endif
+}
+
+
+void *hvsc_realloc(void *ptr, size_t size)
+{
+#ifndef HVSC_STANDALONE
+    return lib_realloc(ptr, size);
+#else
+    ptr = realloc(ptr, size);
+    if (ptr == NULL) {
+        fprintf(stderr, "%s(): failed to reallocate %zu bytes.\n", __func__, size);
+        abort();
+    }
+    return ptr;
+#endif
+}
+
+
+void hvsc_free(void *ptr)
+{
+#ifndef HVSC_STANDALONE
+    lib_free(ptr);
+#else
+    free(ptr);
+#endif
+}
+
+
+
+
 /** \brief  Initialize text file handle
  *
  * \param[in,out]   handle  text file handle
  */
 void hvsc_text_file_init_handle(hvsc_text_file_t *handle)
 {
-    handle->fp = NULL;
-    handle->path = NULL;
-    handle->lineno = 0;
+    handle->fp      = NULL;
+    handle->path    = NULL;
+    handle->lineno  = 0;
     handle->linelen = 0;
-    handle->buffer = NULL;
-    handle->buflen = 0;
+    handle->buffer  = NULL;
+    handle->prevbuf = NULL;
+    handle->buflen  = 0;
 }
 
 
@@ -186,7 +250,7 @@ void hvsc_text_file_init_handle(hvsc_text_file_t *handle)
  *
  * \return  bool
  */
-int hvsc_text_file_open(const char *path, hvsc_text_file_t *handle)
+bool hvsc_text_file_open(const char *path, hvsc_text_file_t *handle)
 {
     hvsc_dbg("%s(): opening '%s'\n", __func__, path);
     hvsc_text_file_init_handle(handle);
@@ -194,26 +258,16 @@ int hvsc_text_file_open(const char *path, hvsc_text_file_t *handle)
     handle->fp = fopen(path, "rb");
     if (handle->fp == NULL) {
         hvsc_errno = HVSC_ERR_IO;
-        return 0;
+        return false;
     }
-    handle->path = hvsc_strdup(path);
-    if (handle->path == NULL) {
-        fclose(handle->fp);
-        return 0;
-    }
-
-    handle->lineno = 0;
-
-    handle->buffer = malloc(READFILE_LINE_SIZE);
-    if (handle->buffer == NULL) {
-        hvsc_errno = HVSC_ERR_OOM;
-        free(handle->path);
-        fclose(handle->fp);
-        return 0;
-    }
-    handle->buflen = READFILE_LINE_SIZE;
-
-    return 1;
+    handle->path    = hvsc_strdup(path);
+    handle->lineno  = 0;
+    handle->buffer  = hvsc_malloc(READFILE_LINE_SIZE);
+    handle->prevbuf = hvsc_malloc(READFILE_LINE_SIZE);
+    handle->buflen  = READFILE_LINE_SIZE;
+    memset(handle->buffer,  0, sizeof *(handle->buffer));
+    memset(handle->prevbuf, 0, sizeof *(handle->prevbuf));
+    return true;
 }
 
 
@@ -226,12 +280,16 @@ int hvsc_text_file_open(const char *path, hvsc_text_file_t *handle)
 void hvsc_text_file_close(hvsc_text_file_t *handle)
 {
     if (handle->path != NULL) {
-        free(handle->path);
+        hvsc_free(handle->path);
         handle->path = NULL;
     }
     if (handle->buffer != NULL) {
-        free(handle->buffer);
+        hvsc_free(handle->buffer);
         handle->buffer = NULL;
+    }
+    if (handle->prevbuf != NULL) {
+        hvsc_free(handle->prevbuf);
+        handle->prevbuf = NULL;
     }
     if (handle->fp != NULL) {
         fclose(handle->fp);
@@ -250,23 +308,22 @@ const char *hvsc_text_file_read(hvsc_text_file_t *handle)
 {
     size_t i = 0;
 
-    while (1) {
+    /* copy current line buffer into previous line buffer */
+    memcpy(handle->prevbuf, handle->buffer, handle->buflen);
+
+    while (true) {
         int ch;
 
         /* resize buffer? */
         if (i == handle->buflen - 1) {
             /* resize buffer */
-#ifdef HVSC_DEBUG
-            printf("RESIZING BUFFER TO %lu, lineno %ld\n",
-                    (unsigned long)(handle->buflen  * 2), handle->lineno);
-#endif
-            char *tmp = realloc(handle->buffer, handle->buflen * 2);
-            if (tmp == NULL) {
-                hvsc_errno = HVSC_ERR_OOM;
-                return NULL;
-            }
-            handle->buffer = tmp;
             handle->buflen *= 2;
+#ifdef HVSC_DEBUG
+            printf("RESIZING BUFFER TO %zu, lineno %ld\n",
+                    handle->buflen, handle->lineno);
+#endif
+            handle->buffer  = hvsc_realloc(handle->buffer,  handle->buflen);
+            handle->prevbuf = hvsc_realloc(handle->prevbuf, handle->buflen);
         }
 
         ch = fgetc(handle->fp);
@@ -337,12 +394,11 @@ const char *hvsc_text_file_read(hvsc_text_file_t *handle)
  */
 long hvsc_read_file(uint8_t **dest, const char *path)
 {
+    FILE    *fd;
     uint8_t *data;
-    uint8_t *tmp;
-    FILE *fd;
-    size_t offset = 0;
-    size_t size = READFILE_BLOCK_SIZE;
-    size_t result;
+    size_t   result;
+    size_t   offset = 0;
+    size_t   size   = READFILE_BLOCK_SIZE;
 
     fd = fopen(path, "rb");
     if (fd == NULL) {
@@ -350,52 +406,27 @@ long hvsc_read_file(uint8_t **dest, const char *path)
         return -1;
     }
 
-    data = malloc(READFILE_BLOCK_SIZE);
-    if (data == NULL) {
-        return -1;
-    }
+    data = hvsc_malloc(READFILE_BLOCK_SIZE);
 
     /* keep reading chunks until EOF */
-    while (1) {
+    while (true) {
         /* need to resize? */
         if (offset == size) {
             /* yup */
-
-            /* check limit */
-            if (size == (size_t)LONG_MAX + 1) {
-                hvsc_errno = HVSC_ERR_FILE_TOO_LARGE;
-                free(data);
-                fclose(fd);
-                return -1;
-            }
-
-            tmp = realloc(data, size * 2);
-            if (tmp == NULL) {
-                fclose(fd);
-                free(data);
-                return -1;
-            }
-            data = tmp;
             size *= 2;
+            data  = hvsc_realloc(data, size);
         }
         result = fread(data + offset, 1, READFILE_BLOCK_SIZE, fd);
         if (result < READFILE_BLOCK_SIZE) {
             if (feof(fd)) {
                 /* OK: EOF */
-                /* try to realloc to minimum size required */
-                tmp = realloc(data, offset + result);
-                if (tmp != NULL) {
-                    /* OK, no worries if it fails, the C standard guarantees
-                     * the original data is still intact */
-                    data = tmp;
-                }
                 *dest = data;
                 fclose(fd);
                 return (long)(offset + result);
             } else {
                 /* IO error */
                 hvsc_errno = HVSC_ERR_IO;
-                free(data);
+                hvsc_free(data);
                 *dest = NULL;
                 fclose(fd);
                 return -1;
@@ -419,17 +450,11 @@ long hvsc_read_file(uint8_t **dest, const char *path)
  */
 char *hvsc_strndup(const char *s, size_t n)
 {
-    char *t = calloc(n + 1, 1);
-
-    if (t == NULL) {
-        hvsc_errno = HVSC_ERR_OOM;
-        return NULL;
-    }
-
+    char *t = hvsc_malloc(n + 1);
     strncpy(t, s, n);
+    t[n] = '\0';
     return t;
 }
-
 
 
 /** \brief  Create heap-allocated copy of \a s
@@ -440,16 +465,16 @@ char *hvsc_strndup(const char *s, size_t n)
  */
 char *hvsc_strdup(const char *s)
 {
-    char *t;
-    size_t len = strlen(s);
+#ifndef HVSC_STANDALONE
+    return lib_strdup(s);
+#else
+    char   *t;
+    size_t  len = strlen(s);
 
-    t = malloc(len + 1);
-    if (t == NULL) {
-        hvsc_errno = HVSC_ERR_OOM;
-        return NULL;
-    }
-    memcpy(t, s, len + 1);
+    t = hvsc_malloc(len + 1u);
+    memcpy(t, s, len + 1u);
     return t;
+#endif
 }
 
 
@@ -469,9 +494,12 @@ char *hvsc_strdup(const char *s)
  */
 char *hvsc_paths_join(const char *p1, const char *p2)
 {
-    char *result;
-    size_t len1;
-    size_t len2;
+#ifndef HVSC_STANDALONE
+    return util_join_paths(p1, p2, NULL);
+#else
+    char   *result;
+    size_t  len1;
+    size_t  len2;
 
     if (p1 == NULL || p2 == NULL) {
         return NULL;
@@ -480,21 +508,16 @@ char *hvsc_paths_join(const char *p1, const char *p2)
     len1 = strlen(p1);
     len2 = strlen(p2);
 
-    result = malloc(len1 + len2 + 2);   /* +2 for / and '\0' */
-    if (result == NULL) {
-        hvsc_errno = HVSC_ERR_OOM;
-        return NULL;
-    }
-
+    result = hvsc_malloc(len1 + len2 + 2u);   /* +2 for / and '\0' */
     memcpy(result, p1, len1);
-#if defined(_WIN32) || defined(_WIN64)
+# ifdef WINDOWS_COMPILE
     *(result + len1) = '\\';
-#else
+# else
     *(result + len1) = '/';
-#endif
-    memcpy(result + len1 + 1, p2, len2 + 1);    /* add p2 including '\0' */
-
+# endif
+    memcpy(result + len1 + 1u, p2, len2 + 1u);    /* add p2 including '\0' */
     return result;
+#endif
 }
 
 
@@ -504,49 +527,21 @@ char *hvsc_paths_join(const char *p1, const char *p2)
  *
  * \return  bool
  */
-int hvsc_set_paths(const char *path)
+void hvsc_set_paths(const char *path)
 {
     /* set HVSC root path */
     hvsc_root_path = hvsc_strdup(path);
-    if (hvsc_root_path == NULL) {
-        return 0;
-    }
-
     /* set SLDB path */
     hvsc_sldb_path = hvsc_paths_join(hvsc_root_path, HVSC_SLDB_FILE);
-    if (hvsc_sldb_path == NULL) {
-        free(hvsc_root_path);
-        hvsc_root_path = NULL;
-        return 0;
-    }
-
     /* set STIL path */
     hvsc_stil_path = hvsc_paths_join(hvsc_root_path, HVSC_STIL_FILE);
-    if (hvsc_stil_path == NULL) {
-        free(hvsc_root_path);
-        free(hvsc_sldb_path);
-        hvsc_root_path = NULL;
-        hvsc_sldb_path = NULL;
-        return 0;
-    }
-
     /* set BUGlist path */
     hvsc_bugs_path = hvsc_paths_join(hvsc_root_path, HVSC_BUGS_FILE);
-    if (hvsc_bugs_path == NULL) {
-        free(hvsc_root_path);
-        free(hvsc_sldb_path);
-        free(hvsc_stil_path);
-        hvsc_root_path = NULL;
-        hvsc_sldb_path = NULL;
-        hvsc_stil_path = NULL;
-        return 0;
-    }
 
     hvsc_dbg("HVSC root = %s\n", hvsc_root_path);
     hvsc_dbg("HVSC sldb = %s\n", hvsc_sldb_path);
     hvsc_dbg("HVSC stil = %s\n", hvsc_stil_path);
     hvsc_dbg("HVSC bugs = %s\n", hvsc_bugs_path);
-    return 1;
 }
 
 
@@ -555,19 +550,19 @@ int hvsc_set_paths(const char *path)
 void hvsc_free_paths(void)
 {
     if (hvsc_root_path != NULL) {
-        free(hvsc_root_path);
+        hvsc_free(hvsc_root_path);
         hvsc_root_path = NULL;
     }
     if (hvsc_sldb_path != NULL) {
-        free(hvsc_sldb_path);
+        hvsc_free(hvsc_sldb_path);
         hvsc_sldb_path = NULL;
     }
     if (hvsc_stil_path != NULL) {
-        free(hvsc_stil_path);
+        hvsc_free(hvsc_stil_path);
         hvsc_stil_path = NULL;
     }
     if (hvsc_bugs_path != NULL) {
-        free(hvsc_bugs_path);
+        hvsc_free(hvsc_bugs_path);
         hvsc_bugs_path = NULL;
     }
 }
@@ -583,27 +578,50 @@ void hvsc_free_paths(void)
  */
 char *hvsc_path_strip_root(const char *path)
 {
-    size_t plen = strlen(path);             /* length of path */
-    size_t rlen = strlen(hvsc_root_path);   /* length of HSVC root path */
-    char *result;
+    size_t  plen = strlen(path);             /* length of path */
+    size_t  rlen = (hvsc_root_path == NULL) ? 0 : strlen(hvsc_root_path);   /* length of HSVC root path */
+    char   *result;
 
-    if (plen <= rlen) {
-        return hvsc_strdup(path);
-    }
-
-    if (memcmp(path, hvsc_root_path, rlen) == 0) {
+    if (rlen == 0) {
+        result = hvsc_strdup(path);
+    } else if (plen <= rlen) {
+        result = hvsc_strdup(path);
+    } else if (memcmp(path, hvsc_root_path, rlen) == 0) {
         /* got HSVC root path */
-        result = malloc(plen - rlen + 1);
-        if (result == NULL) {
-            hvsc_errno = HVSC_ERR_OOM;
-            return NULL;
-        }
-        memcpy(result, path + rlen, plen - rlen + 1);
-        return result;
+        result = hvsc_malloc(plen - rlen + 1u);
+        memcpy(result, path + rlen, plen - rlen + 1u);
+    } else {
+        result = hvsc_strdup(path);
+    }
+    return result;
+}
+
+
+/** \brief  Determine if a path starts with the HVSC base path
+ *
+ * \param[in]   path    absolute path to PSID file
+ *
+ * \return  \c true if \a path starts with the HVSC base path
+ */
+bool hvsc_path_is_hvsc(const char *path)
+{
+    size_t plen;
+    size_t rlen;
+
+    if (hvsc_root_path == NULL) {
+        return false;
     }
 
-    return hvsc_strdup(path);
+    plen = strlen(path);
+    rlen = strlen(hvsc_root_path);
+
+    if (rlen >= plen) {
+        /* path cannot contain HVSC base directory */
+        return false;
+    }
+    return (bool)(memcmp(path, hvsc_root_path, rlen) == 0);
 }
+
 
 
 /** \brief  Translate all backslashes into forward slashes
@@ -631,12 +649,12 @@ void hvsc_path_fix_separators(char *path)
  *
  * \return  bool
  */
-int hvsc_string_is_empty(const char *s)
+bool hvsc_string_is_empty(const char *s)
 {
-    while (*s != '\0' && isspace((int)*s)) {
+    while (*s != '\0' && isspace((unsigned char)*s)) {
         s++;
     }
-    return *s == '\0';
+    return (bool)(*s == '\0');
 }
 
 
@@ -649,13 +667,13 @@ int hvsc_string_is_empty(const char *s)
  *
  * \return  bool
  */
-int hvsc_string_is_comment(const char *s)
+bool hvsc_string_is_comment(const char *s)
 {
     /* ignore leading whitespace (not strictly required) */
-    while (*s != '\0' && isspace((int)*s)) {
+    while (*s != '\0' && isspace((unsigned char)*s)) {
         s++;
     }
-    return *s == '#';
+    return (bool)(*s == '#');
 }
 
 
@@ -673,19 +691,19 @@ int hvsc_string_is_comment(const char *s)
  */
 long hvsc_parse_simple_timestamp(char *t, char **endptr)
 {
-    long m = 0; /* minutes */
-    long s = 0; /* seconds */
-    long f = 0; /* fractional seconds (ie milliseconds) */
-    int fd = 0; /* number of fractional digits */
+    long m  = 0;    /* minutes */
+    long s  = 0;    /* seconds */
+    long f  = 0;    /* fractional seconds (ie milliseconds) */
+    int  fd = 0;    /* number of fractional digits */
 
     /* minutes */
-    while (isdigit((int)*t)) {
+    while (isdigit((unsigned char)*t)) {
         m = m * 10 + *t - '0';
         t++;
     }
     if (*t != ':') {
         /* error */
-        *endptr = t;
+        *endptr    = t;
         hvsc_errno = HVSC_ERR_TIMESTAMP;
         return -1;
     }
@@ -693,7 +711,7 @@ long hvsc_parse_simple_timestamp(char *t, char **endptr)
 
     /* seconds */
     t++;
-    while (isdigit((int)*t)) {
+    while (isdigit((unsigned char)*t)) {
         s = s * 10 + *t - '0';
         t++;
         if (s > 59) {
@@ -708,9 +726,9 @@ long hvsc_parse_simple_timestamp(char *t, char **endptr)
         /* parse fractional part */
         t++;
         fd = 0;
-        f = 0;
+        f  = 0;
 
-        while (isdigit((int)*t) && fd < 3) {
+        while (isdigit((unsigned char)*t) && fd < 3) {
             fd++;
             f = f * 10 + *t - '0';
             t++;
@@ -797,7 +815,6 @@ void hvsc_get_word_le(uint16_t *dest, const uint8_t *src)
 }
 
 
-
 /** \brief  Get a 32-bit big endian unsigned integer from \a src
  *
  * \param[out]  dest    object to store result
@@ -806,4 +823,41 @@ void hvsc_get_word_le(uint16_t *dest, const uint8_t *src)
 void hvsc_get_longword_be(uint32_t *dest, const uint8_t *src)
 {
     *dest = (uint32_t)((src[0] << 24) + (src[1] << 16) + (src[2] << 8) + src[3]);
+}
+
+
+/** \brief  Create MD5 digest for PSID file
+ *
+ * Create MD5 digest for a full PSID file to allow looking up files in the SLDB
+ * via MD5 digest rather than filename, allowing STIL and SLDB info lookup for
+ * files not in the HVSC directory structure.
+ *
+ * \param[in]   psid    PSID file
+ * \param[out]  digest  MD5 digest as hexadecimal string literal (must be at
+ *                      least 33 bytes)
+ *
+ * \return  \c true if a digest was succesfully generated for \a psid
+ */
+bool hvsc_md5_digest(const char *psid, char *digest)
+{
+    FILE              *fp;
+    uint8_t            hash[HVSC_DIGEST_SIZE];
+    size_t             i;
+    static const char  digits[] = "0123456789abcdef";
+
+    fp = fopen(psid, "rb");
+    if (fp == NULL) {
+        hvsc_errno = HVSC_ERR_IO;
+        return false;
+    }
+
+    md5File(fp, hash);
+    fclose(fp);
+    for (i = 0; i < sizeof hash; i++) {
+        digest[i * 2 + 0] = digits[hash[i] >> 4];
+        digest[i * 2 + 1] = digits[hash[i] & 0x0f];
+    }
+    digest[i * 2] = '\0';
+
+    return true;
 }

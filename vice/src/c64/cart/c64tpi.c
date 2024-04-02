@@ -103,7 +103,8 @@ static io_source_t tpi_io2_device = {
     tpi_io2_dump,           /* device state information dump function */
     CARTRIDGE_IEEE488,      /* cartridge ID */
     IO_PRIO_NORMAL,         /* normal priority, device read needs to be checked for collisions */
-    0                       /* insertion order, gets filled in by the registration function */
+    0,                      /* insertion order, gets filled in by the registration function */
+    IO_MIRROR_NONE          /* NO mirroring */
 };
 
 static io_source_list_t *tpi_list_item = NULL;
@@ -457,7 +458,9 @@ static int set_ieee488_enabled(int value, void *param)
             if (ieee488_filename) {
                 if (*ieee488_filename) {
                     DBG(("IEEE: attach default image\n"));
-                    if (cartridge_attach_image(CARTRIDGE_IEEE488, ieee488_filename) < 0) {
+                    /* try crt first, then binary */
+                    if ((cartridge_attach_image(CARTRIDGE_CRT, ieee488_filename) < 0) &&
+                        (cartridge_attach_image(CARTRIDGE_IEEE488, ieee488_filename) < 0)) {
                         DBG(("IEEE: set_enabled did not register\n"));
                         lib_free(tpi_rom);
                         tpi_rom = NULL;
@@ -504,7 +507,7 @@ static int set_ieee488_filename(const char *name, void *param)
     if (set_ieee488_enabled(enabled, (void*)1) < 0) {
         lib_free(ieee488_filename);
         ieee488_filename = NULL;
-        DBG(("IEEE: set_name done: %d '%s'\n", ieee488_enabled, ieee488_filename));
+        DBG(("IEEE: set_name done: %d 'NULL'\n", ieee488_enabled));
         return -1;
     }
 
@@ -619,10 +622,11 @@ int tpi_bin_attach(const char *filename, uint8_t *rawcart)
     if (util_file_load(filename, rawcart, TPI_ROM_SIZE, UTIL_FILE_LOAD_SKIP_ADDRESS) < 0) {
         return -1;
     }
+    set_ieee488_filename(filename, NULL); /* set the resource */
     return tpi_common_attach();
 }
 
-int tpi_crt_attach(FILE *fd, uint8_t *rawcart)
+int tpi_crt_attach(FILE *fd, uint8_t *rawcart, const char *filename)
 {
     crt_chip_header_t chip;
 
@@ -638,6 +642,7 @@ int tpi_crt_attach(FILE *fd, uint8_t *rawcart)
         return -1;
     }
 
+    set_ieee488_filename(filename, NULL); /* set the resource */
     return tpi_common_attach();
 }
 

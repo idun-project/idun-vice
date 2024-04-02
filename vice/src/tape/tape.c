@@ -34,6 +34,7 @@
 #include <stdlib.h>
 #include <string.h>
 
+#include "archdep.h"
 #include "datasette.h"
 #include "lib.h"
 #include "log.h"
@@ -51,7 +52,6 @@
 #include "types.h"
 #include "uiapi.h"
 #include "vice-event.h"
-#include "arch/shared/archdep_real_path.h"
 
 /* #define DEBUG_TAPE */
 
@@ -519,6 +519,12 @@ int tape_image_detach(unsigned int unit)
     }
 
     return tape_image_detach_internal(unit);
+}
+
+void tape_image_detach_all(void)
+{
+    tape_image_detach(1);
+    tape_image_detach(2);
 }
 
 /* Attach.  */

@@ -273,7 +273,8 @@ static io_source_t easyflash_io1_device = {
     easyflash_io1_dump,       /* device state information dump function */
     CARTRIDGE_EASYFLASH,      /* cartridge ID */
     IO_PRIO_NORMAL,           /* normal priority, device read needs to be checked for collisions */
-    0                         /* insertion order, gets filled in by the registration function */
+    0,                        /* insertion order, gets filled in by the registration function */
+    IO_MIRROR_NONE            /* NO mirroring */
 };
 
 static io_source_t easyflash_io2_device = {
@@ -289,7 +290,8 @@ static io_source_t easyflash_io2_device = {
     NULL,                     /* device state information dump function */
     CARTRIDGE_EASYFLASH,      /* cartridge ID */
     IO_PRIO_NORMAL,           /* normal priority, device read needs to be checked for collisions */
-    0                         /* insertion order, gets filled in by the registration function */
+    0,                        /* insertion order, gets filled in by the registration function */
+    IO_MIRROR_NONE            /* NO mirroring */
 };
 
 static io_source_list_t *easyflash_io1_list_item = NULL;
@@ -465,7 +467,7 @@ void easyflash_powerup(void)
 {
     /* fill easyflash ram with startup value(s). this shall not be zeros, see
      * http://sourceforge.net/p/vice-emu/bugs/469/
-     * 
+     *
      * FIXME: the real hardware likely behaves somewhat differently
      */
     /*memset(easyflash_ram, 0xff, CART_RAM_SIZE);*/

@@ -375,7 +375,7 @@ static const read_func_ptr_t turbomaster_io_read_tab[0x11] = {
     colorram_read,
     colorram_read,
     cia1_read,
-    cia2_read,
+    c64io_dd00_read,
     c64io_de00_read,
     c64io_df00_read,
     NULL
@@ -395,7 +395,7 @@ static const store_func_ptr_t turbomaster_io_write_tab[0x11] = {
     colorram_store,
     colorram_store,
     cia1_store,
-    cia2_store,
+    c64io_dd00_store,
     c64io_de00_store,
     c64io_df00_store,
     NULL
@@ -507,7 +507,7 @@ static void set_write_item(int index, int config, void (*func)(WORD addr, BYTE v
     turbomaster_mem_write_tab[index][config] = func;
 }
 
-/* 
+/*
 config charen hiram loram $00-$9f $a0-$bf    $c0-cf $d0-$df   $e0-$ff
   0      0      0     0     RAM     RAM        RAM    RAM       RAM
   1      0      0     1     RAM     RAM        RAM  CHAR ROM    RAM
@@ -707,7 +707,7 @@ static int set_turbomaster_rom1_filename(const char *name, void *param)
 
     util_string_set(&turbomaster_rom1_filename, name);
     if (turbomaster_s1_cpu_started && turbomaster_s2_rom == 1) {
-        machine_trigger_reset(MACHINE_RESET_MODE_HARD);
+        machine_trigger_reset(MACHINE_RESET_MODE_POWER_CYCLE);
     }
 
     return 0;
@@ -731,7 +731,7 @@ static int set_turbomaster_rom2_filename(const char *name, void *param)
 
     util_string_set(&turbomaster_rom2_filename, name);
     if (turbomaster_s1_cpu_started && turbomaster_s2_rom == 2) {
-        machine_trigger_reset(MACHINE_RESET_MODE_HARD);
+        machine_trigger_reset(MACHINE_RESET_MODE_POWER_CYCLE);
     }
 
     return 0;
@@ -904,10 +904,10 @@ void turbomaster_mainloop(interrupt_cpu_status_t *cpu_int_status, alarm_context_
         EXPORT_REGISTERS();                                           \
         tmp = machine_jam("   " CPU_STR ": JAM at $%04X   ", reg_pc); \
         switch (tmp) {                                                \
-            case JAM_RESET:                                           \
+            case JAM_RESET_CPU:                                       \
                 DO_INTERRUPT(IK_RESET);                               \
                 break;                                                \
-            case JAM_HARD_RESET:                                      \
+            case JAM_POWER_CYCLE:                                     \
                 mem_powerup();                                        \
                 DO_INTERRUPT(IK_RESET);                               \
                 break;                                                \

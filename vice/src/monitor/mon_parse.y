@@ -30,37 +30,19 @@
 
 #include "vice.h"
 
-#ifndef __OS2__
 #ifdef __GNUC__
 #undef alloca
-#ifndef ANDROID_COMPILE
 #define        alloca(n)       __builtin_alloca (n)
-#endif
-#else
+#else /* not __GNUC__ */
 #ifdef HAVE_ALLOCA_H
 #include <alloca.h>
-#else  /* Not HAVE_ALLOCA_H.  */
-#if !defined(_AIX) && !defined(WINCE)
-#ifndef _MSC_VER
-extern char *alloca();
-#else
-#define alloca(n)   _alloca(n)
-#endif  /* MSVC */
-#endif /* Not AIX and not WINCE.  */
+#else  /* Not HAVE_ALLOCA_H  */
+char *alloca();
 #endif /* HAVE_ALLOCA_H.  */
-#endif /* GCC.  */
-#endif /* __OS2__ */
-
-/* SunOS 4.x specific stuff */
-#if defined(sun) || defined(__sun)
-#  if !defined(__SVR4) && !defined(__svr4__)
-#    ifdef __sparc__
-#      define YYFREE
-#    endif
-#  endif
-#endif
+#endif /* __GNUC__ */
 
 #include <assert.h>
+#include <ctype.h>
 #include <stdio.h>
 #include <string.h>
 #include <stdlib.h>
@@ -86,10 +68,7 @@ extern char *alloca();
 #include "types.h"
 #include "uimon.h"
 #include "vsync.h"
-
-#ifdef AMIGA_MORPHOS
-#undef REG_PC
-#endif
+#include "mon_profile.h"
 
 #define join_ints(x,y) (LO16_TO_HI16(x)|y)
 #define separate_int1(x) (HI16_TO_LO16(x))
@@ -101,16 +80,15 @@ static int resolve_datatype(unsigned guess_type, const char *num);
 static int resolve_range(enum t_memspace memspace, MON_ADDR range[2],
                          const char *num);
 
-#ifdef __IBMC__
-static void __yy_memcpy (char *to, char *from, int count);
-#endif
-
 /* Defined in the lexer */
 extern int new_cmd, opt_asm;
-extern void free_buffer(void);
-extern void make_buffer(char *str);
-extern int yylex(void);
 extern int cur_len, last_len;
+
+void free_buffer(void);
+void make_buffer(char *str);
+int yylex(void);
+
+void set_yydebug(int val);
 
 #define ERR_ILLEGAL_INPUT 1     /* Generic error as returned by yacc.  */
 #define ERR_RANGE_BAD_START 2
@@ -132,7 +110,13 @@ extern int cur_len, last_len;
 #define BAD_ADDR (new_addr(e_invalid_space, 0))
 #define CHECK_ADDR(x) ((x) == addr_mask(x))
 
+/* set to YYDEBUG 1 to get parser debugging via "yydebug" command, requires to
+   set_yydebug(1) in monitor.c:monitor_init */
+#ifdef DEBUG
 #define YYDEBUG 1
+#else
+#define YYDEBUG 0
+#endif
 
 %}
 
@@ -154,7 +138,7 @@ extern int cur_len, last_len;
 %token<i> BAD_CMD MEM_OP IF MEM_COMP MEM_DISK8 MEM_DISK9 MEM_DISK10 MEM_DISK11 EQUALS
 %token TRAIL CMD_SEP LABEL_ASGN_COMMENT
 %token CMD_LOG CMD_LOGNAME CMD_SIDEFX CMD_DUMMY CMD_RETURN CMD_BLOCK_READ CMD_BLOCK_WRITE CMD_UP CMD_DOWN
-%token CMD_LOAD CMD_SAVE CMD_VERIFY CMD_BVERIFY CMD_IGNORE CMD_HUNT CMD_FILL CMD_MOVE
+%token CMD_LOAD CMD_BASICLOAD CMD_SAVE CMD_VERIFY CMD_BVERIFY CMD_IGNORE CMD_HUNT CMD_FILL CMD_MOVE
 %token CMD_GOTO CMD_REGISTERS CMD_READSPACE CMD_WRITESPACE CMD_RADIX
 %token CMD_MEM_DISPLAY CMD_BREAK CMD_TRACE CMD_IO CMD_BRMON CMD_COMPARE
 %token CMD_DUMP CMD_UNDUMP CMD_EXIT CMD_DELETE CMD_CONDITION CMD_COMMAND
@@ -171,6 +155,7 @@ extern int cur_len, last_len;
 %token CMD_COMMENT CMD_LIST CMD_STOPWATCH RESET
 %token CMD_EXPORT CMD_AUTOSTART CMD_AUTOLOAD CMD_MAINCPU_TRACE
 %token CMD_WARP
+%token CMD_PROFILE FLAT GRAPH FUNC DEPTH DISASS PROFILE_CONTEXT CLEAR
 %token<str> CMD_LABEL_ASGN
 %token<i> L_PAREN R_PAREN ARG_IMMEDIATE REG_A REG_X REG_Y COMMA INST_SEP
 %token<i> L_BRACKET R_BRACKET LESS_THAN REG_U REG_S REG_PC REG_PCR
@@ -186,7 +171,7 @@ extern int cur_len, last_len;
 %type<range> address_range address_opt_range
 %type<a>  address opt_address
 %type<cond_node> opt_if_cond_expr cond_expr cond_operand
-%type<i> number expression d_number guess_default device_num
+%type<i> number expression d_number opt_d_number opt_context_num guess_default device_num
 %type<i> memspace memloc memaddr checkpt_num mem_op opt_mem_op
 %type<i> top_level value
 %type<i> assembly_instruction register
@@ -554,6 +539,8 @@ monitor_state_rules: CMD_SIDEFX TOGGLE end_cmd
                      { mon_quit(); YYACCEPT; }
                    | CMD_EXIT end_cmd
                      { mon_exit(); YYACCEPT; }
+                   | CMD_MAINCPU_TRACE end_cmd
+                     { mon_maincpu_trace(); }
                    | CMD_MAINCPU_TRACE TOGGLE end_cmd
                      { mon_maincpu_toggle_trace($2); }
                    ;
@@ -612,12 +599,32 @@ monitor_misc_rules: CMD_DISK rest_of_line end_cmd
                      { mon_stopwatch_reset(); }
                   | CMD_STOPWATCH end_cmd
                      { mon_stopwatch_show("Stopwatch: ", "\n"); }
+                  | CMD_PROFILE TOGGLE end_cmd
+                     { mon_profile_action($2); }
+                  | CMD_PROFILE end_cmd
+                     { mon_profile(); }
+                  | CMD_PROFILE FLAT opt_d_number end_cmd
+                     { mon_profile_flat($3); }
+                  | CMD_PROFILE GRAPH opt_context_num end_cmd
+                     { mon_profile_graph($3, -1); }
+                  | CMD_PROFILE GRAPH opt_context_num DEPTH d_number end_cmd
+                     { mon_profile_graph($3, $5); }
+                  | CMD_PROFILE FUNC address end_cmd
+                     { mon_profile_func($3); }
+                  | CMD_PROFILE DISASS address end_cmd
+                     { mon_profile_disass($3); }
+                  | CMD_PROFILE CLEAR address end_cmd
+                     { mon_profile_clear($3); }
+                  | CMD_PROFILE PROFILE_CONTEXT d_number end_cmd
+                     { mon_profile_disass_context($3); }
                   ;
 
 disk_rules: CMD_LOAD filename device_num opt_address end_cmd
-            { mon_file_load($2, $3, $4, FALSE); }
+            { mon_file_load($2, $3, $4, FALSE, FALSE); }
+          | CMD_BASICLOAD filename device_num opt_address end_cmd
+            { mon_file_load($2, $3, $4, FALSE, TRUE); }
           | CMD_BLOAD filename device_num address end_cmd
-            { mon_file_load($2, $3, $4, TRUE); }
+            { mon_file_load($2, $3, $4, TRUE, FALSE); }
           | CMD_BLOAD filename device_num error
             { return ERR_EXPECT_ADDRESS; }
           | CMD_SAVE filename device_num address_range end_cmd
@@ -673,7 +680,11 @@ data_entry_rules: CMD_ENTER_DATA address data_list end_cmd
                 ;
 
 monitor_debug_rules: CMD_YYDEBUG end_cmd
-                     { yydebug = 1; }
+                     {
+#if YYDEBUG
+                     yydebug = 1;
+#endif
+                     }
                    ;
 
 rest_of_line: R_O_L { $$ = $1; }
@@ -727,6 +738,10 @@ reg_asgn: register EQUALS number
 checkpt_num: d_number { $$ = $1; }
            | error { return ERR_EXPECT_CHECKNUM; }
            ;
+
+opt_context_num: d_number { $$ = $1; }
+               | { $$ = -1; }
+               ;
 
 address_opt_range: address_range
                  | address { $$[0] = $1; $$[1] = BAD_ADDR; }
@@ -795,7 +810,7 @@ cond_expr: cond_expr COND_OP cond_expr
                $$ = new_cond; $$->is_parenthized = FALSE;
                $$->child1 = $1; $$->child2 = $3; $$->operation = $2;
            }
-      	 | cond_expr COND_OP error
+         | cond_expr COND_OP error
            { return ERR_INCOMPLETE_COND_OP; }
          | L_PAREN cond_expr R_PAREN
            { $$ = $2; $$->is_parenthized = TRUE; }
@@ -817,16 +832,32 @@ cond_operand: register    { $$ = new_cond;
                             $$->value = $1; $$->is_reg = FALSE; $$->banknum=-1;
                             $$->child1 = NULL; $$->child2 = NULL;
                           }
-               |  '@' BANKNAME ':' address {$$=new_cond;
-                            $$->operation=e_INV;
+                            /* Example: break load 0 $ffff if @cpu:(pc) < $80 */
+               |  '@' BANKNAME ':' L_PAREN cond_expr R_PAREN {
+                            $$ = new_cond;
+                            $$->operation = e_INV;
                             $$->is_parenthized = FALSE;
                             $$->banknum = mon_banknum_from_bank(e_default_space, $2);
                             if ($$->banknum < 0) {
                                 return ERR_ILLEGAL_INPUT;
                             }
-                            $$->value = $4; $$->is_reg = FALSE;
+                            $$->value = 0;
+                            $$->is_reg = FALSE;
+                            $$->child1 = $5;
+                            $$->child2 = NULL;
+                        }
+               |  '@' BANKNAME ':' address {
+                            $$ = new_cond;
+                            $$->operation = e_INV;
+                            $$->is_parenthized = FALSE;
+                            $$->banknum = mon_banknum_from_bank(e_default_space, $2);
+                            if ($$->banknum < 0) {
+                                return ERR_ILLEGAL_INPUT;
+                            }
+                            $$->value = $4;
+                            $$->is_reg = FALSE;
                             $$->child1 = NULL; $$->child2 = NULL;  
-                        }                        
+                        }
                ;
 
 data_list: data_list opt_sep data_element
@@ -852,19 +883,23 @@ value: number { $$ = $1; }
 
 d_number: D_NUMBER { $$ = $1; }
         | B_NUMBER_GUESS { $$ = (int)strtol($1, NULL, 10); }
-        | O_NUMBER_GUESS { $$ = (int)strtol($1, NULL, 10); }
         | D_NUMBER_GUESS { $$ = (int)strtol($1, NULL, 10); }
+        | O_NUMBER_GUESS { $$ = (int)strtol($1, NULL, 10); }
         ;
 
+opt_d_number: d_number { $$ = $1; }
+            | { $$ = -1; }
+            ;
+
 guess_default: B_NUMBER_GUESS { $$ = resolve_datatype(B_NUMBER,$1); }
-             | O_NUMBER_GUESS { $$ = resolve_datatype(O_NUMBER,$1); }
              | D_NUMBER_GUESS { $$ = resolve_datatype(D_NUMBER,$1); }
+             | O_NUMBER_GUESS { $$ = resolve_datatype(O_NUMBER,$1); }
              ;
 
 number: H_NUMBER { $$ = $1; }
+      | B_NUMBER { $$ = $1; }
       | D_NUMBER { $$ = $1; }
       | O_NUMBER { $$ = $1; }
-      | B_NUMBER { $$ = $1; }
       | guess_default { $$ = $1; }
       ;
 
@@ -1235,6 +1270,14 @@ int parse_and_execute_line(char *input)
    return rc;
 }
 
+void set_yydebug(int val)
+{
+#if YYDEBUG
+    yydebug = val;
+#else
+#endif
+}
+
 static int yyerror(char *s)
 {
 #if 0
@@ -1243,22 +1286,95 @@ static int yyerror(char *s)
    return 0;
 }
 
+/* convert the string in "num" to a numeric value, depending on radix. this 
+   function does some magic conversion on addresses when radix is not hex.
+*/
 static int resolve_datatype(unsigned guess_type, const char *num)
 {
-   /* FIXME: Handle cases when default type is non-numerical */
-   if (default_radix == e_hexadecimal) {
-       return (int)strtol(num, NULL, 16);
-   }
+    int binary = 1, hex = 0, octal = 0, decimal = 1;
+    const char *c;
 
-   if ((guess_type == D_NUMBER) || (default_radix == e_decimal)) {
-       return (int)strtol(num, NULL, 10);
-   }
+    /* FIXME: Handle cases when default type is non-numerical */
+    if (default_radix == e_hexadecimal) {
+        return (int)strtol(num, NULL, 16);
+    }
 
-   if ((guess_type == O_NUMBER) || (default_radix == e_octal)) {
-       return (int)strtol(num, NULL, 8);
-   }
+    /* we do some educated guessing on what type of number we have here */
+    if (num[0] == '0') {
+        /* might be octal with leading zero */
+        octal = 1;
+    }
+    /* a string containing any digits not 0 or 1 can't be a binary number */
+    c = num;
+    while (*c) {
+        if ((*c != '0') && (*c != '1')) {
+            binary = 0;
+            break;
+        }
+        c++;
+    }
+    /* a string containing 8 or 9 can't be an octal number */
+    c = num;
+    while (*c) {
+        if ((*c == '8') && (*c == '9')) {
+            octal = 0;
+            break;
+        }
+        c++;
+    }
+    /* a string containing any of A-F can only be a hex number */
+    c = num;
+    while (*c) {
+        if ((tolower((unsigned char)*c) >= 'a') && (tolower((unsigned char)*c) <= 'f')) {
+            hex = 1;
+            octal = 0;
+            binary = 0;
+            decimal = 0;
+            break;
+        }
+        c++;
+    }
 
-   return (int)strtol(num, NULL, 2);
+    /* a hex number can only be hex no matter what */
+    if (hex) {
+        return (int)strtol(num, NULL, 16);
+    }
+
+    /* first, if default radix and detected number matches, just do it */
+    if (binary && (default_radix == e_binary)) {
+        return (int)strtol(num, NULL, 2);
+    }
+    if (decimal && (default_radix == e_decimal)) {
+        return (int)strtol(num, NULL, 10);
+    }
+    if (octal && (default_radix == e_octal)) {
+        return (int)strtol(num, NULL, 8);
+    }
+
+    /* second, if detected number matches guess type, do it */
+    if (binary && (guess_type == B_NUMBER)) {
+        return (int)strtol(num, NULL, 2);
+    }
+    if (decimal && (guess_type == D_NUMBER)) {
+        return (int)strtol(num, NULL, 10);
+    }
+    if (octal && (guess_type == O_NUMBER)) {
+        return (int)strtol(num, NULL, 8);
+    }
+
+    /* third only use the detected type */
+    if (binary) {
+        return (int)strtol(num, NULL, 2);
+    }
+    if (decimal) {
+        return (int)strtol(num, NULL, 10);
+    }
+    if (octal) {
+        return (int)strtol(num, NULL, 8);
+    }
+
+    /* use hex as default, should we ever come here */
+    return (int)strtol(num, NULL, 16);
 }
 
 /*

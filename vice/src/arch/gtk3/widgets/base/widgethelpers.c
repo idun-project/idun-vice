@@ -126,7 +126,7 @@ GtkWidget *vice_gtk3_create_indented_label(const char *text)
     GtkWidget *label = gtk_label_new(text);
 
     gtk_widget_set_halign(label, GTK_ALIGN_START);
-    g_object_set(label, "margin-left", 16, NULL);
+    gtk_widget_set_margin_start(label, 16);
     return label;
 }
 
@@ -176,13 +176,31 @@ GtkWidget *vice_gtk3_grid_new_spaced_with_label(int column_spacing,
     temp = lib_msprintf("<b>%s</b>", label);
     gtk_label_set_markup(GTK_LABEL(lbl), temp);
     gtk_widget_set_halign(lbl, GTK_ALIGN_START);
-    /* g_object_set(lbl, "margin-bottom", 8, NULL); */
     lib_free(temp);
 
     /* attach label */
     gtk_grid_attach(GTK_GRID(grid), lbl, 0, 0, span, 1);
     gtk_widget_show(grid);
     return grid;
+}
+
+
+/** \brief  Set 'margin-bottom' property of the title of a grid with title
+ *
+ * Since we've switched to using a lot of grids with 0 row spacing, it's often
+ * desired to have a little space between a grid's title and its content.
+ *
+ * \param[in]   grid    GtkGrid created with vice_gtk3_grid_new_spaced_with_label()
+ * \param[in]   margin  bottom-margin property value
+ */
+void vice_gtk3_grid_set_title_margin(GtkWidget *grid, int margin)
+{
+    if (grid != NULL && GTK_IS_GRID(grid)) {
+        GtkWidget *title = gtk_grid_get_child_at(GTK_GRID(grid), 0, 0);
+        if (title != NULL && GTK_IS_LABEL(title)) {
+            gtk_widget_set_margin_bottom(title, margin);
+        }
+    }
 }
 
 
@@ -193,27 +211,27 @@ GtkWidget *vice_gtk3_grid_new_spaced_with_label(int column_spacing,
  * \param[in,out]   grid    GtkGrid instance
  * \param[in]       top     top margin
  * \param[in]       bottom  bottom margin
- * \param[in]       left    left margin
- * \param[in]       right   right margin
+ * \param[in]       start   start (left) margin
+ * \param[in]       end     end (right) margin
  *
  */
 void vice_gtk3_grid_set_margins(GtkWidget *grid,
                                 gint top,
                                 gint bottom,
-                                gint left,
-                                gint right)
+                                gint start,
+                                gint end)
 {
     if (top >= 0) {
-        g_object_set(grid, "margin-top", top, NULL);
+        gtk_widget_set_margin_top(grid, top);
     }
     if (bottom >= 0) {
-        g_object_set(grid, "margin-bottom", bottom, NULL);
+        gtk_widget_set_margin_bottom(grid, bottom);
     }
-    if (left >= 0) {
-        g_object_set(grid, "margin-left", left, NULL);
+    if (start >= 0) {
+        gtk_widget_set_margin_start(grid, start);
     }
-    if (right >= 0) {
-        g_object_set(grid, "margin-right", right, NULL);
+    if (end >= 0) {
+        gtk_widget_set_margin_end(grid, end);
     }
 }
 

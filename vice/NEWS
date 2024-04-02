@@ -19,6 +19,631 @@ with the "-default" command line argument or use "restore default config"
 in the UI).
 
 
+* Changes in Vice 3.8
+=====================
+
+** general
+----------
+
+- added WIC64 support for C64,C128,SCPU64,VIC20
+- virtual device (host directory) fixes (Scratch command correctly returns
+  number of scratched files, Rename command produces "file exists" error if the
+  destination file exists)
+- added video capture in ZMBV format. This will produce lossless videos at correct
+  emulated FPS.
+- the old FFMPEG support was deprecated and is disabled by default. New experimental
+  code was added that will work with external ffmpeg executable instead.
+- reSID: fixed a Noise Init problem
+- reSID: filter tweaks
+- reSID: The 6581 saw+pulse waveform was wrong
+- reSID: tweak shift register reset time for 6581
+- reSID: 8580 Filter ringing fix
+- reSID: 6581 filters: allow negative values for kVg-Vx
+- made raw printer driver pass through all bytes 1:1
+- Tape: changed default zero-gap delay from the rather weird (and way too large)
+  value 20000 to the more sane 2500 which MTAP uses
+- RS232: handle RI line in IP232 (requires updated tcpser, see
+  ​https://github.com/go4retro/tcpser/pull/24.
+  - Add option to invert the RI line. This should help to make some more obscure
+    BBS programs work
+- RS232: removed undocumented feature to use unix domain sockets when the first
+  character of a rs232 device is a pipe character, and instead used pipes, like
+  it will be done on windows too
+- Drives: fixed 1571CR emulation
+- Drives: allow up to 83 tracks for 3.5inch mechs
+- Drives: fixed clock rollover in rotation code
+- REU: fixed DMA access to C64 RAM at $00/$01
+- Added PaperclipE, PaperclipSC, and Paperclip2 dongle support.
+- Added woj userport joystick adapter emulation.
+- provide fake sid hooks so hardsid can be used when fastsid is disabled
+- Printer: new reworked emulation handles various CBM Printers: 2022, 4023, 8023,
+  MPS801, MPS801, MPS803
+- Printer: tweaked MPS page height, now allows print shop to print a greetings
+  card on a single page.
+- Printer: do not produce any output for non-printable codes
+- Printer: when using the graphic output driver, only produce a new file when
+  actually doing a formfeed.
+- Build the list of available palette files at runtime, scan system path/dirs as
+  needed. Also read extra info from the .vpl files. New palettes can now be just
+  dropped into the data dir and they will appear in the UIs.
+- allow color controls to be used with external palette and when no crt emulation
+  is active.
+- Added more realistic vicii color ram init code.
+- CIA: shiftregister fixes
+- CIA: fixed ICR timing/behaviour (This fixes the dd0dtest from the testbench)
+- Support for ISA/PCI devices that were accessed via direct I/O was removed,
+  since this would not work in any sane modern OS anymore. The affected devices
+  are: parsid (windows), ssi2001 (all)
+- Z80: OUT, OUTD, OUTI, OTIR, OTDR instruction fixes
+- Fixed -initbreak reset so that the first instruction doesn't run
+
+
+** Buildsystem
+--------------
+
+- add configure switch `--enable-experimental-devices` to enable experimental
+  emulation of some devices.
+- changed configure switch `--with-libcurl` to `--without-libcurl`.
+- changed configure switch `--enable-lame` to `--with-lame`
+- changed configure switch `--enable-libieee1284` to `--with-libieee1284`
+- changed configure switch `--enable-portaudio` to `--with-portaudio`
+- configure: change `--with-zip-bin` to `--with-unzip-bin`
+- remove the configure switch --with-readline/--without-readline.
+
+- Do not build PDF docs unless --enable-pdf-docs
+- Fixed macOS bindist. Probably doesn't work without code signing, however an
+  attempt is now made to detect and use a signing identity.
+- when installing with x64 not enabled, install a symlink x64->x64sc instead
+- Add unzip.exe and its deps to Gtk3 bindist
+
+
+** C64 fixes
+------------
+
+- Blackbox 9 garbled screen problem was fixed
+- added 'Hyper-Basic' cartridge support
+- fixed "MAX-BASIC" cartridge support in "MultiMAX" emulation
+- more correct memory map for the "Max Machine"
+- fix attaching 8k ultimax .bin cartridge images
+
+
+** C128 fixes
+------------
+
+- Cartridge system now supports cartridges that work in both C128 and C64 mode
+- added "RAM-Link" support
+- added LTK support, as well as other kernal replacements carts
+- comal-80 (c128) fixed
+- MMU fixes
+  - Keep currently set c128 bank when changing the c64mode mmu bit.
+  - Fix x128 c64 mode p0/p1 relocation
+  - Added proper z80 mmu control
+- add a 'SCART' VDC palette, which contains 'dark yellow' instead of the (correct) brown
+- Fix x128 VDC mirroring
+- x128 properly starts with Z80 and then transfers control to 8502
+- Z80: various I/O mapping fixes
+- use separate resources for localized chargen and c64 kernal
+
+
+** VIC20 fixes
+--------------
+
+- fixed NTSC colors
+
+
+** PLUS4 fixes
+--------------
+
+- Map out pio-1 and only handle datasette sense in the fd10-fd1f range when
+  c16/c116/c232 model is selected.
+
+Keymaps:
+- added reference image of native Plus4 keyboard layout
+- added reference image of Plus4, symbolic, US layout
+- added reference image of Plus4, symbolic, german layout
+- added reference image of Plus4, positional, US layout
+- added reference image of Plus4, positional, german layout
+
+
+** C64DTV fixes
+---------------
+
+- loading flash image was broken
+- use DTV model specific flash ROM content
+
+
+** SCPU64 fixes
+---------------
+
+- Do not call dma or clock stretch functions when a dma is already going on,
+  dma is done at 1mhz speeds.
+
+
+** PET fixes
+------------
+
+- Implement some beam-racing timing improvements for models with and without CRTC
+- Add a PET palette that approximates the slightly blue white of the 2001 model.
+- Monitor: handle SuperPET 6809 banking correctly
+
+
+** CBM-II fixes
+---------------
+
+- CRTC: Esc+U / Esc+S - underscore cursori on / off: now works.
+- Fix monitor watchpoints on indirect accesses to a zero page.
+
+Keymaps:
+- added reference image of native CBM2 keyboard layout
+- added reference image of CBM2, symbolic, US layout
+- added reference image of CBM2, positional, US layout
+- added reference image of CBM2, symbolic, german layout
+- added reference image of CBM2, positional, german layout
+
+
+** Monitor fixes
+----------------
+
+- Added indirections to the expression evaluator for breakpoint conditions.
+- made regular 'load' command never set Kernal pointers
+- added new 'loadbasic'/'ldb' command that always sets Kernal pointers.
+- Display correct column count for VICII and TED
+- Add detailed TED register info for the IO monitor command
+- added profiler support in the monitor, right now supports only 6502
+- add monitor io dump for wd1770 and pc8477
+- implement monitor io dump for 6532 (RIOT)
+- fixed Disassembly of 6809 instructions
+- make  monitor D and M command see the same memory (as set by the monitor's
+  "bank" command), while single step, breakpoints, cpu history and debug cpu
+  trace see the memory as the cpu sees it at that time.
+- fixed crash when using an invalid DOS command with @, documented limitations
+  of the @ command
+- fixed crash when accessing a non existent directory
+
+
+** C1541 fixes
+--------------
+
+- Fixed chain command to print from the last sector how many bytes are used.
+- make opencbm available in c1541 by using "opencbm" as the filename
+
+
+** cartconv fixes
+-----------------
+
+- better support for VIC20 cartridges
+
+
+** petcat fixes
+--------------
+
+- Added new BASIC 65 keywords
+
+
+** GTK fixes
+------------
+
+- Fixed saving monitor position and size and restoring on boot
+- All numeric values are displayed in proper units
+- make dropping files on the main window work like it did in winvice - hold
+  shift to just mount a new disk.
+- VSID: Look up STIL info for file passed on command line
+- macOS: Use Command+W to close monitor window
+- Open file manager to view directory containing vice.log, instead of opening
+  vice.log with an editor
+- Settings: remember directory/filename in load/save dialogs
+- Speed up RAM init pattern view.
+- Speed up CRT slider widgets.
+- Settings dialog: try to keep consistent (slightly smaller) size of the various
+  nodes in the dialog; the dialog should fit on a ~1024x720 display.
+- Settings dialog: move host GPU rendering options to Display -> Host display.
+- Settings dialog: rework drive settings to use dialog space more efficiently.
+- Settings dialog: rework printer settings.
+- Settings dialog: more consistent cartridge setting layouts.
+- Rename "soft reset" to "Reset machine CPU".
+- Rename "hard reset" to "Power cycle machine".
+- Simplify custom hotkeys saving: using "Save" now saves the hotkeys as
+  "gtk3-hotkeys-$EMU.vhk" in the user's configuration directory. The UI also
+  indicates where the current hotkeys were loaded from (VICE-provided default
+  hotkeys, configuration directory or custom location).
+- Hotkeys Alt/Command+3-6 added to send formfeed to printers (3 = userport,
+  4-6 = printer 4, 5 and plotter).
+- Hotkey actions added to select VIC/VICII/TED border modes, no default hotkeys
+  assigned.
+- Hotkey action to toggle status bars split into "show-statusbar-toggle" and
+  "show-statusbar-toggle-secondary" (x128 VDC only) actions.
+- Add status bar LEDs to control SCPU Speed (labeled "turbo"), and JiffyDOS
+  switches (xscpu64 only).
+- Add default hotkey Alt+T/Command+T to toggle SCPU Turbo mode (xscpu64 only).
+
+Keymaps:
+
+- Added C128 KeyrahV3, US layout
+- Added C128 KeyrahV3, german layout
+- Added CBM2 positional, US layout
+- Added CBM2 positional, german layout
+- Added Plus4 Spanish positional
+- Added Plus4 Positional, german layout
+- fix C64 danish symbolic
+- fix C128 Positional, US layout
+- fix C128 Positional, german layout
+- fix CBM2 Symbolic, US layout
+- fix CBM2 Symbolic, german layout
+- fix PET Positional, US layout
+- fix PET Positional, german layout
+- fix PET Symbolic, US layout
+- fix Plus4 Positional, US layout
+- fix Plus4 Symbolic, US layout
+- fix Plus4 Symbolic, DE layout
+
+
+** SDL Fixes
+------------
+
+- Rename "soft reset" to "Reset machine CPU"
+- Rename "hard reset" to "Power cycle machine"
+- Show scrollbar-like indicators when not all menu items can be shown on the
+  screen.
+- Update UI to use the same syntax as the Gtk hotkeys files: old .vhk files
+  generated by VICE 3.7.1 or earlier will not work anymore.
+- Add default hotkey Alt+T/Command+T to toggle SCPU Turbo mode (xscpu64 only).
+- Add menu item to toggle patching of the v1 Kernal to make the ieee-488
+  interface work (xpet only).
+- Add menu items to load either the normal or the German chargen (xpet only).
+
+
+** Linux fixes
+--------------
+
+- change default user directory for `vice.log` and autostart disk images to
+  adhere to $XDG_STATE_HOME (defaults to ~/.local/state/vice).
+
+
+** macOS fixes
+--------------
+
+- fix scrolling in the monitor
+
+
+** Windows fixes
+----------------
+
+- Add -no-direct-streams command line option on Windows. With -no-direct-streams
+  the stream direction code that reconnects the standard streams stdin, stdout
+  and stderr to VICE is not called. This will mostly be useful for debugging
+  weird issues on Windows.
+- fixed issues with mouse warping
+- fixed loading of the opencbm- and libusb DLLs
+
+
+** BSD fixes
+------------
+
+- Fix nasty buzz on sun/netbsd sound driver
+
+
+* Changes in Vice 3.7.1
+=======================
+
+This is a quick bugfix release
+
+- Fixed macOS layout incompatibility with GTK 3.24.36
+- macOS Ventura fixes
+
+
+* Changes in Vice 3.7
+=====================
+
+
+** general
+----------
+
+- From now on VICE will write its version into the config file and show a
+  warning message when using a config file from a different version.
+
+- The binary monitor interface is stable now. Examples of projects using it:
+
+  - https://github.com/GeorgRottensteiner/C64Studio
+  - https://github.com/MihaMarkic/vice-bridge-net
+  - https://github.com/Sakrac/IceBroLite
+  - https://github.com/empathicqubit/vscode-cc65-debugger
+  - https://github.com/rolandshacks/vs64
+
+- Added Debian packages of development builds of the SDL2 and Gtk3 UIs and the
+  headless build (amd64 only).
+
+  You can find bleeding edge development builds on github:
+
+  https://github.com/VICE-Team/svn-mirror/releases
+
+  Whenever you stumble about a bug, please try with the latest development build
+  first - perhaps we already fixed it :)
+
+- Removed all kernal patching and load different ROM files instead. This is
+  easier to handle and more logical anyway :)
+
+- Renamed all included ROM files to use a more elaborate naming scheme, for
+  example as in "kernal-901227-01.bin".
+
+  Unfortunately not all included files could be identified yet - if you have
+  related ROM dumps around yourself, please take your time to compare against
+  the following, and let us know if you can identify one of these files:
+
+  - C128 ROMs: kernalfi, kernalfr, kernalit, kernalno
+  - Printer ROMs: mps801.bin, mps803.bin, nl10.bin
+  - PET ROMs: chargen.de
+
+  (Wanted in all cases is what the markings on the actual chip read)
+
+- CRT emulation improvements:
+  - uses measured (different) color coordinates for odd/even lines when possible
+  - added option for U-only delay line (1084 style)
+
+- More realistic handling of the case when two paddles are selected at the same
+  time.
+
+- Keyboard handling was rewritten / fixed
+  - The case when two host keys are mapped to different CBM keys with different
+    modifiers is handled differently (correctly) now, so some old keymap(s) may
+    expose detail errors as a result - please report them!
+  - Fixed Shiftlock/Capslock mapping
+  - All extra keys that are not in the regular matrix are handled in generic
+    code now.
+    - used by C128 40/80 and CAPS keys, Restore
+    - extra keys can operate in "non locking" mode
+
+- More realistic behaviour of the virtual drive
+  - always return 'files scratched' (instead of 'file not found'), even if the
+    file does not exist
+
+- More realistic behaviour when mounting images:
+  - When attaching a d64 image to a 1571 drive, create an 'unformatted' image for
+    the second side.
+  - Create empty tracks for non existing tracks also when mounting gcr images
+
+- SID fixes:
+  - use a few more bits for better accuracy when calculating the 8580 filter
+    DAC values.
+  - fix filter ringing/self oscillating with 6581 and 8580
+
+- CIA fixes:
+  - Improved the CIA shift register.
+  - Fix the case when pb changes value after changing the control bits for
+    pb/pb7 output. Fixes the turn disk space detection of the 'Love' demo.
+
+- Add SPT (Stupid Pet Tricks) userport joystick adapter emulation.
+
+- Fixed use of SO_REUSEPORT on server sockets - this allowed multiple VICE
+  instances to bind to the same port, with an indeterminant one receiving each
+  incoming connection. Now uses SO_REUSEADDR instead, which allows use of a
+  port that remains in the TIME_WAIT state after a previous process closed,
+  but does not allow use of a port that is still in active use.
+
+- Add DragonFly BSD support.
+
+- Remove Android support.
+
+
+** build system
+---------------
+
+- Rename configure options: --enable-native-gtk3ui   => --enable-gtk3ui
+                            --enable-sdlui2          => --enable-sdl2ui
+                            --enable-sdlui           => --enable-sdl1ui
+                            --enable-external-ffmpeg => --enable-ffmpeg
+
+- Remove jpeg support (--enable-jpeg).
+
+- Disable CatWeasel, SSI2001 and ParSID support by default.
+
+- Enable CPU history by default.
+
+- Add `make bindist` for headless builds on Windows/Msys2.
+
+- Don't check for joystick support when configuring for a headless build.
+
+- Add configure check for [n]pcap headers on Windows.
+
+- Fix --with-sdlsound configuring for SDL2 even when SDL1 was explicitly
+  requested via --enable-sdl1ui.
+
+- Fix single target builds.
+
+- Fix installing Gtk3-specific files when not configured for Gtk3.
+
+
+** C64 fixes
+------------
+
+- Use measured PAL color vectors (provided by Tobias)
+
+- Fix autostarting and smart-attaching tapecart (.tcrt) images
+
+- Fix cycle count stored into the cpu history (only x64sc)
+
+- Cartridge fixes:
+  - Fix Pagefox RAM allocation
+  - Fixed "Super Explode V5" cap timing
+  - Added support for "Partner 64" cartridge
+  - Fix attaching non "Main Slot" cartridges via .crt file (IEEE488, Ramlink,
+    IEEE-Flash, MMC64, Magic Voice)
+  - Fix REU behaviour on triggering DMA by using a RMW instruction with
+    address $ff00 (only x64sc)
+
+- Fixed and document C64 US and german keymaps.
+- Added keymaps for UK keyboard (nicked from 'mad' on lemon)
+- Added keymaps for Turkish keyboard (provided by erhan)
+- Updated swedish keymaps (provided by Jaakko Luoto and Jari Hovatov)
+
+- Added pictures of the C64 layout and keymap (symbolic+positional, DE+US) to
+  the docs.
+
+** C128 fixes
+-------------
+
+- Added foundation of c128 cartridge system. Only attaching c128 exclusive
+  cartridges/crt files works right now.
+  - added support for "Partner 128" cartridge
+  - added support for "Magic Desk 128" cartridge
+  - added support for "GMod2 C128" cartridge
+  - added support for "Comal80 C128" cartridge
+  - added support for "Warpspeed 128" cartridge
+
+- Add ram02 and ram03 in the monitor when 'full banks' mode is active.
+
+- Fix filling of VDC ram from the monitor.
+
+- Fix DMA bank.
+
+- Fix autostart in C64 mode
+
+- Fixed and document C128 US and german keymaps.
+
+- Added pictures of the C128 layout and keymap (symbolic+positional, DE+US) to
+  the docs.
+
+
+** VIC-20 fixes
+---------------
+
+- use measured PAL color vectors (provided by Tobias)
+
+
+** PET fixes
+------------
+
+- Improved the sound output by reworking parts of the VIA, in particular as
+  related to the shift register and the CB2 output.
+- Sound made by "manual" control of the CB2 output now works.
+- Added an adjustable low-pass filter to the sound output, since different
+  speakers on real hardware behave quite different in how much they "muffle"
+  the sound.
+
+- Fixed and document PET layout and US/DE keymaps.
+
+- Added pictures of the PET layout and keymap (graphical+business,
+  symbolic+positional, DE+US) to  the docs.
+
+
+** VSID fixes (Gtk3 only)
+-------------------------
+
+- Properly update the mixer widget with the current SID model when playing
+  a (subt)tune.
+
+- Add support for the `HVSC_BASE` environment variable: If the HVSC base
+  directory is left blank in the VSID settings the `HVSC_BASE` will be used
+  to determine the location of the High Voltage SID Collection files.
+
+- Add customizable hotkeys.
+
+- Add default hotkeys for subtunes #1-#30, Play, Pause, Stop, First,
+  Previous, Next, Last, FFWD, Loop.
+
+- Display STIL view and Playlist on top of each other, not next to each other.
+
+- Strip HVSC base dir from playlist 'Path' column.
+
+- Add playlist loading/saving (in M3U format).
+
+- Add autoplaying the next subtune when the current subtune has finished
+  playing (requires HVSC).
+
+- Add autplaying the next SID in the playlist when all subtunes of a SID have
+  played.
+
+- Fix missing display of the 'NAME' STIL field.
+
+
+** Monitor fixes
+----------------
+
+- Fix && and || in cond_expr in the monitor. Previously, both && and &, and ||
+  and |, did the same thing: a logical and/or. Now the && and || do the logical
+  operation.
+
+
+** SDL fixes
+------------
+
+- Correct colors on big endian platforms.
+
+- Add clearing of joystick mappings.
+
+- Add showing of joystick mappings for menu actions.
+
+- Fix setting of tde and virual device traps for xcbm2 and xcbm5x0.
+
+- Add CMD HD size elements.
+
+- Add PET ROM selection elements.
+
+- Add SuperPET CPU selection.
+
+
+** Gtk3 fixes
+-------------
+
+- Remove unused -gtkbackend command line option: we no longer support
+  software rendering, so the only option left is accelerated rendering.
+
+- Improved statusbar layout.
+
+- Various layout fixes in the settings dialog.
+
+- More meaningful sliders for CRT settings.
+
+- Add -${CHIP}showstatusbar/+${CHIP}showstatusbar command line options to show
+  or hide the status bar.
+
+- Add -${CHIP}fullscreen/+${CHIP}fullscreen to enable or disable fullscreen
+  mode.
+
+- Hotkeys can be assigned to actions that do not have a corresponding menu
+  item.
+
+- Properly show custom hotkeys in popup menus.
+
+- Make saving custom hotkeys work.
+
+- Correct colors on big endian platforms.
+
+- Fixed CBM directory displayer in statusbar popup and file selection dialog.
+
+- Installed a crazy, but ugly, hack to create the initial window at its final
+  size, so the window manager will not place it off screen when the emulator
+  was started with -default
+
+
+** Windows fixes
+----------------
+
+- Fix monitor Ctrl+C/V and other Ctrl+.. combinations (Gtk3).
+- Fix issues with numpad
+- Fix page up/page down keys
+- Fix Alt-Gr in the Monitor
+- Fixed MIDI device list / select
+
+
+** MacOS fixes
+--------------
+
+- Fix issues with numpad
+- Fixed MIDI device dialog
+- Fixed resize performance when emu fps > host display Hz
+
+** Linux fixes
+--------------
+
+- Fixed MIDI device dialog
+
+
+** Haiku fixes
+--------------
+
+- Fix `make bindist`.
+
+
 * Changes in Vice 3.6.1
 =======================
 

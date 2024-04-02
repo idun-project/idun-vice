@@ -30,7 +30,7 @@
 #include "vice.h"
 #include <gtk/gtk.h>
 
-#include "tick.h"
+#include "archdep.h"
 #include "vice_gtk3.h"
 
 /** \brief Used to optimise display updates
@@ -44,6 +44,7 @@ typedef struct statusbar_speed_widget_state_s {
     int last_shiftlock;
     int last_mode4080;
     int last_capslock;
+    int last_diagnostic_pin;
 } statusbar_speed_widget_state_t;
 
 GtkWidget *speed_menu_popup_create(void);

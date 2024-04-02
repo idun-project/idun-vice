@@ -32,7 +32,7 @@
     - bank register at $FDFE
  */
 
-#define DEBUG_MAGICCART
+/* #define DEBUG_MAGICCART */
 
 #include "vice.h"
 
@@ -82,7 +82,8 @@ static io_source_t magiccart_device = {
     magiccart_dump,             /* dump function for the monitor */
     CARTRIDGE_PLUS4_MAGIC,      /* cartridge ID */
     IO_PRIO_NORMAL,             /* normal priority, device read needs to be checked for collisions */
-    0                           /* insertion order, gets filled in by the registration function */
+    0,                          /* insertion order, gets filled in by the registration function */
+    IO_MIRROR_NONE              /* NO mirroring */
 };
 
 static io_source_list_t *magiccart_list_item = NULL;
@@ -145,7 +146,7 @@ int magiccart_bin_attach(const char *filename, uint8_t *rawcart)
     if (fd == NULL) {
         return -1;
     }
-    len = (unsigned int)util_file_length(fd);
+    len = (unsigned int)archdep_file_size(fd);
     fclose(fd);
 
     DBG(("magiccart_bin_attach len: %04x\n", len));

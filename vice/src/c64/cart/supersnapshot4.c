@@ -121,7 +121,8 @@ static io_source_t ss4_io1_device = {
     NULL,                          /* TODO: device state information dump function */
     CARTRIDGE_SUPER_SNAPSHOT,      /* cartridge ID */
     IO_PRIO_NORMAL,                /* normal priority, device read needs to be checked for collisions */
-    0                              /* insertion order, gets filled in by the registration function */
+    0,                             /* insertion order, gets filled in by the registration function */
+    IO_MIRROR_NONE                 /* NO mirroring */
 };
 
 static io_source_t ss4_io2_device = {
@@ -137,7 +138,8 @@ static io_source_t ss4_io2_device = {
     NULL,                          /* TODO: device state information dump function */
     CARTRIDGE_SUPER_SNAPSHOT,      /* cartridge ID */
     IO_PRIO_NORMAL,                /* normal priority, device read needs to be checked for collisions */
-    0                              /* insertion order, gets filled in by the registration function */
+    0,                             /* insertion order, gets filled in by the registration function */
+    IO_MIRROR_NONE                 /* NO mirroring */
 };
 
 static io_source_list_t *ss4_io1_list_item = NULL;
@@ -337,7 +339,7 @@ int supersnapshot_v4_bin_attach(const char *filename, uint8_t *rawcart)
  * $006070 CHIP ROM   #003 $8000 $2000 $2010
  *
  * cartconv produced this from 2011 to 12/2015:
- * 
+ *
  * offset  sig  type  bank start size  chunklen
  * $000040 CHIP ROM   #000 $8000 $2000 $2010
  * $002050 CHIP ROM   #000 $a000 $2000 $2010

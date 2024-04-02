@@ -46,7 +46,7 @@
 
 /*
    "BIS-Plus" by Micro-Luc
-   
+
     - 2/4/8K ROM Variants
     - IO1 writes disable the cartridge ROM
 */
@@ -71,7 +71,8 @@ static io_source_t bisplus_io1_device = {
     bisplus_dump,             /* device state information dump function */
     CARTRIDGE_BISPLUS,        /* cartridge ID */
     IO_PRIO_NORMAL,           /* normal priority, device read needs to be checked for collisions */
-    0                         /* insertion order, gets filled in by the registration function */
+    0,                        /* insertion order, gets filled in by the registration function */
+    IO_MIRROR_NONE            /* NO mirroring */
 };
 
 static io_source_list_t *bisplus_io1_list_item = NULL;
@@ -175,7 +176,7 @@ int bisplus_crt_attach(FILE *fd, uint8_t *rawcart)
             return -1;
             break;
     }
-    
+
     if (crt_read_chip(rawcart, 0, &chip, fd)) {
         return -1;
     }
@@ -245,8 +246,8 @@ int bisplus_snapshot_read_module(snapshot_t *s)
     }
 
     if (0
-        || SMR_B(m, &bis_rom_enabled) < 0 
-        || SMR_B(m, &bis_rom_kb) < 0 
+        || SMR_B(m, &bis_rom_enabled) < 0
+        || SMR_B(m, &bis_rom_kb) < 0
         || SMR_BA(m, roml_banks, 0x2000) < 0) {
         goto fail;
     }

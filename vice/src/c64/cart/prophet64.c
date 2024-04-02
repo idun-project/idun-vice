@@ -104,7 +104,8 @@ static io_source_t p64_device = {
     p64_dump,              /* device state information dump function */
     CARTRIDGE_P64,         /* cartridge ID */
     IO_PRIO_NORMAL,        /* normal priority, device read needs to be checked for collisions */
-    0                      /* insertion order, gets filled in by the registration function */
+    0,                     /* insertion order, gets filled in by the registration function */
+    IO_MIRROR_NONE         /* NO mirroring */
 };
 
 static io_source_list_t *p64_list_item = NULL;
@@ -153,7 +154,7 @@ int p64_bin_attach(const char *filename, uint8_t *rawcart)
 int p64_crt_attach(FILE *fd, uint8_t *rawcart)
 {
     crt_chip_header_t chip;
-    int i, cnt = 0;
+    int i;
 
     for (i = 0; i <= 0x1f; i++) {
         if (crt_read_chip_header(&chip, fd)) {
@@ -167,7 +168,6 @@ int p64_crt_attach(FILE *fd, uint8_t *rawcart)
         if (crt_read_chip(rawcart, chip.bank << 13, &chip, fd)) {
             return -1;
         }
-        cnt++;
     }
 
     return p64_common_attach();

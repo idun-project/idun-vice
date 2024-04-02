@@ -84,12 +84,22 @@ int cmdline_register_options(const cmdline_option_t *c)
     p = options + num_options;
     for (; c->name != NULL; c++, p++) {
         if (lookup_exact(c->name)) {
-            archdep_startup_log_error("CMDLINE: (%d) Duplicated option '%s'.\n", num_options, c->name);
+            archdep_startup_log_error("CMDLINE: (%u) Duplicated option '%s'.\n", num_options, c->name);
             return -1;
         }
 
         if (c->description == NULL) {
-            archdep_startup_log_error("CMDLINE: (%d) description id not used and description NULL for '%s'.\n", num_options, c->name);
+            archdep_startup_log_error("CMDLINE: (%u) description id not used and description NULL for '%s'.\n", num_options, c->name);
+            return -1;
+        }
+
+        if ((c->attributes & CMDLINE_ATTRIB_NEED_ARGS) && (c->param_name == NULL)) {
+            archdep_startup_log_error("CMDLINE: (%u) Parameter description missing for '%s'.\n", num_options, c->name);
+            return -1;
+        }
+
+        if (!(c->attributes & CMDLINE_ATTRIB_NEED_ARGS) && (c->param_name != NULL)) {
+            archdep_startup_log_error("CMDLINE: (%u) Parameter description used, but attribute is missing for '%s'.\n", num_options, c->name);
             return -1;
         }
 
@@ -379,6 +389,9 @@ int cmdline_get_num_options(void)
     return num_options;
 }
 
+/* #define DEBUG_OPTIONS_LOG */
+/* #define DEBUG_OPTIONS_LOG_2 */     /* list options that are not related to a resource */
+
 void cmdline_log_active(void)
 {
     unsigned int i;
@@ -400,21 +413,44 @@ void cmdline_log_active(void)
             if (restype == RES_INTEGER) {
                 resources_get_int(resname, &resval_int);
                 resources_get_default_value(resname, &resval_int_default);
+#ifdef DEBUG_OPTIONS_LOG
+                printf("\n(int) opt: %s res: %s val: %d default: %d attribs:%x -> ",
+                       optname, resname, resval_int, resval_int_default, (unsigned int)options[i].attributes);
+#endif
             } else if (restype == RES_STRING) {
                 resources_get_string(resname, &resval_str);
                 resources_get_default_value(resname, &resval_str_default);
+#ifdef DEBUG_OPTIONS_LOG
+                printf("\n(str) opt: %s res: %s val: %s default: %s attribs:%x -> ",
+                       optname, resname, resval_str, resval_str_default, (unsigned int)options[i].attributes);
+#endif
             }
         }
+#ifdef DEBUG_OPTIONS_LOG_2
+        else {
+                printf("\nopt: %s attribs:%x -> ",
+                       optname, (unsigned int)options[i].attributes);
+        }
+#endif
         cmd = NULL;
-        if ((options[i].attributes & CMDLINE_ATTRIB_NEED_ARGS) && param != NULL) {
+        if ((options[i].attributes & CMDLINE_ATTRIB_NEED_ARGS) && (param != NULL)) {
             /* the cmdline option needs a parameter, we assume this is what the resource got assigned */
+#ifdef DEBUG_OPTIONS_LOG
+            printf("has param, ");
+#endif
             if (restype == RES_INTEGER) {
+#ifdef DEBUG_OPTIONS_LOG
+            printf("int, ");
+#endif
                 if (resval_int != resval_int_default) {
                     char tmp[32];
                     sprintf(tmp, "%d", resval_int);
                     cmd = util_concat(optname, " \"", tmp, "\"", NULL);
                 }
             } else if (restype == RES_STRING) {
+#ifdef DEBUG_OPTIONS_LOG
+            printf("str, ");
+#endif
                 if ((resval_str != NULL) && (resval_str_default != NULL)) {
                     if (strcmp(resval_str, resval_str_default)) {
                         cmd = util_concat(optname, " \"", resval_str, "\"", NULL);
@@ -422,15 +458,24 @@ void cmdline_log_active(void)
                 }
             }
         } else {
+#ifdef DEBUG_OPTIONS_LOG
+            printf("no param, ");
+#endif
             /* the options does not need a parameter, the resource value should match the value
                defined in the option itself */
             if (restype == RES_INTEGER) {
+#ifdef DEBUG_OPTIONS_LOG
+            printf("int, ");
+#endif
                 if (resval_int != resval_int_default) {
                     if (resval_int == vice_ptr_to_int(options[i].resource_value)) {
                         cmd = lib_strdup(optname);
                     }
                 }
             } else if (restype == RES_STRING) {
+#ifdef DEBUG_OPTIONS_LOG
+            printf("str, ");
+#endif
                 if ((resval_str != NULL) && (resval_str_default != NULL) && (options[i].resource_value != NULL)) {
                     if (strcmp(resval_str, resval_str_default)) {
                         if (!strcmp(resval_str, options[i].resource_value)) {
@@ -440,6 +485,7 @@ void cmdline_log_active(void)
                 }
             }
         }
+
         if (cmd) {
             char *p;
             p = cmdline; /* remember old pointer */

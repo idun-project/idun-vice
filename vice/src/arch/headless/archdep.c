@@ -80,7 +80,7 @@ int archdep_init(int *argc, char **argv)
     archdep_create_user_config_dir();
 
     /* needed for early log control (parses for -silent/-verbose) */
-    log_verbose_init(*argc, argv);
+    log_early_init(*argc, argv);
 
     return 0;
 }
@@ -112,7 +112,7 @@ void archdep_shutdown(void)
         argv0 = NULL;
     }
 
-#ifndef ARCHDEP_OS_WINDOWS
+#ifndef WINDOWS_COMPILE
     archdep_network_shutdown();
 #endif
 }

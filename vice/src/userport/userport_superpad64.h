@@ -1,5 +1,5 @@
 /*
- * userport_superpet64.h:
+ * userport_superpad64.h:
  *
  * Written by
  *  Marco van den Heuvel <blackystardust68@yahoo.com>
@@ -29,6 +29,6 @@
 
 #include "types.h"
 
-extern int userport_superpad64_resources_init(void);
+int userport_superpad64_resources_init(void);
 
 #endif

@@ -56,8 +56,6 @@
 
 #include "socketimpl.h"
 
-#include "archdep_defs.h"
-
 /* Fix Windows' definition of 'INVALID_SOCKET (SOCKET)(~0)', which breaks the
  * code further down. Any 'normal' OS uses -1, but Microsft had to use an
  * unsigned int with INVALID_SOCKET being the largest value for that unsigned
@@ -65,7 +63,7 @@
  *
  * Since Windows only works on two's complement systems, this will work.
  */
-#ifdef ARCHDEP_OS_WINDOWS
+#ifdef WINDOWS_COMPILE
 # undef INVALID_SOCKET
 # define INVALID_SOCKET -1
 #endif
@@ -404,19 +402,28 @@ static vice_network_socket_address_t * vice_network_alloc_new_socket_address(voi
 vice_network_socket_t *vice_network_server(
         const vice_network_socket_address_t * server_address)
 {
+#if defined(SO_REUSEADDR) || defined(TCP_NODELAY)
+    const int so_setting = 1;
+#endif
     int sockfd = INVALID_SOCKET;
     int error = 1;
+    int err;
 
     assert(server_address != NULL);
 
     do {
         if (socket_init() < 0) {
+            log_error(LOG_DEFAULT,
+                "vice_network_server(): socket_init() failed");
             break;
         }
 
         sockfd = (int)socket(server_address->domain, SOCK_STREAM, server_address->protocol);
-
         if (sockfd == INVALID_SOCKET) {
+            err = errno;
+            log_error(LOG_DEFAULT,
+                "vice_network_server(): socket() returned INVALID_SOCKET: %s",
+                strerror(err));
             break;
         }
 
@@ -431,11 +438,26 @@ vice_network_socket_t *vice_network_server(
 #else
         if ((server_address->domain == PF_INET)) {
 #endif
+#if defined(SO_REUSEADDR)
+            setsockopt(sockfd, SOL_SOCKET, SO_REUSEADDR, (const void*)&so_setting, sizeof(so_setting));
+#endif
+#if defined(TCP_NODELAY)
+            setsockopt(sockfd, SOL_TCP, TCP_NODELAY, (const void*)&so_setting, sizeof(so_setting));
+#endif
         }
+
         if (bind(sockfd, &server_address->address.generic, server_address->len) < 0) {
+            err = errno;
+            log_error(LOG_DEFAULT,
+                "vice_network_server(): bind() failed: %s",
+                strerror(err));
             break;
         }
         if (listen(sockfd, 2) < 0) {
+            err = errno;
+            log_error(LOG_DEFAULT,
+                "vice_network_server(): listen() failed: %s",
+                strerror(err));
             break;
         }
         error = 0;
@@ -592,7 +614,7 @@ static int vice_network_address_generate_ipv4(
                     /* something weird happened... SHOULD NOT HAPPEN! */
                     log_message(LOG_DEFAULT,
                                 "gethostbyname() returned an IPv4 address, "
-                                "but the length is wrong: %d", 
+                                "but the length is wrong: %d",
                                 host_entry->h_length );
                     break;
                 }
@@ -731,6 +753,7 @@ static int vice_network_address_generate_ipv6(vice_network_socket_address_t * so
 #endif /* #ifdef HAVE_IPV6 */
 }
 
+#if 0
 /*! \internal \brief Generate a unix domain socket address
 
   Initialises a socket address with a unix domain socket address
@@ -789,6 +812,7 @@ static int vice_network_address_generate_local(vice_network_socket_address_t * s
     return -1;
 #endif /* #ifdef HAVE_UNIX_DOMAIN_SOCKETS */
 }
+#endif
 
 /*! \brief Generate a socket address
 
@@ -831,12 +855,15 @@ vice_network_socket_address_t * vice_network_address_generate(const char * addre
         if (socket_address == NULL) {
             break;
         }
-
+#if 0 /* FIXME: "|" as first character indicates that we want to pipe through an external process - if we
+                want to support unix domain socket, this has to use another syntax! */
         if (address_string && address_string[0] == '|') {
             if (vice_network_address_generate_local(socket_address, &address_string[1])) {
                 break;
             }
-        } else if (address_string && strncmp("ip6://", address_string, sizeof "ip6://" - 1) == 0) {
+        } else
+#endif
+        if (address_string && strncmp("ip6://", address_string, sizeof "ip6://" - 1) == 0) {
             if (vice_network_address_generate_ipv6(socket_address, &address_string[sizeof "ip6://" - 1], port)) {
                 break;
             }
@@ -975,6 +1002,10 @@ int vice_network_send(vice_network_socket_t * sockfd, const void * buffer,
     size_t ret;
     signals_pipe_set();
     ret = send(sockfd->sockfd, buffer, buffer_length, flags);
+    if (ret > buffer_length) {
+        log_error(LOG_DEFAULT, "vice_network_send: internal error");
+        ret = -1; /* signal error */
+    }
     signals_pipe_unset();
     return (int)ret;
 }

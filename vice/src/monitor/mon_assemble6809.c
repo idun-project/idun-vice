@@ -128,7 +128,7 @@ static int mon_assemble_instr(const char *opcode_name, asm_mode_addr_info_t oper
                 prefixlen = 1;
             }
 
-            if (!strcasecmp(opinfo->mnemonic, opcode_name)) {
+            if (!util_strcasecmp(opinfo->mnemonic, opcode_name)) {
                 if (opinfo->addr_mode == operand_mode) {
                     opcode = i;
                     found = TRUE;
@@ -245,7 +245,7 @@ static int mon_assemble_instr(const char *opcode_name, asm_mode_addr_info_t oper
     }
 
     for (i = 0; i < len; i++) {
-        mon_set_mem_val(mem, (uint8_t)(loc + i), opc[i]);
+        mon_set_mem_val(mem, (uint16_t)(loc + i), opc[i]);
     }
 
     if (len >= 0) {
