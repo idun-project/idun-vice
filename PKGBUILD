@@ -11,7 +11,7 @@ provides=(idun-vice)
 conflicts=(vice)
 options=(emptydirs)
 source=("$pkgname-$pkgver.tar.gz")
-md5sums=('1259daf3e42eb9a8c49c518a1bed1b33')
+md5sums=('edccb82609c08ef0a6d66a65eb59a8fb')
 
 build() {
   cd vice/idun && make clean && make
@@ -28,8 +28,10 @@ build() {
 }
 
 package() {
-  install -d -o idun -g idun "${pkgdir}"${HOME}/idun-vice/resc
-  install -d -o idun -g idun "${pkgdir}"${HOME}/.config/vice
+  set USER=idun
+  set HOME=/home/${USER}
+  install -d -o ${USER} -g ${USER} "${pkgdir}"${HOME}/idun-vice/resc
+  install -d -o ${USER} -g ${USER} "${pkgdir}"${HOME}/.config/vice
   install -m644 "${srcdir}"/vice/idun/resc/emu.rom "${pkgdir}"${HOME}/idun-vice/resc
   install -m644 "${srcdir}"/vice/idun/resc/emu64.rom "${pkgdir}"${HOME}/idun-vice/resc
   install -m644 "${srcdir}"/vice/idun/sdl-vicerc "${pkgdir}"${HOME}/.config/vice
