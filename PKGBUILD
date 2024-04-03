@@ -11,7 +11,7 @@ provides=(idun-vice)
 conflicts=(vice)
 options=(emptydirs)
 source=("$pkgname-$pkgver.tar.gz")
-md5sums=('edccb82609c08ef0a6d66a65eb59a8fb')
+md5sums=('95d00687fc58d704e7c0b77d04063622')
 
 build() {
   cd vice/idun && make clean && make
@@ -21,6 +21,8 @@ build() {
     --without-pulse \
     --without-oss \
     --with-vorbis \
+    --disable-pdf-docs \
+    --disable-html-docs \
     --libdir=/usr/lib \
     --prefix=/usr
   make -j8
