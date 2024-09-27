@@ -70,13 +70,13 @@ io_iduncart_t *iduncart_init(const char *host)
     vice_network_socket_address_t *ad = NULL;
     ad = vice_network_address_generate(host, 0);
     if (!ad) {
-        log_error(LOG_ERR, "Bad idunhost. Should be ipaddr:port, but is '%s'.", host);
+        log_error(LOG_DEFAULT, "Bad idunhost. Should be ipaddr:port, but is '%s'.", host);
     }
     else {
         /* connect socket */
         iduncart.socket = vice_network_client(ad);
         if (!iduncart.socket) {
-            log_error(LOG_ERR, "Cant open connection.");
+            log_error(LOG_DEFAULT, "Cant open connection.");
         }
     }
 
@@ -93,7 +93,7 @@ void iduncart_io_destroy(io_iduncart_t *context)
 
     do {
         if (!context->socket) {
-            log_error(LOG_ERR, "Attempt to close non-open socket");
+            log_error(LOG_DEFAULT, "Attempt to close non-open socket");
             break;
         }    
 
@@ -107,7 +107,7 @@ void iduncart_io_destroy(io_iduncart_t *context)
 void iduncart_io_store_data(io_iduncart_t *context, uint8_t data)
 {
     if (!context->socket) {
-        log_error(LOG_ERR, "Attempt to write to non-open socket");
+        log_error(LOG_DEFAULT, "Attempt to write to non-open socket");
         return;
     }
 
@@ -115,7 +115,7 @@ void iduncart_io_store_data(io_iduncart_t *context, uint8_t data)
 
     int n = vice_network_send(context->socket, &data, 1, 0);
     if (n < 0) {
-        log_error(LOG_ERR, "Error writing: %d.", vice_network_get_errorcode());
+        log_error(LOG_DEFAULT, "Error writing: %d.", vice_network_get_errorcode());
         vice_network_socket_close(context->socket);
         context->socket = NULL;
     }

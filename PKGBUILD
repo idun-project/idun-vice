@@ -11,7 +11,7 @@ provides=(idun-vice)
 conflicts=(vice)
 options=(emptydirs)
 source=("$pkgname-$pkgver-$pkgrel.tar.gz")
-md5sums=('415ae7b5c759afc4db123024ed53a590')
+md5sums=('1fcadd2b1ddb9690614350351afcddbd')
 
 build() {
   cd vice/idun && make clean && make
