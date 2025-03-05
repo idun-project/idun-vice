@@ -1,6 +1,6 @@
 pkgname=idun-vice
-pkgver=3.8
-pkgrel=2
+pkgver=3.9
+pkgrel=1
 pkgdesc="Patched VICE emulator for Idun"
 arch=("x86_64" "armv7h")
 url="https://github.com/idun-project/idun-vice"
@@ -11,7 +11,7 @@ provides=(idun-vice)
 conflicts=(vice)
 options=(emptydirs)
 source=("$pkgname-$pkgver-$pkgrel.tar.gz")
-md5sums=('1fcadd2b1ddb9690614350351afcddbd')
+md5sums=('c9c366a43d5f2b56c6f05b28eca13d98')
 
 build() {
   cd vice/idun && make clean && make
@@ -25,7 +25,7 @@ build() {
     --disable-html-docs \
     --libdir=/usr/lib \
     --prefix=/usr
-  make -j8
+  make
   strip src/x*
 }
 

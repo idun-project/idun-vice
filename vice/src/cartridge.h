@@ -154,7 +154,6 @@ void cartridge_sound_chip_init(void);
 #define CARTRIDGE_MIDI_NAMESOFT      -111 /* c64-midi.c */
 #define CARTRIDGE_MIDI_MAPLIN        -112 /* c64-midi.c */
 #define CARTRIDGE_DS12C887RTC        -113 /* ds12c887rtc.c */
-#define CARTRIDGE_IDUNIO             -114 /* idunio.c */
 #define CARTRIDGE_TFE                -116 /* ethernetcart.c */
 #define CARTRIDGE_TURBO232           -117 /* c64acia1.c */
 #define CARTRIDGE_SWIFTLINK          -118 /* c64acia1.c */
@@ -266,7 +265,8 @@ void cartridge_sound_chip_init(void);
 #define CARTRIDGE_UC1                  80 /* uc1.c */
 #define CARTRIDGE_UC15                 81 /* uc2.c */
 #define CARTRIDGE_UC2                  82 /* uc2.c */
-#define CARTRIDGE_LAST                 82 /* cartconv: last cartridge in list */
+#define CARTRIDGE_BMPDATATURBO         83 /* bmpdataturbo.c */
+#define CARTRIDGE_LAST                 83 /* cartconv: last cartridge in list */
 
 /* list of canonical names for the c64 cartridges:
    note: often it is hard to determine "the" official name, let alone the way it
@@ -293,6 +293,7 @@ void cartridge_sound_chip_init(void);
 #define CARTRIDGE_NAME_BLACKBOX4          "Blackbox V4"
 #define CARTRIDGE_NAME_BLACKBOX8          "Blackbox V8"
 #define CARTRIDGE_NAME_BLACKBOX9          "Blackbox V9"
+#define CARTRIDGE_NAME_BMPDATATURBO       "BMP Data Turbo 2000"
 #define CARTRIDGE_NAME_GS                 "C64 Games System" /* http://retro.lonningdal.net/home.php?page=Computers&select=c64gs&image=c64gs4.jpg */
 #define CARTRIDGE_NAME_CAPTURE            "Capture" /* see manual http://rr.pokefinder.org/wiki/Capture */
 #define CARTRIDGE_NAME_COMAL80            "Comal 80" /* http://www.retroport.de/C64_C128_Hardware.html */
@@ -330,7 +331,6 @@ void cartridge_sound_chip_init(void);
 #define CARTRIDGE_NAME_GMOD3              "GMod3" /* http://wiki.icomp.de/wiki/GMod3 */
 #define CARTRIDGE_NAME_HYPERBASIC         "Hyper-BASIC"
 #define CARTRIDGE_NAME_IDE64              "IDE64" /* see http://www.ide64.org/ */
-#define CARTRIDGE_NAME_IDUNIO             "Idun Cartridge I/O" /* see http://github.com/idun-project/idun-cart */
 #define CARTRIDGE_NAME_IEEE488            "IEEE-488 Interface"
 #define CARTRIDGE_NAME_IEEEFLASH64        "IEEE Flash! 64"
 #define CARTRIDGE_NAME_ISEPIC             "ISEPIC" /* http://rr.pokefinder.org/wiki/Isepic */

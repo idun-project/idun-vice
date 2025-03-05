@@ -382,28 +382,6 @@ static const ui_menu_entry_t ide64_menu_HD_4[] = {
     SDL_MENU_LIST_END
 };
 
-
-/* IDUN MENU */
-
-UI_MENU_DEFINE_TOGGLE(IDUNIO)
-
-const ui_menu_entry_t idunio_c64_menu[] = {
-    { "Enable " CARTRIDGE_NAME_IDUNIO,
-      MENU_ENTRY_RESOURCE_TOGGLE,
-      toggle_IDUNIO_callback,
-      NULL },
-    SDL_MENU_LIST_END
-};
-
-const ui_menu_entry_t idunio_c128_menu[] = {
-    { "Enable " CARTRIDGE_NAME_IDUNIO,
-      MENU_ENTRY_RESOURCE_TOGGLE,
-      toggle_IDUNIO_callback,
-      NULL },
-    SDL_MENU_LIST_END
-};
-
-
 UI_MENU_DEFINE_TOGGLE(SBDIGIMAX)
 UI_MENU_DEFINE_RADIO(SBDIGIMAXbase)
 

@@ -50,6 +50,8 @@ libc64cart_a_SOURCES = \
 	blackbox8.h \
 	blackbox9.c \
 	blackbox9.h \
+	bmpdataturbo.c \
+	bmpdataturbo.h \
 	bisplus.c \
 	bisplus.h \
 	c64-generic.c \
@@ -239,8 +241,4 @@ libc64commoncart_a_SOURCES = \
 	sfx_soundexpander.c \
 	sfx_soundexpander.h \
 	sfx_soundsampler.c \
-	sfx_soundsampler.h \
-	idunio.c \
-	idunio.h \
-	iduncore.c \
-	iduncore.h
+	sfx_soundsampler.h

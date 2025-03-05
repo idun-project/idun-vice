@@ -1276,6 +1276,11 @@ Enable verbose log output.
 Disable all log output (except errors).
 (@code{LogLimit}).
 
+@findex -loglimit
+@item -loglimit <level>
+Set log level.
+(@code{LogLimit}).
+
 @findex -no-redirect-streams
 @item -no-redirect-streams
 Disable stream redirection on Windows. Stream redirection is used on Windows
@@ -4594,6 +4599,10 @@ x64/x64sc/xscpu64 control ports and devices:
 @tab Dongle (Paperclip2)
 @tab X
 @tab X
+@item 42
+@tab Chalkboard Powerpad
+@tab X
+@tab X
 @end multitable
 
 x128 control ports and devices:
@@ -4823,6 +4832,10 @@ x128 control ports and devices:
 @tab X
 @item 41
 @tab Dongle (Paperclip2)
+@tab X
+@tab X
+@item 42
+@tab Chalkboard Powerpad
 @tab X
 @tab X
 @end multitable
@@ -5359,6 +5372,19 @@ xplus4 control ports and devices:
 @tab
 @tab
 @tab X
+@item 42
+@tab Chalkboard Powerpad
+@tab
+@tab
+@tab
+@tab
+@tab
+@tab
+@tab
+@tab
+@tab
+@tab
+@tab X
 @end multitable
 
 xvic control ports and devices:
@@ -5566,6 +5592,9 @@ xvic control ports and devices:
 @tab X
 @item 38
 @tab Microflyte joystick
+@tab X
+@item 42
+@tab Chalkboard Powerpad
 @tab X
 @end multitable
 
@@ -9284,6 +9313,9 @@ Trace the drive 3 CPU / Do not trace the drive 3 CPU
 @vindex IEC_TRACE
 @item IEC_TRACE
 Trace IEC bus activity / Do not trace IEC bus activity
+@vindex IEEE_TRACE
+@item IEEE_TRACE
+Trace IEEE bus activity / Do not trace IEEE bus activity
 
 @end table
 
@@ -9654,6 +9686,8 @@ Blackbox V4
 Blackbox V8
 @item
 Blackbox V9
+@item
+BMP Data Turbo 2000
 @item
 C64 Games System
 @item
@@ -10658,6 +10692,10 @@ Attach raw 32/64KiB Blackbox V8 cartridge image.
 @findex -cartbb9
 @item -cartbb9 <name>
 Attach raw 32KiB Blackbox V9 cartridge image.
+
+@findex -cartbdt
+@item -cartbdt <name>
+Attach raw 16KiB BMP Data Turbo 2000 cartridge image.
 
 @findex -cartcap
 @item -cartcap <name>
@@ -12403,7 +12441,7 @@ Specify engine for the emulated SID chip
 (FastSID: 0, ReSID: 1, DTVSID: 2, HardSID: 3, ParSID Port 1: 4, ParSID Port 2: 5, ParSID Port 3: 6)
 
 @findex -sidmodel
-@item -sidemodel <model>
+@item -sidmodel <model>
 Specify model for the emulated SID chip
 (@code{SidModel}).
 (6581: 0, 8580: 1, ReSID 8580 + digiboost: 2, DTVSID: 3)
@@ -14682,6 +14720,18 @@ Specify Vic Flash Plugin extension ROM name
 @itemx +fpwriteback
 Enable/Disable Vic Flash Plugin write back to ROM file
 (@code{VicFlashPluginWriteBack=1}, @code{VicFlashPluginWriteBack=0}).
+
+@findex -cartrabbit
+@item -cartrabbit <name>
+Specify Rabit Tape extension ROM name
+
+@findex -cartse
+@item -cartse <name>
+Specify Super Expander cartridge ROM name
+
+@findex -cartma
+@item -cartma <name>
+Specify Mikro Assembler cartridge ROM name
 
 @findex -ultimem
 @item -ultimem <name>
@@ -20712,7 +20762,11 @@ current rasterline, and CY refers to the current cycle in the line.
 
 Full expressions are also supported (+, -, *, /, &, |, &&, ||). This lets
 you for example check specific bits in the FL register using the bitwise
-boolean operators (& and |). Parentheses are also supported in the expression.
+boolean operators (& and |).
+
+Please note that currently expressions are evaluated strictly left to right, so
+use parentheses in complex expressions to indicate the desired evaluation order.
+
 Registers can be the registers of other devices; this is denoted by
 a memspace prefix (i.e., c:, 8:, 9:, 10:, 11:)
 Examples: A == $0, X == Y, 8:X == X
@@ -22946,6 +23000,8 @@ Blackbox V4 .crt file
 Blackbox V8 .crt file
 @item bb9
 Blackbox V9 .crt file
+@item bdt
+BMP Data Turbo 2000 .crt file
 @item cap
 Capture .crt file
 @item comal
@@ -29187,7 +29243,7 @@ F0: 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00
 
 This is very similar to the D80/D82 header in placement but without the DOS
 version value.
-Also note that the dos version bytes are "3A".
+Also note that the DOS version bytes are "3A".
 For the D90, it is believed that the $FF at offset $3 in the configuration
 sector dictates the DOS version.
 
@@ -29227,7 +29283,7 @@ examining LBA X+2 (starting at X=0) and checking for a special
 signature in the block. If it does not find it, X will increase by
 128, and it will try again. It will do this until it finds the
 signature, or until it gets a read error from the HD signaling the end
-of disk space. The device will the switch to installation mode.
+of disk space. The device will then switch to installation mode.
 
 The following is an example configuration block of a 40 MB drive:
 
@@ -29289,7 +29345,7 @@ CMD HD signature.
 @item (X*$200+$400+n*$40)+$01
 @tab Number of pages
 @item (X*$200+$400+n*$40)+$02-$03
-@tab Location of data offset from X in sectors (256 bytes); MSB format
+@tab Location of data offset from X*$200 in sectors (256 bytes); MSB format
 @item (X*$200+$400+n*$40)+$04-$05
 @tab Checksum of data; MSB format
 @item (X*$200+$400+n*$40)+$06-$0F
@@ -29300,31 +29356,29 @@ CMD HD signature.
 @tab ASCII of date
 @item (X*$200+$400+n*$40)+$20-$3F
 @tab All 0x00
-@item (X*$200+$500+d*$38)+$00
+@item (X*$200+$500)+d+$00
 @tab SCSI ID of HD in bits 7-4, LUN in bits 3-0; $FF means not present
-@item (X*$200+$500+d*$38)+$38
+@item (X*$200+$500)+d+$38
 @tab MSB of disk location in drive map
-@item (X*$200+$500+d*$38)+$70
+@item (X*$200+$500)+d+$70
 @tab Middle byte of disk location in drive map
-@item (X*$200+$500+d*$38)+$A8
+@item (X*$200+$500)+d+$A8
 @tab LSB of disk location in drive map
 @item (X*$200+$500)+$E0
 @tab 0x00 (unknown)
 @item (X*$200+$500)+$E1
 @tab Device number (12 or 0x0C by default)
 @item (X*$200+$500)+$E2
-@tab 0x01 (unknown)
+@tab Default partition number (1 by default)
 @item (X*$200+$500)+$E3
-@tab 0x01 (unknown)
+@tab Default partition number (1 by default)
 @item (X*$200+$500)+$E4
 @tab Device number (12 or 0x0C by default)
 @item (X*$200+$500)+$E5
 @tab 0x80: 2 to the power of the SCSI ID of host (which is always 7)
 @item (X*$200+$500)+$E6-$E7
-@tab Location of CMD partition table offset from X in sectors (256 bytes); MSB format
-@item (X*$200+$500)+$E8
-@tab Default partition number
-@item (X*$200+$500)+$E9-$EF
+@tab Location of CMD partition table offset from X*$200 in sectors (256 bytes); MSB format
+@item (X*$200+$500)+$E8-$EF
 @tab All 0x00
 @item (X*$200+$500)+$F0-$F7
 @tab 0x43 0x4D 0x44 0x20 0x48 0x44 0x20 0x20: First half of signature
@@ -29376,11 +29430,11 @@ The standard partition entry:
 @item $05-$14
 @tab 16 character partition name (in PETASCII, padded with $A0)
 @item $15-$17
-@tab Location of the partition data offset from X in sectors (256 bytes); MSB format; partition 0, the system partition always starts a 0.
+@tab Location of the partition (in blocks) in MSB format. Partition 0, the system partition, always starts at X*$200.
 @item $18-$1D
 @tab All 0x00
 @item $1E-$1F
-@tab Size of partition (in blocks) in MSB format. Partition 0, the system partition is always 0x90 blocks, which includes blocks from X to the end of the partition table.
+@tab Size of partition (in blocks) in MSB format. Partition 0, the system partition is always 0x90 blocks, which includes blocks from X*$200 to the end of the partition table.
 @end multitable
 
 When a partition is deleted, its entry is removed and all others stay
@@ -29767,6 +29821,8 @@ $0010- xxxx - ROM data
 @tab Universal Cartridge 1.5
 @item 82
 @tab Universal Cartridge 2
+@item 83
+@tab BMP Data Turbo 2000
 @end multitable
 
 (*Note: Ocean type 1 includes Navy Seals, Robocop 2 & 3, Shadow of the Beast,
@@ -34047,6 +34103,35 @@ E0C0: 2C CA 91 AD 0A 03 AE 0B 03 8D B8 02 8E B9 02 A9  ,...............
     Basic CRT files (8K, 16K, UltiMax) can be loaded into UC2 SRAM from
     ROM or Disk and ececuted by a Reset.
 
+@c @node FIXME
+@subsubsection 83 - BMP Data Turbo 2000
+
+@multitable @columnfractions .3 .7
+@item Size
+@tab 16KiB
+@item EXROM
+@tab active (lo) (0)
+@item GAME
+@tab active (lo) (0)
+@item Load address
+@tab $8000-BFFF
+@end multitable
+
+@example
+      00 01 02 03 04 05 06 07 08 09 0A 0B 0C 0D 0E 0F       ASCII
+      -----------------------------------------------  ----------------
+0000: 43 36 34 20 43 41 52 54 52 49 44 47 45 20 20 20  C64 CARTRIDGE
+0010: 00 00 00 40 01 00 00 53 00 00 00 00 00 00 00 00  ...@...S........
+0020: 42 4d 50 20 44 61 74 61 20 54 75 72 62 6f 20 32  BMP Data Turbo 2
+0030: 30 30 30 00 00 00 00 00 00 00 00 00 00 00 00 00  000.............
+0040: 43 48 49 50 00 00 40 10 00 00 00 00 80 00 40 00  CHIP..@.......@.
+0050: 09 80 00 08 c3 c2 cd 38 30 a2 0b 8e 11 d0 20 a3  .......80.......
+
+@end example
+
+    After  RESET  or  POWER  ON,  16KiB  of  cartridge  ROM  is  visible  at
+    $8000-$BFFF. ROM  at  $8000-$BFFF  is  disabled by writing into the I/O-2
+    area (typically $DF00) and may be re-enabled by writing into  I/O-1 ($DE00).
 
 @c @node FIXME
 @subsection C128 Cartridge Specifics

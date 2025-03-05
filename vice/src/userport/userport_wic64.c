@@ -80,8 +80,8 @@
 #define WIC64_VERSION_MINOR 1
 #define WIC64_VERSION_PATCH 0
 #define WIC64_VERSION_DEVEL 0
-#define WIC64_SHORT_VERSION "2.0.0"
-#define WIC64_VERSION_STRING "2.0.0 ("PACKAGE"; "VERSION")"
+#define WIC64_SHORT_VERSION "2.1.0"
+#define WIC64_VERSION_STRING "2.1.0 ("PACKAGE"; "VERSION")"
 #define HTTP_AGENT_REVISED "WiC64/"WIC64_SHORT_VERSION" ("PACKAGE"; "VERSION")"
 #define HTTP_AGENT_LEGACY "ESP32HTTPClient"
 static char *http_user_agent = HTTP_AGENT_REVISED;
@@ -124,6 +124,7 @@ static void do_connect(uint8_t *url);
 static void cmd_tcp_write(void);
 static void cmd_timeout(int arm);
 static void cmd_remote_timeout(int arm);
+static int stage_dummy, stage_retcode, stage_length, stage_data, bsr, bsl, bsd;
 
 static userport_device_t userport_wic64_device = {
     "Userport WiC64",                     /* device name */
@@ -157,6 +158,10 @@ static struct alarm_s *tcp_get_alarm = NULL;
 static struct alarm_s *tcp_send_alarm = NULL;
 static struct alarm_s *cmd_timeout_alarm = NULL;
 static struct alarm_s *cmd_remote_timeout_alarm = NULL;
+static struct alarm_s *cmd_force_timeout_alarm = NULL;
+static struct alarm_s *flag2_alarm = NULL;
+static struct alarm_s *cycle_alarm = NULL;
+
 static char sec_token[32];
 static int sec_init = 0;
 static const char *TOKEN_NAME = "sectokenname";
@@ -379,7 +384,7 @@ static const cmdline_option_t cmdline_options[] =
       NULL, "Disable WiC64 tracing" },
     { "-wic64tracelevel", SET_RESOURCE, CMDLINE_ATTRIB_NEED_ARGS,
       NULL, NULL, "WIC64LogLevel", NULL,
-      "<0..3>", "Set WiC64 tracing level (0: off, 1: cmd-level, >2: debug-level), implicitly turns on/off WiC64 tracing" },
+      "<0..4>", "Set WiC64 tracing level (0: off, 1: cmd-level, >2: debug-level), implicitly turns on/off WiC64 tracing" },
     { "-wic64reset", CALL_FUNCTION, CMDLINE_ATTRIB_NONE,
       wic64_cmdl_reset, (void *)2, NULL, NULL,
       NULL, "Reset WiC64 to factory defaults" },
@@ -437,7 +442,7 @@ static const cmdline_option_t cmdline_options[] =
 #define WIC64_CMD_FORCE_ERROR 0xfd
 #define WIC64_CMD_ECHO 0xfe
 
-// Deprecated commands
+/* Deprecated commands */
 #define WIC64_CMD_DEPRECATED_UPDATE_FIRMWARE_03 0x03
 #define WIC64_CMD_DEPRECATED_UPDATE_FIRMWARE_04 0x04
 #define WIC64_CMD_DEPRECATED_UPDATE_FIRMWARE_05 0x05
@@ -471,13 +476,14 @@ static const cmdline_option_t cmdline_options[] =
 #define INPUT_EXP_ARGS 6
 
 static const char *cmd2string[256];
-/* WiC64 return codes */
+/* WiC64 return codes, adjust debug output accordingly if changes happen here, see func 'userport_wic64_read_pbx()' */
 static uint8_t SUCCESS          = 0;
 static uint8_t INTERNAL_ERROR   = 1;
 static uint8_t CLIENT_ERROR     = 2;
 static uint8_t CONNECTION_ERROR = 3;
 static uint8_t NETWORK_ERROR    = 4;
 static uint8_t SERVER_ERROR     = 5;
+static char *err2string[] = { "SUCCESS", "INTERNAL", "CLIENT", "CONNECTION", "NETWORK", "SERVER" };
 
 #define HTTPREPLY_MAXLEN ((unsigned)(16 * 1024 * 1024)) /* 16MB needed for potential large images to flash via bigloader */
 static size_t httpbufferptr = 0;
@@ -598,6 +604,18 @@ static int userport_wic64_enable(int value)
         if (cmd_remote_timeout_alarm) {
             alarm_destroy(cmd_remote_timeout_alarm);
             cmd_remote_timeout_alarm = NULL;
+        }
+        if (cmd_force_timeout_alarm) {
+            alarm_destroy(cmd_force_timeout_alarm);
+            cmd_force_timeout_alarm = NULL;
+        }
+        if (flag2_alarm) {
+            alarm_destroy(flag2_alarm);
+            flag2_alarm = NULL;
+        }
+        if (cycle_alarm) {
+            alarm_destroy(cycle_alarm);
+            cycle_alarm = NULL;
         }
         debug_log(CONS_COL_NO, 2, "%s: several WiC64 dynamic buffers freed",
                    __FUNCTION__);
@@ -784,8 +802,10 @@ void userport_wic64_factory_reset(void)
 
 void wic64_set_status(const char *status)
 {
-    strncpy(wic64_last_status, status, sizeof wic64_last_status);
-    wic64_last_status[sizeof wic64_last_status - 1u] = '\0';
+    if (status) {
+        strncpy(wic64_last_status, status, sizeof wic64_last_status);
+        wic64_last_status[sizeof wic64_last_status - 1u] = '\0';
+    }
 }
 
 static void prep_wic64_str(void)
@@ -1091,10 +1111,10 @@ static uint8_t commandbuffer[COMMANDBUFFER_MAXLEN];
 
 static uint32_t replyptr = 0, reply_length = 0;
 static uint8_t reply_port_value = 0;
-static struct alarm_s *flag2_alarm = NULL;
 
 static void flag2_alarm_handler(CLOCK offset, void *data)
 {
+    debug_log(LOG_COL_OFF, 4, "%s: handshake expired", __FUNCTION__);
     set_userport_flag(FLAG2_INACTIVE);
     alarm_unset(flag2_alarm);
 }
@@ -1111,9 +1131,32 @@ static void handshake_flag2(void)
     }
     alarm_unset(flag2_alarm);
     alarm_set(flag2_alarm, maincpu_clk + FLAG2_TOGGLE_DELAY);
+    debug_log(LOG_COL_OFF, 4, "%s: armed handshake", __FUNCTION__);
 
     set_userport_flag(FLAG2_ACTIVE);
     /* set_userport_flag(FLAG2_INACTIVE); */
+}
+
+static void cycle_alarm_handler(CLOCK offset, void *data)
+{
+    debug_log(LOG_COL_OFF, 3, "%s: expired, data = %p", __FUNCTION__, data);
+    alarm_unset(cycle_alarm);
+    alarm_destroy(cycle_alarm);
+    cycle_alarm = NULL;
+    if (data) {
+        (*(void(*)(void))data)();               /* execute callback */
+    }
+}
+
+static void wic64_sleep_cycles(int cycles, void *cb)
+{
+    if (cycle_alarm) {
+        debug_log(LOG_COL_LRED, 3, "%s: refusing to re-arm pending cycle alarm", __FUNCTION__);
+        return;
+    }
+    cycle_alarm = alarm_new(maincpu_alarm_context, "CycleAlarm", cycle_alarm_handler, cb);
+    alarm_unset(cycle_alarm);
+    alarm_set(cycle_alarm, maincpu_clk + cycles);
 }
 
 static void reply_next_byte(void)
@@ -1163,7 +1206,7 @@ static void send_binary_reply(const uint8_t *reply, size_t len)
 static void cmd_timeout_alarm_handler(CLOCK offset, void *data)
 {
     wic64_log(LOG_COL_LRED, "timed out - '%s' command", cmd2string[input_command]);
-    replyptr = reply_length = force_timeout = 0;
+    replyptr = reply_length = 0;
     input_state = INPUT_EXP_PROT;
     commandptr = 0;
     alarm_unset(cmd_timeout_alarm);
@@ -1238,9 +1281,14 @@ static void send_reply_revised(const uint8_t rcode, const char *msg, const uint8
         reply_length = (uint32_t)(len + 3 + offs);
 
         cmd_timeout(1);         /* arm alarm handler */
+        stage_dummy = 1;
+        bsr = stage_retcode = 1;
+        bsl = stage_length = 2 + offs;
+        bsd = stage_data = (int)len;
         handshake_flag2();
     } else {
         /* legacy protocol */
+        stage_dummy = stage_retcode = stage_length = stage_data = -1;
         if (legacy_msg && payload) {
             wic64_log(LOG_COL_LRED,
                       "protocol error: can't send both payload and legacy message: '%s' discarded.",
@@ -1652,17 +1700,22 @@ static void cmd_wifi(int cmd)
     wic64_log_hexdump(CONS_COL_NO, (const char *)commandbuffer, commandptr); /* commands may contain '0' */
 
     int l = (wic64_protocol == WIC64_PROT_LEGACY) ? 0 : 1; /* kludge to make it compatible */
+    char sep = l ? '\0' : '\1';
+    char rets[128];
+    char r = '\0';
 
     switch (cmd) {
-    case WIC64_CMD_SCAN_WIFI_NETWORKS:
+    case WIC64_CMD_SCAN_WIFI_NETWORKS: {
+        snprintf(rets, 127, "0%cvice-emulation%c65%c%c", sep, sep, sep, 0xff);
         send_reply_revised(SUCCESS, "Success",
-                           (uint8_t *) "00\001vice-emulation\00199\001",
-                           strlen("00\001vice-emulation\00199\001") + l,
+                           (uint8_t *) rets, 20+l,
                            NULL);
         break;
-    case WIC64_CMD_IS_CONFIGURED:
-        send_reply_revised(SUCCESS, "Success", NULL, 0, NULL);
+    }
+    case WIC64_CMD_IS_CONFIGURED: {
+        send_reply_revised(SUCCESS, "Success", (uint8_t *)&r, 1, NULL);
         break;
+    }
     case WIC64_CMD_CONNECT_WITH_SSID_STRING:
     case WIC64_CMD_CONNECT_WITH_SSID_INDEX:
     case WIC64_CMD_IS_CONNECTED:
@@ -1676,7 +1729,7 @@ static void cmd_wifi(int cmd)
         break;
     case WIC64_CMD_GET_RSSI:
         send_reply_revised(SUCCESS, "Success",
-                           (uint8_t *) "99", strlen("99") + l, NULL);
+                           (uint8_t *) "-65dBm", strlen("-65dBm") + l, NULL);
         break;
     default:
         break;
@@ -1720,7 +1773,7 @@ static void cmd_get_local_time(void)
     snprintf(timestr, 63, "%02d:%02d:%02d %02d-%02d-%04d",
              tm->tm_hour, tm->tm_min, tm->tm_sec, tm->tm_mday, tm->tm_mon+1, tm->tm_year + 1900);
     wic64_log(CONS_COL_NO, "get timezone + time, returning '%s'", timestr);
-    send_reply_revised(SUCCESS, "Success", (uint8_t *)timestr, strlen(timestr), NULL);
+    send_reply_revised(SUCCESS, "Success", (uint8_t *)timestr, strlen(timestr) + 1, NULL);
 }
 
 /* set timezone */
@@ -1971,12 +2024,33 @@ static void cmd_get_statusmsg(void)
     send_reply_revised(SUCCESS, "Success", t, strlen((char *)t) + 1, NULL);
 }
 
+static void cmd_force_timeout_alarm_handler(CLOCK offset, void *data)
+{
+    wic64_log(LOG_COL_LRED, "force timeout expired");
+    replyptr = reply_length = force_timeout = 0;
+    input_state = INPUT_EXP_PROT;
+    commandptr = 0;
+    alarm_unset(cmd_force_timeout_alarm);
+    /* set_userport_flag(FLAG2_INACTIVE); */
+}
+
 static void cmd_force_timeout(void)
 {
-    wic64_timeout = commandbuffer[0];
-    wic64_log(CONS_COL_NO, "forcing timeout after %ds", wic64_timeout);
+    if (wic64_protocol == WIC64_PROT_LEGACY) {
+        return;                 /* legacy won't support timeouts */
+    }
+    int timeout = (commandptr > 0) ? commandbuffer[0] : 1;
+    wic64_log(CONS_COL_NO, "forcing timeout after %ds", timeout);
     force_timeout = 1;
-    send_reply_revised(SUCCESS, "Success", NULL, 0, NULL);
+
+    /* set_userport_flag(FLAG2_ACTIVE); */
+
+    if (cmd_force_timeout_alarm == NULL) {
+        cmd_force_timeout_alarm = alarm_new(maincpu_alarm_context, "CMDForceTimoutAlarm",
+                                            cmd_force_timeout_alarm_handler, NULL);
+    }
+    alarm_unset(cmd_force_timeout_alarm);
+    alarm_set(cmd_force_timeout_alarm, maincpu_clk + timeout * machine_get_cycles_per_second());
 }
 
 /* ---------------- legacy command -----------------*/
@@ -2150,13 +2224,14 @@ static void do_command(void)
         cmd_get_statusmsg();
         break;
     case WIC64_CMD_ECHO:
-        send_reply_revised(SUCCESS, "Success", commandbuffer, commandptr, NULL);
+        if (wic64_protocol != WIC64_PROT_EXTENDED)
+            send_reply_revised(SUCCESS, "", commandbuffer, commandptr, NULL);
+        else
+            send_reply_revised(CLIENT_ERROR, "", NULL, 0, NULL);
         break;
     case WIC64_CMD_REBOOT:
-        userport_wic64_reset();
-        send_reply_revised(SUCCESS, "Success", NULL, 0, NULL);
-        /* FIXME: userport->sendHandshakeSignalBeforeReboot(); */
-        handshake_flag2();
+        debug_log(CONS_COL_NO, 3, "%s: arming for reboot", __FUNCTION__);
+        wic64_sleep_cycles(3 * (int)machine_get_cycles_per_second(), userport_wic64_reset); /* emulated a 3s reboot */
         break;
     case WIC64_CMD_SET_TRANSFER_TIMEOUT:
     case WIC64_CMD_SET_REMOTE_TIMEOUT:
@@ -2279,11 +2354,32 @@ static void wic64_prot_state(uint8_t value)
     }
 }
 
+/* this is run after handshake of last byte is completed */
+static void run_command_helper(void)
+{
+    wic64_log(LOG_COL_LBLUE, "command %s (len=%d/0x%x, using %s protocol)",
+              cmd2string[input_command],
+              input_length, input_length,
+              (wic64_protocol == WIC64_PROT_LEGACY) ? "legacy" :
+              (wic64_protocol == WIC64_PROT_REVISED) ? "revised" :
+              (wic64_protocol == WIC64_PROT_EXTENDED) ? "extended" :
+              "unknown");
+    do_command();
+    cmd_timeout(0);
+    commandptr = input_state = input_length = 0;
+    input_command = WIC64_CMD_NONE;
+    memset(commandbuffer, 0, COMMANDBUFFER_MAXLEN);
+}
+
 /* PC2 irq (pulse) triggers when C64 reads/writes to userport */
 static void userport_wic64_store_pbx(uint8_t value, int pulse)
 {
-    if ((pulse == 1) &&
-        (!force_timeout)) {
+    if (force_timeout) {
+        debug_log(LOG_COL_OFF, 3, "%s: force timeout running %d/%d", __FUNCTION__, value, pulse);
+        set_userport_flag(FLAG2_INACTIVE);
+        return;
+    }
+    if (pulse == 1) {
         if (wic64_inputmode) {
             debug_log(LOG_COL_LBLUE, 3, "receiving '%c'/0x%02x, input_state = %d",
                        isprint(value) ? value : '.',
@@ -2321,23 +2417,12 @@ static void userport_wic64_store_pbx(uint8_t value, int pulse)
             } else {
                 wic64_prot_state(value);
             }
+            handshake_flag2();
 
             cmd_timeout(1);
-            handshake_flag2();
             if ((input_state == INPUT_EXP_ARGS) &&
                 (commandptr == input_length)) {
-                wic64_log(LOG_COL_LBLUE, "command %s (len=%d/0x%x, using %s protocol)",
-                          cmd2string[input_command],
-                          input_length, input_length,
-                          (wic64_protocol == WIC64_PROT_LEGACY) ? "legacy" :
-                          (wic64_protocol == WIC64_PROT_REVISED) ? "revised" :
-                          (wic64_protocol == WIC64_PROT_EXTENDED) ? "extended" :
-                          "unknown");
-                cmd_timeout(0);
-                do_command();
-                commandptr = input_state = input_length = 0;
-                input_command = WIC64_CMD_NONE;
-                memset(commandbuffer, 0, COMMANDBUFFER_MAXLEN);
+                wic64_sleep_cycles(FLAG2_TOGGLE_DELAY + 1, run_command_helper);
             }
         } else {
             if (reply_length) {
@@ -2354,18 +2439,64 @@ static uint8_t userport_wic64_read_pbx(uint8_t orig)
     /* FIXME: what do we have to do with original value? */
     /* CIA read is triggered once more by wic64 lib on the host,
        even if all bytes are sent, so the last byte seems to be sent twice */
+    char *stage = NULL;
+    char datastr[32];
+    int v = 0, b = 0, d = 1;
 
-    debug_log(LOG_COL_LGREEN, 3, "sending '%c'/0x%02x - ptr = %d, rl = %d/0x%x",
-               isprint(retval) ? retval : '.',
-               retval, replyptr, reply_length, reply_length);
     cmd_timeout(0);
     /* FIXME: trigger mainloop */
+
+    if (wic64_loglevel < 3)
+        return retval;
+
+    if (stage_retcode < 0) {
+        stage = NULL;
+    } else if (stage_dummy) {
+        stage = "dummy";
+        b = v = 1;
+        stage_dummy--;
+    } else if (stage_retcode) {
+        if (retval < 6) {       /* num of error codes defined for now */
+            stage = err2string[retval];
+        } else {
+            stage = "UNKNOWN";
+        }
+        v = bsr - --stage_retcode;
+        b = bsr;
+    } else if (stage_length) {
+        stage = "length";
+        v = bsl - --stage_length;
+        b = bsl;
+    } else if (stage_data) {
+        v = bsd - --stage_data;
+        b = bsd;
+        if ((bsd > 255) && (v == bsd)) d = 0;
+        snprintf(datastr, 31, "data block %04d/%04d", (v / 256) + 1*d, ((b - 1) / 256) + 1);
+        stage = datastr;
+    }
+
+    if (stage) {
+        debug_log(LOG_COL_LGREEN, 3, "sending '%c'/0x%02x - 0x%02x/0x%04x %s\t - ptr = %d, rl = %d/0x%x",
+                  isprint(retval) ? retval : '.', retval,
+                  v, b, stage,
+                  replyptr,
+                  reply_length, reply_length);
+    } else {
+        debug_log(LOG_COL_LGREEN, 3, "sending '%c'/0x%02x - ptr = %d, rl = %d/0x%x",
+                  isprint(retval) ? retval : '.', retval,
+                  replyptr,
+                  reply_length, reply_length);
+    }
     return retval;
 }
 
 /* PA2 interrupt toggles input/output mode */
 static void userport_wic64_store_pa2(uint8_t value)
 {
+    if (force_timeout == 1) {
+        debug_log(LOG_COL_OFF, 3, "%s: force timeout pending...%d", __FUNCTION__, value);
+        return;
+    }
     debug_log(CONS_COL_NO, 2, "userport mode %s...(len = %d)",
                value ? "sending" : "receiving",
                reply_length);
@@ -2396,7 +2527,7 @@ static void userport_wic64_reset(void)
     int tmp_tz;
 
     wic64_log(CONS_COL_NO, "%s", __FUNCTION__);
-    commandptr = input_state = input_length = 0;
+    commandptr = input_state = input_length = force_timeout = 0;
     input_command = WIC64_CMD_NONE;
     wic64_inputmode = 1;
     memset(sec_token, 0, 32);
@@ -2450,8 +2581,11 @@ static void userport_wic64_reset(void)
     if (cmd_timeout_alarm) {
         alarm_unset(cmd_timeout_alarm);
     }
+    if (cmd_force_timeout_alarm) {
+        alarm_unset(cmd_force_timeout_alarm);
+    }
+    /* flag2 and cycle alarms need to be preserverd !*/
     remote_to = wic64_remote_timeout; /* reset to given value */
-
     if (curl) {
         /* connection closed */
         curl_easy_cleanup(curl);
@@ -2463,12 +2597,14 @@ static void userport_wic64_reset(void)
         lib_free(post_url);
         post_url = NULL;
     }
-    wic64_set_status("RESET");
+    /* wic64_set_status("RESET"); real HW doesn't tell this */
 
     wic64_log(LOG_COL_LBLUE, "cyan color: host -> WiC64 communication");
     wic64_log(LOG_COL_LGREEN, "green color: WiC64 -> host communication");
     wic64_log(LOG_COL_LRED, "red color: some error");
     wic64_log(CONS_COL_NO, "no color: other information");
+
+    handshake_flag2();
 }
 
 /* ---------------------------------------------------------------------*/

@@ -34,8 +34,6 @@
 extern const ui_menu_entry_t digimax_menu[];
 extern const ui_menu_entry_t ds12c887rtc_c64_menu[];
 extern const ui_menu_entry_t ds12c887rtc_c128_menu[];
-extern const ui_menu_entry_t idunio_c64_menu[];
-extern const ui_menu_entry_t idunio_c128_menu[];
 extern const ui_menu_entry_t ide64_menu[];
 
 void uiclockport_ide64_menu_create(void);
