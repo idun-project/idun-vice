@@ -154,6 +154,7 @@ void cartridge_sound_chip_init(void);
 #define CARTRIDGE_MIDI_NAMESOFT      -111 /* c64-midi.c */
 #define CARTRIDGE_MIDI_MAPLIN        -112 /* c64-midi.c */
 #define CARTRIDGE_DS12C887RTC        -113 /* ds12c887rtc.c */
+#define CARTRIDGE_IDUNIO             -114 /* idunio.c */
 #define CARTRIDGE_TFE                -116 /* ethernetcart.c */
 #define CARTRIDGE_TURBO232           -117 /* c64acia1.c */
 #define CARTRIDGE_SWIFTLINK          -118 /* c64acia1.c */
@@ -331,6 +332,7 @@ void cartridge_sound_chip_init(void);
 #define CARTRIDGE_NAME_GMOD3              "GMod3" /* http://wiki.icomp.de/wiki/GMod3 */
 #define CARTRIDGE_NAME_HYPERBASIC         "Hyper-BASIC"
 #define CARTRIDGE_NAME_IDE64              "IDE64" /* see http://www.ide64.org/ */
+#define CARTRIDGE_NAME_IDUNIO             "Idun Cartridge I/O" /* see http://github.com/idun-project/idun-cart */
 #define CARTRIDGE_NAME_IEEE488            "IEEE-488 Interface"
 #define CARTRIDGE_NAME_IEEEFLASH64        "IEEE Flash! 64"
 #define CARTRIDGE_NAME_ISEPIC             "ISEPIC" /* http://rr.pokefinder.org/wiki/Isepic */

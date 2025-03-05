@@ -1,8 +1,8 @@
 /*
- * menu_c64_common_expansions.h - C64/C128 expansions menu for SDL UI.
+ * idunio.h
  *
  * Written by
- *  Marco van den Heuvel <blackystardust68@yahoo.com>
+ *  Brian Holdsworth <brian.holdsworth@gmail.com>
  *
  * This file is part of VICE, the Versatile Commodore Emulator.
  * See README for copyright notice.
@@ -24,20 +24,30 @@
  *
  */
 
-#ifndef VICE_MENU_C64_COMMON_EXPANSIONS_H
-#define VICE_MENU_C64_COMMON_EXPANSIONS_H
+#ifndef VICE_IDUNIO_H
+#define VICE_IDUNIO_H
 
-#include "vice.h"
 #include "types.h"
-#include "uimenu.h"
+#include "sound.h"
 
-extern const ui_menu_entry_t digimax_menu[];
-extern const ui_menu_entry_t ds12c887rtc_c64_menu[];
-extern const ui_menu_entry_t ds12c887rtc_c128_menu[];
-extern const ui_menu_entry_t idunio_c64_menu[];
-extern const ui_menu_entry_t idunio_c128_menu[];
-extern const ui_menu_entry_t ide64_menu[];
+#define MAX_IDUN_HOST_NAME 255
 
-void uiclockport_ide64_menu_create(void);
+extern int idunio_cart_enabled(void);
+
+extern void idunio_reset(void);
+
+extern int idunio_enable(void);
+int idunio_disable(void);
+extern void idunio_detach(void);
+
+extern int idunio_resources_init(void);
+extern void idunio_resources_shutdown(void);
+
+extern int idunio_cmdline_options_init(void);
+
+struct snapshot_s;
+
+extern int idunio_snapshot_write_module(struct snapshot_s *s);
+extern int idunio_snapshot_read_module(struct snapshot_s *s);
 
 #endif

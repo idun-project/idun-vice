@@ -105,6 +105,7 @@
 #include "gmod3.h"
 #include "hyperbasic.h"
 #include "ide64.h"
+#include "idunio.h"
 #include "ieeeflash64.h"
 #include "isepic.h"
 #include "kcs.h"
@@ -201,6 +202,7 @@ extern export_t export_passthrough; /* slot1 and main combined, goes into slot0 
         CARTRIDGE_TFE
         CARTRIDGE_TURBO232
         CARTRIDGE_CPM
+        CARTRIDGE_IDUNIO
 
     all other carts should get a commandline option here like this:
 
@@ -518,6 +520,7 @@ int cart_cmdline_options_init(void)
 #ifdef HAVE_RAWNET
         || ethernetcart_cmdline_options_init() < 0
 #endif
+        || idunio_cmdline_options_init() < 0
         /* "Main Slot" */
         || easyflash_cmdline_options_init() < 0
         || gmod2_cmdline_options_init() < 0
@@ -584,6 +587,7 @@ int cart_resources_init(void)
 #if defined(HAVE_RS232DEV) || defined(HAVE_RS232NET)
         || aciacart_resources_init() < 0
 #endif
+        || idunio_resources_init() < 0
         /* "Main Slot" */
         || easyflash_resources_init() < 0
         || gmod2_resources_init() < 0
@@ -633,6 +637,7 @@ void cart_resources_shutdown(void)
 #if defined(HAVE_RS232DEV) || defined(HAVE_RS232NET)
     aciacart_resources_shutdown();
 #endif
+    idunio_resources_shutdown();
 
     /* "Main Slot" */
     easyflash_resources_shutdown();
@@ -696,6 +701,7 @@ int cart_is_slotmain(int type)
         case CARTRIDGE_SFX_SOUND_SAMPLER:
         case CARTRIDGE_TFE:
         case CARTRIDGE_TURBO232:
+        case CARTRIDGE_IDUNIO:
             return 0;
         default:
             return 1;
@@ -804,6 +810,9 @@ int cart_type_enabled(int type)
         case CARTRIDGE_TURBO232:
             return aciacart_cart_enabled();
 #endif
+        case CARTRIDGE_IDUNIO:
+            return idunio_cart_enabled();
+
             /* Main Slot handled in c64cart.c:cartridge_type_enabled */
     }
     return 0;
@@ -859,6 +868,7 @@ const char *cart_get_filename_by_type(int type)
 #if defined(HAVE_RS232DEV) || defined(HAVE_RS232NET)
         case CARTRIDGE_TURBO232:
 #endif
+        case CARTRIDGE_IDUNIO:
             break;
 
             /* Main Slot handled in c64cart.c:cartridge_get_filename_by_type */
@@ -1507,6 +1517,10 @@ int cartridge_enable(int type)
             aciacart_enable();
             break;
 #endif
+        case CARTRIDGE_IDUNIO:
+            idunio_enable();
+            break;
+
         /* "Main Slot" */
         default:
             DBG(("CART: no enable hook %d\n", type));
@@ -1608,6 +1622,10 @@ int cartridge_disable(int type)
             aciacart_disable();
             break;
 #endif
+        case CARTRIDGE_IDUNIO:
+            idunio_disable();
+            break;
+
         /* "Main Slot" */
         default:
             DBG(("CART: no disable hook %d\n", type));
@@ -1983,6 +2001,9 @@ void cart_detach(int type)
             break;
         case CARTRIDGE_ZIPPCODE48:
             zippcode48_detach();
+            break;
+        case CARTRIDGE_IDUNIO:
+            idunio_detach();
             break;
         default:
             DBG(("CART: no detach hook ID: %d\n", type));
@@ -2376,6 +2397,9 @@ void cartridge_reset(void)
         aciacart_reset();
     }
 #endif
+    if (idunio_cart_enabled()) {
+        idunio_reset();
+    }
     /* "Main Slot" */
     switch (mem_cartridge_type) {
         case CARTRIDGE_ACTION_REPLAY:
@@ -3812,6 +3836,11 @@ int cartridge_snapshot_write_modules(struct snapshot_s *s)
                     }
                     break;
 #endif
+ 	    	case CARTRIDGE_IDUNIO:
+	            if (idunio_snapshot_write_module(s) < 0) {
+	                return -1;
+	            }
+	            break;
 
                 default:
                     /* If the cart cannot be saved, we obviously can't load it either.
@@ -4422,6 +4451,11 @@ int cartridge_snapshot_read_modules(struct snapshot_s *s)
                     }
                     break;
 #endif
+                case CARTRIDGE_IDUNIO:
+                    if (idunio_snapshot_read_module(s) < 0) {
+                        goto fail2;
+                    }
+                    break;
 
                 default:
                     DBG(("CART snapshot read: cart %i handler missing\n", cart_ids[i]));

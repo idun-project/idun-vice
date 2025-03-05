@@ -1,8 +1,8 @@
 /*
- * menu_c64_common_expansions.h - C64/C128 expansions menu for SDL UI.
+ * iduncore.h - Idun cartridge emulation.
  *
  * Written by
- *  Marco van den Heuvel <blackystardust68@yahoo.com>
+ *  Brian Holdsworth <brian.holdsworth@gmail.com>
  *
  * This file is part of VICE, the Versatile Commodore Emulator.
  * See README for copyright notice.
@@ -24,20 +24,27 @@
  *
  */
 
-#ifndef VICE_MENU_C64_COMMON_EXPANSIONS_H
-#define VICE_MENU_C64_COMMON_EXPANSIONS_H
+#ifndef VICE_IDUNCORE_H
+#define VICE_IDUNCORE_H
 
-#include "vice.h"
+#include <stdlib.h>
+#include "snapshot.h"
 #include "types.h"
-#include "uimenu.h"
+#include "vicesocket.h"
 
-extern const ui_menu_entry_t digimax_menu[];
-extern const ui_menu_entry_t ds12c887rtc_c64_menu[];
-extern const ui_menu_entry_t ds12c887rtc_c128_menu[];
-extern const ui_menu_entry_t idunio_c64_menu[];
-extern const ui_menu_entry_t idunio_c128_menu[];
-extern const ui_menu_entry_t ide64_menu[];
+typedef struct io_iduncart_s {
+    const char *host;
+    vice_network_socket_t *socket;
+    uint8_t *pfirst, *plast;
+} io_iduncart_t;
 
-void uiclockport_ide64_menu_create(void);
+extern void iduncart_io_reset(io_iduncart_t *context);
+extern io_iduncart_t *iduncart_init(const char *device);
+extern void iduncart_io_destroy(io_iduncart_t *context);
+
+extern void iduncart_io_store_data(io_iduncart_t *context, uint8_t data);
+extern uint8_t iduncart_io_read(io_iduncart_t *context, uint16_t addr);
+
+extern int iduncart_io_dump(io_iduncart_t *context);
 
 #endif
