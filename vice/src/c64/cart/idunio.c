@@ -38,7 +38,7 @@
 #include "export.h"
 #include "lib.h"
 #include "machine.h"
-#include "maincpu.h"
+//#include "maincpu.h"
 #include "resources.h"
 #include "sid.h"
 #include "snapshot.h"
@@ -50,9 +50,14 @@
 
     This cartridge is an IO interface to an ARM coprocessor running Linux.
 
-    When inserted into the cart port the cart uses 2 registers
-    from $DE00-$DEFF, one ($DE00) for sending/receiving data, and
-    one ($DE01) for polling how many bytes are available to read.
+    When inserted into the cart port the cart uses 2 registers for IO at
+    $DE00-$DE01. $DE00 is for sending/receiving data, and $DE01 is for 
+    polling how many bytes are available to read.
+
+    In addition, there are 2 registers at $DEFE-$DEFF for setting the ERAM
+    page & block addresses for ERAM access. This makes selected ERAM visible
+    one page at a time in $DF00-$DFFF, when used in combp with the `idunmm`
+    interface @see idunmm.c
 */
 
 /* Idun enabled ?? */
@@ -73,7 +78,7 @@ static io_source_t idunio_device = {
     CARTRIDGE_NAME_IDUNIO,      /* name of the device */
     IO_DETACH_RESOURCE,         /* use resource to detach the device when involved in a read-collision */
     "IDUNIO",                   /* resource to set to '0' */
-    0xde00, 0xde02, 0xff,       /* range for the device, regs: $de00-$de02 */
+    0xde00, 0xdeff, 0xff,       /* range for the device, regs: $de00-$deff */
     0,                          /* read validity is determined by the device upon a read */
     idunio_store,               /* store function */
     NULL,                       /* NO poke function */
@@ -165,7 +170,6 @@ static int set_idunio_host(const char *name, void *param)
 }
 
 /* ---------------------------------------------------------------------*/
-
 static int idunio_dump(void)
 {
     return iduncart_io_dump(idunio_context);
@@ -175,13 +179,22 @@ static uint8_t idunio_read(uint16_t addr)
 {
     idunio_accessed = 1;
     idunio_device.io_source_valid = 1;
-    return iduncart_io_read(idunio_context, addr);
+
+    if (addr <= 0x02) {
+        return iduncart_io_read(idunio_context, addr);
+    } else if (addr == 0xfe) {
+        return iduncart_reg_read(idunio_context, addr);
+    } else {
+        return 0xde;
+    }
 }
 
 static void idunio_store(uint16_t addr, uint8_t byte)
 {
     if (addr == 0x00) {
         iduncart_io_store_data(idunio_context, byte);
+    } else if (addr == 0xfe || addr == 0xff) {
+        iduncart_reg_write(idunio_context, addr, byte);
     }
     idunio_accessed = 1;
 }
@@ -216,7 +229,6 @@ void idunio_resources_shutdown(void)
 }
 
 /* ---------------------------------------------------------------------*/
-
 static const cmdline_option_t cmdline_options[] =
 {
     { "-idunio", SET_RESOURCE, CMDLINE_ATTRIB_NONE,
@@ -240,7 +252,6 @@ int idunio_cmdline_options_init(void)
 }
 
 /* ---------------------------------------------------------------------*/
-
 int idunio_snapshot_write_module(snapshot_t *s)
 {
     return -1;

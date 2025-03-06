@@ -106,6 +106,7 @@
 #include "hyperbasic.h"
 #include "ide64.h"
 #include "idunio.h"
+#include "idunmm.h"
 #include "ieeeflash64.h"
 #include "isepic.h"
 #include "kcs.h"
@@ -521,6 +522,7 @@ int cart_cmdline_options_init(void)
         || ethernetcart_cmdline_options_init() < 0
 #endif
         || idunio_cmdline_options_init() < 0
+        || idunmm_cmdline_options_init() < 0
         /* "Main Slot" */
         || easyflash_cmdline_options_init() < 0
         || gmod2_cmdline_options_init() < 0
@@ -588,6 +590,7 @@ int cart_resources_init(void)
         || aciacart_resources_init() < 0
 #endif
         || idunio_resources_init() < 0
+        || idunmm_resources_init() < 0
         /* "Main Slot" */
         || easyflash_resources_init() < 0
         || gmod2_resources_init() < 0
@@ -638,6 +641,7 @@ void cart_resources_shutdown(void)
     aciacart_resources_shutdown();
 #endif
     idunio_resources_shutdown();
+    idunmm_resources_shutdown();
 
     /* "Main Slot" */
     easyflash_resources_shutdown();
@@ -812,6 +816,8 @@ int cart_type_enabled(int type)
 #endif
         case CARTRIDGE_IDUNIO:
             return idunio_cart_enabled();
+        case CARTRIDGE_IDUNMM:
+            return idunmm_cart_enabled();
 
             /* Main Slot handled in c64cart.c:cartridge_type_enabled */
     }
@@ -1521,6 +1527,10 @@ int cartridge_enable(int type)
             idunio_enable();
             break;
 
+        case CARTRIDGE_IDUNMM:
+            idunmm_enable();
+            break;
+
         /* "Main Slot" */
         default:
             DBG(("CART: no enable hook %d\n", type));
@@ -1624,6 +1634,10 @@ int cartridge_disable(int type)
 #endif
         case CARTRIDGE_IDUNIO:
             idunio_disable();
+            break;
+
+        case CARTRIDGE_IDUNMM:
+            idunmm_disable();
             break;
 
         /* "Main Slot" */
@@ -2004,6 +2018,9 @@ void cart_detach(int type)
             break;
         case CARTRIDGE_IDUNIO:
             idunio_detach();
+            break;
+        case CARTRIDGE_IDUNMM:
+            idunmm_detach();
             break;
         default:
             DBG(("CART: no detach hook ID: %d\n", type));
@@ -2399,6 +2416,9 @@ void cartridge_reset(void)
 #endif
     if (idunio_cart_enabled()) {
         idunio_reset();
+    }
+    if (idunmm_cart_enabled()) {
+        idunmm_reset();
     }
     /* "Main Slot" */
     switch (mem_cartridge_type) {
@@ -3842,6 +3862,12 @@ int cartridge_snapshot_write_modules(struct snapshot_s *s)
 	            }
 	            break;
 
+ 	    	case CARTRIDGE_IDUNMM:
+	            if (idunmm_snapshot_write_module(s) < 0) {
+	                return -1;
+	            }
+	            break;
+
                 default:
                     /* If the cart cannot be saved, we obviously can't load it either.
                     Returning an error at this point is better than failing at later. */
@@ -4453,6 +4479,12 @@ int cartridge_snapshot_read_modules(struct snapshot_s *s)
 #endif
                 case CARTRIDGE_IDUNIO:
                     if (idunio_snapshot_read_module(s) < 0) {
+                        goto fail2;
+                    }
+                    break;
+
+                case CARTRIDGE_IDUNMM:
+                    if (idunmm_snapshot_read_module(s) < 0) {
                         goto fail2;
                     }
                     break;

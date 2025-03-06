@@ -244,5 +244,7 @@ libc64commoncart_a_SOURCES = \
 	sfx_soundsampler.h \
 	idunio.c \
 	idunio.h \
+	idunmm.c \
+	idunmm.h \
 	iduncore.c \
 	iduncore.h

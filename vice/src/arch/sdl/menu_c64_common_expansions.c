@@ -403,6 +403,23 @@ const ui_menu_entry_t idunio_c128_menu[] = {
     SDL_MENU_LIST_END
 };
 
+UI_MENU_DEFINE_TOGGLE(IDUNMM)
+
+const ui_menu_entry_t idunmm_c64_menu[] = {
+    { "Enable " CARTRIDGE_NAME_IDUNMM,
+      MENU_ENTRY_RESOURCE_TOGGLE,
+      toggle_IDUNMM_callback,
+      NULL },
+    SDL_MENU_LIST_END
+};
+
+const ui_menu_entry_t idunmm_c128_menu[] = {
+    { "Enable " CARTRIDGE_NAME_IDUNMM,
+      MENU_ENTRY_RESOURCE_TOGGLE,
+      toggle_IDUNMM_callback,
+      NULL },
+    SDL_MENU_LIST_END
+};
 
 UI_MENU_DEFINE_TOGGLE(SBDIGIMAX)
 UI_MENU_DEFINE_RADIO(SBDIGIMAXbase)

@@ -36,6 +36,8 @@ typedef struct io_iduncart_s {
     const char *host;
     vice_network_socket_t *socket;
     uint8_t *pfirst, *plast;
+    uint8_t m_page, m_block;
+    uint8_t *block_data;
 } io_iduncart_t;
 
 extern void iduncart_io_reset(io_iduncart_t *context);
@@ -44,7 +46,10 @@ extern void iduncart_io_destroy(io_iduncart_t *context);
 
 extern void iduncart_io_store_data(io_iduncart_t *context, uint8_t data);
 extern uint8_t iduncart_io_read(io_iduncart_t *context, uint16_t addr);
-
-extern int iduncart_io_dump(io_iduncart_t *context);
+extern uint8_t iduncart_reg_read(io_iduncart_t *context, uint16_t addr);
+extern void iduncart_reg_write(io_iduncart_t *context, uint16_t addr, uint8_t byte);
+extern void iduncart_page_store(uint16_t addr, uint8_t byte);
+extern uint8_t iduncart_page_read(uint16_t addr);
+extern int iduncart_io_dump();
 
 #endif

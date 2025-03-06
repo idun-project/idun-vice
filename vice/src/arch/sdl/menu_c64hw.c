@@ -149,6 +149,11 @@ const ui_menu_entry_t c64_hardware_menu_template[] = {
       	.callback = submenu_callback,
       	.data	  = (ui_callback_data_t)idunio_c64_menu
     },
+    {	.string	  = CARTRIDGE_NAME_IDUNMM " settings",
+      	.type 	  = MENU_ENTRY_SUBMENU,
+      	.callback = submenu_callback,
+      	.data	  = (ui_callback_data_t)idunmm_c64_menu
+    },
 #ifdef HAVE_MIDI
     {   .string   = "MIDI settings",
         .type     = MENU_ENTRY_SUBMENU,
@@ -245,6 +250,11 @@ const ui_menu_entry_t c64sc_hardware_menu_template[] = {
       	.type     = MENU_ENTRY_SUBMENU,
       	.callback = submenu_callback,
       	.data	  = (ui_callback_data_t)idunio_c64_menu
+    },
+    { 	.string   = CARTRIDGE_NAME_IDUNMM " settings",
+      	.type     = MENU_ENTRY_SUBMENU,
+      	.callback = submenu_callback,
+      	.data	  = (ui_callback_data_t)idunmm_c64_menu
     },
 #ifdef HAVE_MIDI
     {   .string   = "MIDI settings",

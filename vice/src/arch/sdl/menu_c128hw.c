@@ -347,6 +347,11 @@ const ui_menu_entry_t c128_hardware_menu[] = {
       	.callback = submenu_callback,
       	.data 	  = (ui_callback_data_t)idunio_c128_menu
     },
+    { 	.string   = CARTRIDGE_NAME_IDUNMM " settings",
+      	.type 	  = MENU_ENTRY_SUBMENU,
+      	.callback = submenu_callback,
+      	.data 	  = (ui_callback_data_t)idunmm_c128_menu
+    },
     {   .string   = CARTRIDGE_NAME_IEEE488,
         .type     = MENU_ENTRY_RESOURCE_TOGGLE,
         .callback = toggle_IEEE488_callback
