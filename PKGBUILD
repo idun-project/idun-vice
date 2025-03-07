@@ -11,7 +11,7 @@ provides=(idun-vice)
 conflicts=(vice)
 options=(emptydirs)
 source=("$pkgname-$pkgver-$pkgrel.tar.gz")
-md5sums=('c9c366a43d5f2b56c6f05b28eca13d98')
+md5sums=('9658998d740054f2ae74a31e275016f0')
 
 build() {
   cd vice/idun && make clean && make
@@ -25,7 +25,7 @@ build() {
     --disable-html-docs \
     --libdir=/usr/lib \
     --prefix=/usr
-  make
+  make -j 8
   strip src/x*
 }
 

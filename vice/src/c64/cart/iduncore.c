@@ -71,7 +71,7 @@ static void iduncart_eram_read()
     assert(n==1);
     assert(pages < PAGES_PER_BLOCK);
     
-    log_message(LOG_DEFAULT, "Read %d pages for block %d", pages, iduncart.m_block);
+    log_debug(LOG_DEFAULT, "Read %d pages for block %d", pages, iduncart.m_block);
 
     while (pages > 0) {
         size_t n = vice_network_receive(iduncart.socket, &blockMem[offset], 256,
@@ -79,10 +79,10 @@ static void iduncart_eram_read()
         assert(n == 256);
         
         uint8_t *a = blockMem;
-        log_message(LOG_DEFAULT, "page #%d", offset/256);
+        log_debug(LOG_DEFAULT, "page #%d", offset/256);
         for (int i=0;i < 16; i++) {
             uint16_t b = offset + (16 * i);
-            log_message(LOG_DEFAULT, "%02x: %02x %02x %02x %02x %02x %02x %02x %02x %02x %02x %02x %02x %02x %02x %02x %02x",
+            log_debug(LOG_DEFAULT, "%02x: %02x %02x %02x %02x %02x %02x %02x %02x %02x %02x %02x %02x %02x %02x %02x %02x",
                 i*16, a[b],a[b+1],a[b+2],a[b+3],a[b+4],a[b+5],a[b+6],a[b+7],a[b+8],a[b+9],a[b+10],a[b+11],a[b+12],a[b+13],a[b+14],a[b+15]);
         }
 
@@ -106,7 +106,7 @@ static void iduncart_eram_loadblock()
         log_error(LOG_DEFAULT, "Idun socket write failed: %d.", vice_network_get_errorcode());
     } else {
         iduncart_eram_read();
-        log_message(LOG_DEFAULT, "ERAM block %d loaded", iduncart.m_block);
+        log_debug(LOG_DEFAULT, "ERAM block %d loaded", iduncart.m_block);
     }
 }
 
@@ -119,7 +119,7 @@ static void iduncart_eram_freemap()
         log_error(LOG_DEFAULT, "Idun socket write failed: %d.", vice_network_get_errorcode());
     } else {
         iduncart_eram_read();
-        log_message(LOG_DEFAULT, "ERAM system block re-loaded");
+        log_debug(LOG_DEFAULT, "ERAM system block re-loaded");
     }
 }
 
@@ -129,7 +129,7 @@ static void iduncart_eram_writeback()
     int8_t c = 63;
 
     if ((iduncart.dirty0 || iduncart.dirty1)==0) return;
-    log_message(LOG_DEFAULT, "Update dirty pages: 0x%08x%08x", iduncart.dirty1, iduncart.dirty0);
+    log_debug(LOG_DEFAULT, "Update dirty pages: 0x%08x%08x", iduncart.dirty1, iduncart.dirty0);
 
     while (c >= 0) {
         uint32_t pg = (c < 32) ? 1<<c : 1<<(c-32);
@@ -143,10 +143,10 @@ static void iduncart_eram_writeback()
             assert(n==256);
 
             uint8_t *a = iduncart.block_data;
-            log_message(LOG_DEFAULT, "UPDATE #%d", c);
+            log_debug(LOG_DEFAULT, "UPDATE #%d", c);
             for (int i=0;i < 16; i++) {
                 uint16_t b = offset + (16 * i);
-                log_message(LOG_DEFAULT, "%02x: %02x %02x %02x %02x %02x %02x %02x %02x %02x %02x %02x %02x %02x %02x %02x %02x",
+                log_debug(LOG_DEFAULT, "%02x: %02x %02x %02x %02x %02x %02x %02x %02x %02x %02x %02x %02x %02x %02x %02x %02x",
                     i*16, a[b],a[b+1],a[b+2],a[b+3],a[b+4],a[b+5],a[b+6],a[b+7],a[b+8],a[b+9],a[b+10],a[b+11],a[b+12],a[b+13],a[b+14],a[b+15]);
             }
         }
