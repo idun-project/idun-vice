@@ -172,7 +172,7 @@ static int set_idunio_host(const char *name, void *param)
 /* ---------------------------------------------------------------------*/
 static int idunio_dump(void)
 {
-    return iduncart_io_dump(idunio_context);
+    return iduncart_io_dump();
 }
 
 static uint8_t idunio_read(uint16_t addr)

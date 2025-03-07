@@ -37,6 +37,7 @@ typedef struct io_iduncart_s {
     vice_network_socket_t *socket;
     uint8_t *pfirst, *plast;
     uint8_t m_page, m_block;
+    uint32_t dirty0, dirty1;
     uint8_t *block_data;
 } io_iduncart_t;
 

@@ -42,11 +42,10 @@
 //#define IDUN_VERBOSE_DEBUG(_x) log_debug _x
 #define IDUN_VERBOSE_DEBUG(_x)
 
-/* This define is from the `idunio` service and is the max. sized buffer
-   that it will send.
-*/
+// This defines come from the `idunio` service
 #define MAX_PIPE_MSG_BYTES 293
 #define SYSTEM_BLOCK 255
+#define PAGES_PER_BLOCK 64
 #define CMD_LOAD_BLOCK 0xfc
 #define CMD_UPDATE_PAGE 0xfd
 #define CMD_FREEMAP 0xf7
@@ -54,7 +53,7 @@
 /* ---------------------------------------------------------------------------------------------------- */
 static uint8_t recvBuf[MAX_PIPE_MSG_BYTES];
 static uint8_t blockMem[16384];
-static io_iduncart_t iduncart = {NULL, NULL, NULL, NULL, 0, SYSTEM_BLOCK, blockMem};
+static io_iduncart_t iduncart = {NULL, NULL, NULL, NULL, 0, SYSTEM_BLOCK, 0, 0, blockMem};
 
 static void iduncart_eram_read()
 {
@@ -64,14 +63,29 @@ static void iduncart_eram_read()
     uint8_t untalk[] = {0x5f};
 
     // TALK #0
-    int n = vice_network_send(iduncart.socket, &talk, 2, 0);
+    size_t n = vice_network_send(iduncart.socket, &talk, 2, 0);
     assert(n==2);
     // First byte is num pages
     while (vice_network_select_poll_one(iduncart.socket) == 0);
-    vice_network_receive(iduncart.socket, &pages, 1, 0);
+    n = vice_network_receive(iduncart.socket, &pages, 1, 0);
+    assert(n==1);
+    assert(pages < PAGES_PER_BLOCK);
+    
+    log_message(LOG_DEFAULT, "Read %d pages for block %d", pages, iduncart.m_block);
+
     while (pages > 0) {
-        size_t n = vice_network_receive(iduncart.socket, &blockMem[offset], 256, 0);
+        size_t n = vice_network_receive(iduncart.socket, &blockMem[offset], 256,
+                                        0x100);    /* flags=MSG_WAITALL*/
         assert(n == 256);
+        
+        uint8_t *a = blockMem;
+        log_message(LOG_DEFAULT, "page #%d", offset/256);
+        for (int i=0;i < 16; i++) {
+            uint16_t b = offset + (16 * i);
+            log_message(LOG_DEFAULT, "%02x: %02x %02x %02x %02x %02x %02x %02x %02x %02x %02x %02x %02x %02x %02x %02x %02x",
+                i*16, a[b],a[b+1],a[b+2],a[b+3],a[b+4],a[b+5],a[b+6],a[b+7],a[b+8],a[b+9],a[b+10],a[b+11],a[b+12],a[b+13],a[b+14],a[b+15]);
+        }
+
         offset += 256;
         // UNTALK
         vice_network_send(iduncart.socket, &untalk, 1, 0);
@@ -109,6 +123,37 @@ static void iduncart_eram_freemap()
     }
 }
 
+static void iduncart_eram_writeback()
+{
+    uint8_t cmd[] = {0x20, 0x7f, CMD_UPDATE_PAGE, 0};
+    int8_t c = 63;
+
+    if ((iduncart.dirty0 || iduncart.dirty1)==0) return;
+    log_message(LOG_DEFAULT, "Update dirty pages: 0x%08x%08x", iduncart.dirty1, iduncart.dirty0);
+
+    while (c >= 0) {
+        uint32_t pg = (c < 32) ? 1<<c : 1<<(c-32);
+        uint32_t cmp = (c < 32) ? iduncart.dirty0 : iduncart.dirty1;
+        if (cmp & pg) {
+            uint16_t offset = c * 256;
+            cmd[3] = c;
+            size_t n = vice_network_send(iduncart.socket, &cmd, 4, 0);
+            assert(n==4);
+            n = vice_network_send(iduncart.socket, &iduncart.block_data[offset], 256, 0);
+            assert(n==256);
+
+            uint8_t *a = iduncart.block_data;
+            log_message(LOG_DEFAULT, "UPDATE #%d", c);
+            for (int i=0;i < 16; i++) {
+                uint16_t b = offset + (16 * i);
+                log_message(LOG_DEFAULT, "%02x: %02x %02x %02x %02x %02x %02x %02x %02x %02x %02x %02x %02x %02x %02x %02x %02x",
+                    i*16, a[b],a[b+1],a[b+2],a[b+3],a[b+4],a[b+5],a[b+6],a[b+7],a[b+8],a[b+9],a[b+10],a[b+11],a[b+12],a[b+13],a[b+14],a[b+15]);
+            }
+        }
+        c--;
+    }
+    iduncart.dirty0 = iduncart.dirty1 = 0;
+}
 /* ---------------------------------------------------------------------------------------------------- */
 void iduncart_io_reset(io_iduncart_t *context)
 {
@@ -197,6 +242,7 @@ void iduncart_reg_write(io_iduncart_t *context, uint16_t addr, uint8_t byte)
 
     if (addr == 0xff) {
         if (context->m_block != byte) {
+            iduncart_eram_writeback();
             context->m_block = byte;
             context->m_page = 0;
             iduncart_eram_loadblock();
@@ -207,6 +253,13 @@ void iduncart_reg_write(io_iduncart_t *context, uint16_t addr, uint8_t byte)
             context->m_page |= 0x40;
         }
     } else if (addr == 0xfe) {
+        if (byte & 0x80) {
+            uint8_t sh = byte & 0x3f;
+            if (sh < 32)
+                context->dirty0 |= 1<<sh;
+            else
+                context->dirty1 |= 1<<(sh-32);
+        }
         context->m_page = byte | 0x40;
     }
 }
@@ -223,6 +276,7 @@ uint8_t iduncart_page_read(uint16_t addr)
 {
     if ((iduncart.m_page & 0x80) == 0) {
         addr = (iduncart.m_page & 0x3f)*256 + addr;
+        log_debug(LOG_DEFAULT, "eram peek(%d)", addr);
         return iduncart.block_data[addr];
     } else {
         return 0xde;
