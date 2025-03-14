@@ -128,7 +128,7 @@ static void iduncart_eram_writeback()
     uint8_t cmd[] = {0x20, 0x7f, CMD_UPDATE_PAGE, 0};
     int8_t c = 63;
 
-    if ((iduncart.dirty0 || iduncart.dirty1)==0) return;
+    if ((iduncart.dirty0 | iduncart.dirty1)==0) return;
     log_debug(LOG_DEFAULT, "Update dirty pages: 0x%08x%08x", iduncart.dirty1, iduncart.dirty0);
 
     while (c >= 0) {
@@ -241,8 +241,9 @@ void iduncart_reg_write(io_iduncart_t *context, uint16_t addr, uint8_t byte)
     assert(context!=NULL);
 
     if (addr == 0xff) {
+        log_debug(LOG_DEFAULT, "Dirty pages=0x%08x%08x", iduncart.dirty1, iduncart.dirty0);
+        iduncart_eram_writeback();
         if (context->m_block != byte) {
-            iduncart_eram_writeback();
             context->m_block = byte;
             context->m_page = 0;
             iduncart_eram_loadblock();
