@@ -1,13 +1,11 @@
 [C128]
 Directory="/usr/share/vice"
 NativeMonitor=1
-SidModel=0
 SidResidSampling=0
 BinaryMonitorServer=1
 
 [C64SC]
 Directory="/usr/share/vice"
 NativeMonitor=1
-SidModel=0
 SidResidSampling=0
 BinaryMonitorServer=1
