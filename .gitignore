@@ -31,8 +31,6 @@ vice/src/resid/wave*.h
 vice/src/monitor/mon_*
 vice/src/c64/psiddrv.h
 vice/src/infocontrib.h
-vice/src/tools/petcat
-vice/src/tools/cartconv
 vice/src/x*
 vice/src/c1541
 vice/src/vsid
