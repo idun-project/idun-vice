@@ -26,7 +26,8 @@ lib*.a
 *.o65
 vice/doc/vice.pdf
 vice/doc/.vice-texi-charset-ok
-vice/src/resid/wave*.h
+vice/src/resid/wave6581*.h
+vice/src/resid/wave8580*.h
 vice/src/monitor/mon_*
 vice/src/c64/psiddrv.h
 vice/src/infocontrib.h
