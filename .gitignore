@@ -24,7 +24,6 @@ vice/src/vice-version.sh
 *.o
 lib*.a
 *.o65
-vice/doc/html/
 vice/doc/vice.pdf
 vice/doc/.vice-texi-charset-ok
 vice/src/resid/wave*.h
