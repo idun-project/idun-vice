@@ -347,6 +347,9 @@ static const cmdline_option_t cmdline_options[] =
     { "-cartide64", CALL_FUNCTION, CMDLINE_ATTRIB_NEED_ARGS,
       cart_attach_cmdline, (void *)CARTRIDGE_IDE64, NULL, NULL,
       "<Name>", "Attach raw 64KiB IDE64 cartridge image" },
+    { "-cartidun", CALL_FUNCTION, CMDLINE_ATTRIB_NEED_ARGS,
+      cart_attach_cmdline, (void *)CARTRIDGE_IDUNMM, NULL, NULL,
+      "<Name>", "Attach raw 8KiB Idun cartridge image" },
     { "-cartieee", CALL_FUNCTION, CMDLINE_ATTRIB_NEED_ARGS,
       cart_attach_cmdline, (void *)CARTRIDGE_IEEE488, NULL, NULL,
       "<Name>", "Attach IEEE-488 Interface cartridge image" },
@@ -522,7 +525,6 @@ int cart_cmdline_options_init(void)
         || ethernetcart_cmdline_options_init() < 0
 #endif
         || idunio_cmdline_options_init() < 0
-        || idunmm_cmdline_options_init() < 0
         /* "Main Slot" */
         || easyflash_cmdline_options_init() < 0
         || gmod2_cmdline_options_init() < 0
@@ -590,7 +592,6 @@ int cart_resources_init(void)
         || aciacart_resources_init() < 0
 #endif
         || idunio_resources_init() < 0
-        || idunmm_resources_init() < 0
         /* "Main Slot" */
         || easyflash_resources_init() < 0
         || gmod2_resources_init() < 0
@@ -641,7 +642,6 @@ void cart_resources_shutdown(void)
     aciacart_resources_shutdown();
 #endif
     idunio_resources_shutdown();
-    idunmm_resources_shutdown();
 
     /* "Main Slot" */
     easyflash_resources_shutdown();
@@ -816,8 +816,6 @@ int cart_type_enabled(int type)
 #endif
         case CARTRIDGE_IDUNIO:
             return idunio_cart_enabled();
-        case CARTRIDGE_IDUNMM:
-            return idunmm_cart_enabled();
 
             /* Main Slot handled in c64cart.c:cartridge_type_enabled */
     }
@@ -1013,6 +1011,8 @@ int cart_bin_attach(int type, const char *filename, uint8_t *rawcart)
             return hyperbasic_bin_attach(filename, rawcart);
         case CARTRIDGE_IDE64:
             return ide64_bin_attach(filename, rawcart);
+        case CARTRIDGE_IDUNMM:
+            return idunmm_bin_attach(filename, rawcart);
         case CARTRIDGE_KCS_POWER:
             return kcs_bin_attach(filename, rawcart);
         case CARTRIDGE_KINGSOFT:
@@ -1271,6 +1271,9 @@ void cart_attach(int type, uint8_t *rawcart)
         case CARTRIDGE_IDE64:
             ide64_config_setup(rawcart);
             break;
+        case CARTRIDGE_IDUNMM:
+            idunmm_config_setup(rawcart);
+            break;
         case CARTRIDGE_KCS_POWER:
             kcs_config_setup(rawcart);
             break;
@@ -1527,10 +1530,6 @@ int cartridge_enable(int type)
             idunio_enable();
             break;
 
-        case CARTRIDGE_IDUNMM:
-            idunmm_enable();
-            break;
-
         /* "Main Slot" */
         default:
             DBG(("CART: no enable hook %d\n", type));
@@ -1634,10 +1633,6 @@ int cartridge_disable(int type)
 #endif
         case CARTRIDGE_IDUNIO:
             idunio_disable();
-            break;
-
-        case CARTRIDGE_IDUNMM:
-            idunmm_disable();
             break;
 
         /* "Main Slot" */
@@ -2207,6 +2202,9 @@ void cartridge_init_config(void)
             case CARTRIDGE_IDE64:
                 ide64_config_init();
                 break;
+            case CARTRIDGE_IDUNMM:
+                idunmm_config_init();
+                break;
             case CARTRIDGE_KCS_POWER:
                 kcs_config_init();
                 break;
@@ -2416,9 +2414,6 @@ void cartridge_reset(void)
 #endif
     if (idunio_cart_enabled()) {
         idunio_reset();
-    }
-    if (idunmm_cart_enabled()) {
-        idunmm_reset();
     }
     /* "Main Slot" */
     switch (mem_cartridge_type) {

@@ -53,6 +53,7 @@
 #include "magicdesk128.h"
 #include "partner128.h"
 #include "warpspeed128.h"
+#include "idunmm128.h"
 #include "ltkernal.h"
 #include "ramlink.h"
 
@@ -238,6 +239,9 @@ static void c128cartridge_config_setup(int type, uint8_t *rawcart)
         case CARTRIDGE_C128_MAKEID(CARTRIDGE_C128_WARPSPEED128):
             warpspeed128_config_setup(rawcart);
             break;
+        case CARTRIDGE_C128_MAKEID(CARTRIDGE_C128_IDUN):
+            idunmm128_config_setup(rawcart);
+            break;
     }
 }
 
@@ -265,6 +269,9 @@ static int c128cartridge_attach_crt(int type, FILE *fd, const char *filename, ui
             break;
         case CARTRIDGE_C128_MAKEID(CARTRIDGE_C128_WARPSPEED128):
             res = warpspeed128_crt_attach(fd, rawcart);
+            break;
+        case CARTRIDGE_C128_MAKEID(CARTRIDGE_C128_IDUN):
+            res = idunmm128_crt_attach(fd, rawcart);
             break;
     }
     if (res != -1) {
@@ -297,6 +304,9 @@ static int c128cartridge_bin_attach(int type, const char *filename, uint8_t *raw
         case CARTRIDGE_C128_MAKEID(CARTRIDGE_C128_WARPSPEED128):
             res = warpspeed128_bin_attach(filename, rawcart);
             break;
+        case CARTRIDGE_C128_MAKEID(CARTRIDGE_C128_IDUN):
+            res = idunmm128_bin_attach(filename, rawcart);
+            break;
     }
     if (res != -1) {
         /* FIXME: get rid of this flag */
@@ -314,6 +324,7 @@ static int c128cartridge_bin_save(int type, const char *filename)
         case CARTRIDGE_C128_MAKEID(CARTRIDGE_C128_MAGICDESK128):
         case CARTRIDGE_C128_MAKEID(CARTRIDGE_C128_PARTNER128):
         case CARTRIDGE_C128_MAKEID(CARTRIDGE_C128_WARPSPEED128):
+        case CARTRIDGE_C128_MAKEID(CARTRIDGE_C128_IDUN):
             break;
         case CARTRIDGE_C128_MAKEID(CARTRIDGE_C128_GMOD2C128):
             return c128gmod2_bin_save(filename);
@@ -331,6 +342,7 @@ static int c128cartridge_save_secondary_image(int type, const char *filename)
         case CARTRIDGE_C128_MAKEID(CARTRIDGE_C128_MAGICDESK128):
         case CARTRIDGE_C128_MAKEID(CARTRIDGE_C128_PARTNER128):
         case CARTRIDGE_C128_MAKEID(CARTRIDGE_C128_WARPSPEED128):
+        case CARTRIDGE_C128_MAKEID(CARTRIDGE_C128_IDUN):
             break;
         case CARTRIDGE_C128_MAKEID(CARTRIDGE_C128_GMOD2C128):
             return c128gmod2_eeprom_save(filename);
@@ -348,6 +360,7 @@ static int c128cartridge_crt_save(int type, const char *filename)
         case CARTRIDGE_C128_MAKEID(CARTRIDGE_C128_MAGICDESK128):
         case CARTRIDGE_C128_MAKEID(CARTRIDGE_C128_PARTNER128):
         case CARTRIDGE_C128_MAKEID(CARTRIDGE_C128_WARPSPEED128):
+        case CARTRIDGE_C128_MAKEID(CARTRIDGE_C128_IDUN):
             break;
         case CARTRIDGE_C128_MAKEID(CARTRIDGE_C128_GMOD2C128):
             return c128gmod2_crt_save(filename);
@@ -364,6 +377,7 @@ static int c128cartridge_flush_image(int type)
         case CARTRIDGE_C128_MAKEID(CARTRIDGE_C128_MAGICDESK128):
         case CARTRIDGE_C128_MAKEID(CARTRIDGE_C128_PARTNER128):
         case CARTRIDGE_C128_MAKEID(CARTRIDGE_C128_WARPSPEED128):
+        case CARTRIDGE_C128_MAKEID(CARTRIDGE_C128_IDUN):
             break;
         case CARTRIDGE_C128_MAKEID(CARTRIDGE_C128_GMOD2C128):
             return c128gmod2_flush_image();
@@ -380,6 +394,7 @@ static int c128cartridge_flush_secondary_image(int type)
         case CARTRIDGE_C128_MAKEID(CARTRIDGE_C128_MAGICDESK128):
         case CARTRIDGE_C128_MAKEID(CARTRIDGE_C128_PARTNER128):
         case CARTRIDGE_C128_MAKEID(CARTRIDGE_C128_WARPSPEED128):
+        case CARTRIDGE_C128_MAKEID(CARTRIDGE_C128_IDUN):
             break;
         case CARTRIDGE_C128_MAKEID(CARTRIDGE_C128_GMOD2C128):
             return c128gmod2_flush_eeprom();
@@ -396,6 +411,7 @@ static int c128cartridge_can_save_image(int crtid)
         case CARTRIDGE_C128_MAKEID(CARTRIDGE_C128_MAGICDESK128):
         case CARTRIDGE_C128_MAKEID(CARTRIDGE_C128_PARTNER128):
         case CARTRIDGE_C128_MAKEID(CARTRIDGE_C128_WARPSPEED128):
+        case CARTRIDGE_C128_MAKEID(CARTRIDGE_C128_IDUN):
             break;
         case CARTRIDGE_C128_MAKEID(CARTRIDGE_C128_GMOD2C128):
             return 1;
@@ -411,6 +427,7 @@ static int c128cartridge_can_flush_image(int crtid)
         case CARTRIDGE_C128_MAKEID(CARTRIDGE_C128_MAGICDESK128):
         case CARTRIDGE_C128_MAKEID(CARTRIDGE_C128_PARTNER128):
         case CARTRIDGE_C128_MAKEID(CARTRIDGE_C128_WARPSPEED128):
+        case CARTRIDGE_C128_MAKEID(CARTRIDGE_C128_IDUN):
             break;
         case CARTRIDGE_C128_MAKEID(CARTRIDGE_C128_GMOD2C128):
             return 1;
@@ -426,6 +443,7 @@ static int c128cartridge_can_save_secondary_image(int crtid)
         case CARTRIDGE_C128_MAKEID(CARTRIDGE_C128_MAGICDESK128):
         case CARTRIDGE_C128_MAKEID(CARTRIDGE_C128_PARTNER128):
         case CARTRIDGE_C128_MAKEID(CARTRIDGE_C128_WARPSPEED128):
+        case CARTRIDGE_C128_MAKEID(CARTRIDGE_C128_IDUN):
             break;
         case CARTRIDGE_C128_MAKEID(CARTRIDGE_C128_GMOD2C128):
             return c128gmod2_can_save_eeprom();
@@ -441,6 +459,7 @@ static int c128cartridge_can_flush_secondary_image(int crtid)
         case CARTRIDGE_C128_MAKEID(CARTRIDGE_C128_MAGICDESK128):
         case CARTRIDGE_C128_MAKEID(CARTRIDGE_C128_PARTNER128):
         case CARTRIDGE_C128_MAKEID(CARTRIDGE_C128_WARPSPEED128):
+        case CARTRIDGE_C128_MAKEID(CARTRIDGE_C128_IDUN):
             break;
         case CARTRIDGE_C128_MAKEID(CARTRIDGE_C128_GMOD2C128):
             return c128gmod2_can_flush_eeprom();
@@ -482,6 +501,9 @@ static void c128cartridge_detach_image(int type)
             break;
         case CARTRIDGE_C128_MAKEID(CARTRIDGE_C128_WARPSPEED128):
             warpspeed128_detach();
+            break;
+        case CARTRIDGE_C128_MAKEID(CARTRIDGE_C128_IDUN):
+            idunmm128_detach();
             break;
         case -1:
             c128generic_detach();
@@ -560,6 +582,8 @@ static int c128cartridge_snapshot_read(int type, snapshot_t *s)
             return partner128_snapshot_read_module(s);
         case CARTRIDGE_C128_MAKEID(CARTRIDGE_C128_WARPSPEED128):
             return warpspeed128_snapshot_read_module(s);
+        case CARTRIDGE_C128_MAKEID(CARTRIDGE_C128_IDUN):
+            return idunmm128_snapshot_read_module(s);
         case CARTRIDGE_C128_MAKEID(CARTRIDGE_C128_GMOD2C128):
             return c128gmod2_snapshot_read_module(s);
     }
@@ -580,6 +604,8 @@ static int c128cartridge_snapshot_write(int type, snapshot_t *s)
             return partner128_snapshot_write_module(s);
         case CARTRIDGE_C128_MAKEID(CARTRIDGE_C128_WARPSPEED128):
             return warpspeed128_snapshot_write_module(s);
+        case CARTRIDGE_C128_MAKEID(CARTRIDGE_C128_IDUN):
+            return idunmm128_snapshot_write_module(s);
         case CARTRIDGE_C128_MAKEID(CARTRIDGE_C128_GMOD2C128):
             return c128gmod2_snapshot_write_module(s);
     }
@@ -650,6 +676,9 @@ static const cmdline_option_t cmdline_options[] =
     { "-cartws128", CALL_FUNCTION, CMDLINE_ATTRIB_NEED_ARGS,
       cart_attach_cmdline, (void *)CARTRIDGE_C128_MAKEID(CARTRIDGE_C128_WARPSPEED128), NULL, NULL,
       "<Name>", "Attach 16k " CARTRIDGE_C128_NAME_WARPSPEED128 " cartridge image" },
+    { "-cartidun128", CALL_FUNCTION, CMDLINE_ATTRIB_NEED_ARGS,
+      cart_attach_cmdline, (void *)CARTRIDGE_C128_MAKEID(CARTRIDGE_C128_IDUN), NULL, NULL,
+      "<Name>", "Attach 16k " CARTRIDGE_C128_NAME_IDUN " rom image" },
 
     CMDLINE_LIST_END
 };
@@ -725,6 +754,7 @@ uint8_t external_function_rom_read(uint16_t addr)
         case CARTRIDGE_C128_MAKEID(CARTRIDGE_C128_MAGICDESK128):
         case CARTRIDGE_C128_MAKEID(CARTRIDGE_C128_PARTNER128):
         case CARTRIDGE_C128_MAKEID(CARTRIDGE_C128_WARPSPEED128):
+        case CARTRIDGE_C128_MAKEID(CARTRIDGE_C128_IDUN):
             val = ext_function_rom[(addr & (EXTERNAL_FUNCTION_ROM_SIZE - 1)) + (ext_function_rom_bank * EXTERNAL_FUNCTION_ROM_SIZE)];
             break;
         case CARTRIDGE_MMC_REPLAY:
@@ -782,6 +812,7 @@ uint8_t external_function_rom_peek(uint16_t addr)
         case CARTRIDGE_C128_MAKEID(CARTRIDGE_C128_MAGICDESK128):
         case CARTRIDGE_C128_MAKEID(CARTRIDGE_C128_PARTNER128):
         case CARTRIDGE_C128_MAKEID(CARTRIDGE_C128_WARPSPEED128):
+        case CARTRIDGE_C128_MAKEID(CARTRIDGE_C128_IDUN):
             val = ext_function_rom[(addr & (EXTERNAL_FUNCTION_ROM_SIZE - 1)) + (ext_function_rom_bank * EXTERNAL_FUNCTION_ROM_SIZE)];
             break;
         case CARTRIDGE_MMC_REPLAY:
@@ -835,6 +866,7 @@ void external_function_rom_store(uint16_t addr, uint8_t value)
         case CARTRIDGE_C128_MAKEID(CARTRIDGE_C128_MAGICDESK128):
         case CARTRIDGE_C128_MAKEID(CARTRIDGE_C128_PARTNER128):
         case CARTRIDGE_C128_MAKEID(CARTRIDGE_C128_WARPSPEED128):
+        case CARTRIDGE_C128_MAKEID(CARTRIDGE_C128_IDUN):
         default:
             break;
     }

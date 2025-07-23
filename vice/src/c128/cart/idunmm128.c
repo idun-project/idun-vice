@@ -1,5 +1,5 @@
 /*
- * idunmm.c - Idun cartridge emulation for ERAM functions.
+ * idunmm128.c - Idun cartridge emulation for ROM/ERAM
  *
  * Written by
  *  Brian Holdsworth <brian.holdsworth@gmail.com>
@@ -30,91 +30,86 @@
 #include <stdlib.h>
 #include <string.h>
 
-#define CARTRIDGE_INCLUDE_SLOTMAIN_API
-#include "c64cartsystem.h"
-#undef CARTRIDGE_INCLUDE_SLOTMAIN_API
-#include "cartio.h"
 #include "cartridge.h"
-#include "cmdline.h"
-#include "iduncore.h"
-#include "idunmm.h"
-#include "export.h"
-#include "lib.h"
-#include "machine.h"
-//#include "maincpu.h"
-#include "resources.h"
-#include "sid.h"
-#include "snapshot.h"
-#include "uiapi.h"
+#include "cartio.h"
 #include "util.h"
+
+#include "c64cart.h"
+#include "export.h"
+#include "c128cart.h"
+#include "functionrom.h"
+
 #include "crt.h"
+#include "iduncore.h"
+#include "idunmm128.h"
 
 /*
     Idun Cartridge
 
-    This cartridge is the interface for ERAM in Idun cart.
+    This cartridge is the interface for ROM and ERAM in Idun cart.
 
     The `idunio` interface provides the registers in the $DE00 IO1 area,
-    while this interface is only for accessing the currently selected
-    ERAM page, which appears in the $DF00 IO2 area.
+    while this interface is only for accessing the External Function ROM
+    and the currently selected ERAM page in the IO2 area.
 */
 
 /* Idun enabled ?? */
-static int idunmm_active = 0;
-static int idunmm_accessed = 0;
+static int idunmm128_active = 0;
+static int idunmm128_accessed = 0;
 
 /* ---------------------------------------------------------------------*/
 
 /* Some prototypes are needed */
-static uint8_t idunmm_read(uint16_t addr);
-static void idunmm_store(uint16_t addr, uint8_t byte);
-static int idunmm_dump(void);
+static uint8_t idunmm128_read(uint16_t addr);
+static void idunmm128_store(uint16_t addr, uint8_t byte);
+static int idunmm128_dump(void);
 
-static io_source_t idunmm_device = {
-    CARTRIDGE_NAME_IDUNMM,      /* name of the device */
+static io_source_t idunmm128_device = {
+    CARTRIDGE_C128_NAME_IDUN,   /* name of the device */
     IO_DETACH_RESOURCE,         /* use resource to detach the device when involved in a read-collision */
     "IDUNMM",                   /* resource to set to '0' */
     0xdf00, 0xdfff, 0xff,       /* range for the device, regs: $df00-$dfff */
     0,                          /* read validity is determined by the device upon a read */
-    idunmm_store,               /* store function */
+    idunmm128_store,            /* store function */
     NULL,                       /* NO poke function */
-    idunmm_read,                /* read function */
-    idunmm_read,                /* peek function */
-    idunmm_dump,                /* device state information dump function */
-    CARTRIDGE_IDUNMM,           /* cartridge ID */
+    idunmm128_read,             /* read function */
+    idunmm128_read,             /* peek function */
+    idunmm128_dump,             /* device state information dump function */
+    CARTRIDGE_C128_IDUN,        /* cartridge ID */
     IO_PRIO_NORMAL,             /* normal priority, device read needs to be checked for collisions */
     0,                          /* insertion order, gets filled in by the registration function */
     IO_MIRROR_NONE              /* NO mirroring */
 };
 
-static io_source_list_t *idunmm_list_item = NULL;
+static io_source_list_t *idunmm128_list_item = NULL;
 
 static export_resource_t export_res = {
-    CARTRIDGE_NAME_IDUNMM, 0, 0, &idunmm_device, NULL, CARTRIDGE_IDUNMM
+    CARTRIDGE_C128_NAME_IDUN, 0, 0, &idunmm128_device, NULL, CARTRIDGE_C128_IDUN
 };
 
 /* ---------------------------------------------------------------------*/
-static int idunmm_common_attach(void)
+static int idunmm128_common_attach(void)
 {
     if (export_add(&export_res) < 0) {
         return -1;
     }
 
-    idunmm_list_item = io_source_register(&idunmm_device);
-    idunmm_active = 1;
+    idunmm128_list_item = io_source_register(&idunmm128_device);
+    idunmm128_active = 1;
 
     return 0;
 }
 
-int idunmm_bin_attach(const char *filename, uint8_t *rawcart)
+int idunmm128_bin_attach(const char *filename, uint8_t *rawcart)
 {
-    if (util_file_load(filename, rawcart, 0x2000, UTIL_FILE_LOAD_SKIP_ADDRESS) < 0) {
+    if (util_file_load(filename, rawcart, 0x4000, UTIL_FILE_LOAD_SKIP_ADDRESS) < 0) {
         return -1;
     }
-    return idunmm_common_attach();
+    memcpy(rawcart + 0x4000, rawcart, 0x4000);
+    return idunmm128_common_attach();
 }
 
-int idunmm_crt_attach(FILE *fd, uint8_t *rawcart)
+int idunmm128_crt_attach(FILE *fd, uint8_t *rawcart)
 {
     crt_chip_header_t chip;
 
@@ -122,66 +117,59 @@ int idunmm_crt_attach(FILE *fd, uint8_t *rawcart)
         return -1;
     }
 
-    if (chip.size != 0x2000) {
-        return -1;
+    if (chip.start == 0x8000 && chip.size == 0x4000) {
+        if (crt_read_chip(rawcart, 0, &chip, fd)) {
+            return -1;
+        }
+        memcpy(rawcart + 0x4000, rawcart, 0x4000);
+        return idunmm128_common_attach();
     }
-
-    if (crt_read_chip(rawcart, 0, &chip, fd)) {
-        return -1;
-    }
-
-    return idunmm_common_attach();
+    return -1;
 }
 
-void idunmm_config_init(void)
+void idunmm128_config_setup(uint8_t *rawcart)
 {
-    cart_config_changed_slotmain(CMODE_8KGAME, CMODE_8KGAME, CMODE_READ);
-    idunmm_active = 1;
+    /* copy loaded cartridge data into actually used ROM array */
+    memcpy(&ext_function_rom[0], rawcart, EXTERNAL_FUNCTION_ROM_SIZE);
+    idunmm128_active = 1;
 }
 
-void idunmm_config_setup(uint8_t *rawcart)
+void idunmm128_detach(void)
 {
-    memcpy(roml_banks, rawcart, 0x2000);
-    cart_config_changed_slotmain(CMODE_8KGAME, CMODE_8KGAME, CMODE_READ);
-    idunmm_active = 1;
-}
-
-void idunmm_detach(void)
-{
-    if (idunmm_list_item != NULL) {
+    if (idunmm128_list_item != NULL) {
         export_remove(&export_res);
-        io_source_unregister(idunmm_list_item);
-        idunmm_list_item = NULL;
+        io_source_unregister(idunmm128_list_item);
+        idunmm128_list_item = NULL;
     }
 }
 
 /* ---------------------------------------------------------------------*/
-static int idunmm_dump(void)
+static int idunmm128_dump(void)
 {
     return iduncart_io_dump();
 }
 
-static uint8_t idunmm_read(uint16_t addr)
+static uint8_t idunmm128_read(uint16_t addr)
 {
-    idunmm_accessed = 1;
-    idunmm_device.io_source_valid = 1;
+    idunmm128_accessed = 1;
+    idunmm128_device.io_source_valid = 1;
     return iduncart_page_read(addr);
 }
 
-static void idunmm_store(uint16_t addr, uint8_t byte)
+static void idunmm128_store(uint16_t addr, uint8_t byte)
 {
-    idunmm_accessed = 1;
+    idunmm128_accessed = 1;
     iduncart_page_store(addr, byte);
 }
 
 /* ---------------------------------------------------------------------*/
 
-int idunmm_snapshot_write_module(snapshot_t *s)
+int idunmm128_snapshot_write_module(snapshot_t *s)
 {
     return -1;
 }
 
-int idunmm_snapshot_read_module(snapshot_t *s)
+int idunmm128_snapshot_read_module(snapshot_t *s)
 {
     return -1;
 }

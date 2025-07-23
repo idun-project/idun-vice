@@ -159,8 +159,12 @@ void iduncart_io_reset(io_iduncart_t *context)
 {
     log_message(LOG_DEFAULT, "Idun cart reset");
 
-    iduncart_io_destroy(context);
-    iduncart_init(context->host);
+    if (context) {
+        iduncart_io_destroy(context);
+        if (context->host) {
+            iduncart_init(context->host);
+        }
+    }
 }
 
 io_iduncart_t *iduncart_init(const char *host)

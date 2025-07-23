@@ -30,16 +30,14 @@
 #include "types.h"
 #include "sound.h"
 
-// uint8_t idunmm_roml_read(uint16_t addr);
-void idunmm_config_init(void);
-void idunmm_config_setup(uint8_t *rawcart);
-int idunmm_bin_attach(const char *filename, uint8_t *rawcart);
-int idunmm_crt_attach(FILE *fd, uint8_t *rawcart);
-extern void idunmm_detach(void);
+void idunmm128_config_setup(uint8_t *rawcart);
+int idunmm128_bin_attach(const char *filename, uint8_t *rawcart);
+int idunmm128_crt_attach(FILE *fd, uint8_t *rawcart);
+extern void idunmm128_detach(void);
 
 struct snapshot_s;
 
-extern int idunmm_snapshot_write_module(struct snapshot_s *s);
-extern int idunmm_snapshot_read_module(struct snapshot_s *s);
+extern int idunmm128_snapshot_write_module(struct snapshot_s *s);
+extern int idunmm128_snapshot_read_module(struct snapshot_s *s);
 
 #endif

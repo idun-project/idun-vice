@@ -97,6 +97,7 @@
 #include "gs.h"
 #include "hyperbasic.h"
 #include "ide64.h"
+#include "idunmm.h"
 #include "ieeeflash64.h"
 #include "isepic.h"
 #include "kcs.h"
@@ -511,6 +512,7 @@ static int set_cartridge_type(int val, void *param)
             if ((machine_class == VICE_MACHINE_C128) && (
                 (val == CARTRIDGE_C128_MAKEID(CARTRIDGE_C128_GENERIC)) ||
                 (val == CARTRIDGE_C128_MAKEID(CARTRIDGE_C128_WARPSPEED128)) ||
+                (val == CARTRIDGE_C128_MAKEID(CARTRIDGE_C128_IDUN)) ||
                 (val == CARTRIDGE_C128_MAKEID(CARTRIDGE_C128_PARTNER128)) ||
                 (val == CARTRIDGE_C128_MAKEID(CARTRIDGE_C128_COMAL80))
                 )) {
@@ -879,6 +881,9 @@ static int crt_attach(const char *filename, uint8_t *rawcart)
                 break;
             case CARTRIDGE_IDE64:
                 rc = ide64_crt_attach(fd, rawcart);
+                break;
+            case CARTRIDGE_IDUNMM:
+                rc = idunmm_crt_attach(fd, rawcart);
                 break;
             case CARTRIDGE_IEEE488: /* slot 0 */
                 rc = tpi_crt_attach(fd, rawcart, filename);

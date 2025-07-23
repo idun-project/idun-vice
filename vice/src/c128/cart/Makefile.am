@@ -35,4 +35,6 @@ libc128cartsystem_a_SOURCES = \
 	partner128.c \
 	partner128.h \
 	warpspeed128.c \
-	warpspeed128.h
+	warpspeed128.h \
+	idunmm128.c \
+	idunmm128.h

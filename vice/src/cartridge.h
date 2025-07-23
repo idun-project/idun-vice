@@ -155,7 +155,6 @@ void cartridge_sound_chip_init(void);
 #define CARTRIDGE_MIDI_MAPLIN        -112 /* c64-midi.c */
 #define CARTRIDGE_DS12C887RTC        -113 /* ds12c887rtc.c */
 #define CARTRIDGE_IDUNIO             -114 /* idunio.c */
-#define CARTRIDGE_IDUNMM             -115 /* idunmm.c */
 #define CARTRIDGE_TFE                -116 /* ethernetcart.c */
 #define CARTRIDGE_TURBO232           -117 /* c64acia1.c */
 #define CARTRIDGE_SWIFTLINK          -118 /* c64acia1.c */
@@ -268,7 +267,8 @@ void cartridge_sound_chip_init(void);
 #define CARTRIDGE_UC15                 81 /* uc2.c */
 #define CARTRIDGE_UC2                  82 /* uc2.c */
 #define CARTRIDGE_BMPDATATURBO         83 /* bmpdataturbo.c */
-#define CARTRIDGE_LAST                 83 /* cartconv: last cartridge in list */
+#define CARTRIDGE_IDUNMM               84 /* idunmm.c */
+#define CARTRIDGE_LAST                 84 /* cartconv: last cartridge in list */
 
 /* list of canonical names for the c64 cartridges:
    note: often it is hard to determine "the" official name, let alone the way it
@@ -334,7 +334,7 @@ void cartridge_sound_chip_init(void);
 #define CARTRIDGE_NAME_HYPERBASIC         "Hyper-BASIC"
 #define CARTRIDGE_NAME_IDE64              "IDE64" /* see http://www.ide64.org/ */
 #define CARTRIDGE_NAME_IDUNIO             "Idun Cartridge I/O" /* see http://github.com/idun-project/idun-cart */
-#define CARTRIDGE_NAME_IDUNMM             "Idun Cartridge ERAM" /* see http://github.com/idun-project/idun-cart */
+#define CARTRIDGE_NAME_IDUNMM             "Idun Cartridge" /* see http://github.com/idun-project/idun-cart */
 #define CARTRIDGE_NAME_IEEE488            "IEEE-488 Interface"
 #define CARTRIDGE_NAME_IEEEFLASH64        "IEEE Flash! 64"
 #define CARTRIDGE_NAME_ISEPIC             "ISEPIC" /* http://rr.pokefinder.org/wiki/Isepic */
@@ -420,7 +420,8 @@ void cartridge_sound_chip_init(void);
 #define CARTRIDGE_C128_COMAL80 3
 #define CARTRIDGE_C128_MAGICDESK128 4
 #define CARTRIDGE_C128_GMOD2C128 5
-#define CARTRIDGE_C128_LAST 5
+#define CARTRIDGE_C128_IDUN 6
+#define CARTRIDGE_C128_LAST 6
 
 #define CARTRIDGE_C128_NAME_GENERIC       "generic function ROM"
 #define CARTRIDGE_C128_NAME_GENERIC_16KB  "generic 16KiB function ROM"
@@ -431,6 +432,7 @@ void cartridge_sound_chip_init(void);
 #define CARTRIDGE_C128_NAME_MAGICDESK128  "Magic Desk 128"
 #define CARTRIDGE_C128_NAME_PARTNER128    "Partner 128"
 #define CARTRIDGE_C128_NAME_WARPSPEED128  "Warp Speed 128"
+#define CARTRIDGE_C128_NAME_IDUN          "Idun Cartridge 128"
 
 /*
  * VIC20 cartridge system
