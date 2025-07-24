@@ -49,6 +49,7 @@ extern void iduncart_io_store_data(io_iduncart_t *context, uint8_t data);
 extern uint8_t iduncart_io_read(io_iduncart_t *context, uint16_t addr);
 extern uint8_t iduncart_reg_read(io_iduncart_t *context, uint16_t addr);
 extern void iduncart_reg_write(io_iduncart_t *context, uint16_t addr, uint8_t byte);
+extern void iduncart_soft_switch(io_iduncart_t *context, uint16_t addr, uint8_t byte);
 extern void iduncart_page_store(uint16_t addr, uint8_t byte);
 extern uint8_t iduncart_page_read(uint16_t addr);
 extern int iduncart_io_dump();

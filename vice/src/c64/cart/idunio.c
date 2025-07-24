@@ -195,6 +195,8 @@ static void idunio_store(uint16_t addr, uint8_t byte)
         iduncart_io_store_data(idunio_context, byte);
     } else if (addr == 0xfe || addr == 0xff) {
         iduncart_reg_write(idunio_context, addr, byte);
+    } else if (addr == 0x7e || addr == 0x7f) {
+        iduncart_soft_switch(idunio_context, addr, byte);
     }
     idunio_accessed = 1;
 }

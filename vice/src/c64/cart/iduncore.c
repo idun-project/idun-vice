@@ -25,6 +25,10 @@
  */
 
 #include "vice.h"
+#include "machine.h"
+#define CARTRIDGE_INCLUDE_SLOTMAIN_API
+#include "c64cartsystem.h"
+#undef CARTRIDGE_INCLUDE_SLOTMAIN_API
 
 #include "iduncore.h"
 #include "lib.h"
@@ -74,16 +78,16 @@ static void iduncart_eram_read()
     log_debug(LOG_DEFAULT, "Read %d pages for block %d", pages, iduncart.m_block);
 
     while (pages > 0) {
-        size_t n = vice_network_receive(iduncart.socket, &blockMem[offset], 256,
-                                        0x100);    /* flags=MSG_WAITALL*/
+        n = vice_network_receive(iduncart.socket, &blockMem[offset], 256,
+                                0x100);    /* flags=MSG_WAITALL*/
         assert(n == 256);
         
         uint8_t *a = blockMem;
-        log_debug(LOG_DEFAULT, "page #%d", offset/256);
-        for (int i=0;i < 16; i++) {
+        log_debug(LOG_DEFAULT, "page #%d", (int)offset/256);
+        for (uint16_t i=0;i < 16; i++) {
             uint16_t b = offset + (16 * i);
             log_debug(LOG_DEFAULT, "%02x: %02x %02x %02x %02x %02x %02x %02x %02x %02x %02x %02x %02x %02x %02x %02x %02x",
-                i*16, a[b],a[b+1],a[b+2],a[b+3],a[b+4],a[b+5],a[b+6],a[b+7],a[b+8],a[b+9],a[b+10],a[b+11],a[b+12],a[b+13],a[b+14],a[b+15]);
+                (unsigned int)i*16, a[b],a[b+1],a[b+2],a[b+3],a[b+4],a[b+5],a[b+6],a[b+7],a[b+8],a[b+9],a[b+10],a[b+11],a[b+12],a[b+13],a[b+14],a[b+15]);
         }
 
         offset += 256;
@@ -144,10 +148,10 @@ static void iduncart_eram_writeback()
 
             uint8_t *a = iduncart.block_data;
             log_debug(LOG_DEFAULT, "UPDATE #%d", c);
-            for (int i=0;i < 16; i++) {
+            for (uint16_t i=0;i < 16; i++) {
                 uint16_t b = offset + (16 * i);
                 log_debug(LOG_DEFAULT, "%02x: %02x %02x %02x %02x %02x %02x %02x %02x %02x %02x %02x %02x %02x %02x %02x %02x",
-                    i*16, a[b],a[b+1],a[b+2],a[b+3],a[b+4],a[b+5],a[b+6],a[b+7],a[b+8],a[b+9],a[b+10],a[b+11],a[b+12],a[b+13],a[b+14],a[b+15]);
+                    (unsigned int)i*16, a[b],a[b+1],a[b+2],a[b+3],a[b+4],a[b+5],a[b+6],a[b+7],a[b+8],a[b+9],a[b+10],a[b+11],a[b+12],a[b+13],a[b+14],a[b+15]);
             }
         }
         c--;
@@ -266,6 +270,23 @@ void iduncart_reg_write(io_iduncart_t *context, uint16_t addr, uint8_t byte)
                 context->dirty1 |= 1<<(sh-32);
         }
         context->m_page = byte | 0x40;
+    }
+}
+
+void iduncart_soft_switch(io_iduncart_t *context, uint16_t addr, uint8_t byte)
+{
+    assert(context!=NULL);
+
+    if (machine_class & VICE_MACHINE_C64 == 0) {
+        return;
+    }
+
+    if (addr == 0x7f) {
+        log_message(LOG_DEFAULT, "Soft-switch enable exrom");
+        cart_config_changed_slotmain(CMODE_8KGAME, CMODE_8KGAME, CMODE_READ);
+    } else if (addr == 0x7e) {
+        log_message(LOG_DEFAULT, "Soft-switch disable exrom");
+        cart_config_changed_slotmain(2, 2, CMODE_READ);
     }
 }
 
