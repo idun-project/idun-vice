@@ -209,7 +209,7 @@ static resource_int_t resources_int[] = {
     RESOURCE_INT_LIST_END
 };
 static const resource_string_t resources_string[] = {
-    { "IDUNHOST", "localhost:25232", RES_EVENT_NO, NULL,
+    { "IDUNHOST", "ip4://localhost", RES_EVENT_NO, NULL,
       &idunio_host, set_idunio_host, NULL },
     RESOURCE_STRING_LIST_END
 };

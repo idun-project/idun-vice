@@ -131,6 +131,7 @@ void idunmm128_config_setup(uint8_t *rawcart)
 {
     /* copy loaded cartridge data into actually used ROM array */
     memcpy(&ext_function_rom[0], rawcart, EXTERNAL_FUNCTION_ROM_SIZE);
+    iduncart_set_rombase(&ext_function_rom[0]);
     idunmm128_active = 1;
 }
 

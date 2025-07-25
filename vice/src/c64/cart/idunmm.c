@@ -143,6 +143,7 @@ void idunmm_config_setup(uint8_t *rawcart)
 {
     memcpy(roml_banks, rawcart, 0x2000);
     cart_config_changed_slotmain(CMODE_8KGAME, CMODE_8KGAME, CMODE_READ);
+    iduncart_set_rombase(roml_banks);
     idunmm_active = 1;
 }
 

@@ -34,7 +34,8 @@
 
 typedef struct io_iduncart_s {
     const char *host;
-    vice_network_socket_t *socket;
+    vice_network_socket_t *socket, *nmisock;
+    uint8_t *rombase;
     uint8_t *pfirst, *plast;
     uint8_t m_page, m_block;
     uint32_t dirty0, dirty1;
@@ -53,5 +54,6 @@ extern void iduncart_soft_switch(io_iduncart_t *context, uint16_t addr, uint8_t 
 extern void iduncart_page_store(uint16_t addr, uint8_t byte);
 extern uint8_t iduncart_page_read(uint16_t addr);
 extern int iduncart_io_dump();
+extern void iduncart_set_rombase(uint8_t *base);
 
 #endif

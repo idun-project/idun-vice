@@ -34,6 +34,9 @@
 #include "lib.h"
 #include "monitor.h"
 #include "log.h"
+#include "alarm.h"
+#include "maincpu.h"
+#include "interrupt.h"
 
 #include <string.h>
 #include <ctype.h>
@@ -54,11 +57,51 @@
 #define CMD_UPDATE_PAGE 0xfd
 #define CMD_FREEMAP 0xf7
 
+#define NMIPORT "unix:/tmp/idunmm-nmi"
+// We use vice alarms to poll for nmi messages
+#define NMIMSG_POLL_INTERVAL 128    //128 microsecs
+
 /* ---------------------------------------------------------------------------------------------------- */
 static uint8_t recvBuf[MAX_PIPE_MSG_BYTES];
 static uint8_t blockMem[16384];
-static io_iduncart_t iduncart = {NULL, NULL, NULL, NULL, 0, SYSTEM_BLOCK, 0, 0, blockMem};
+static io_iduncart_t iduncart = {NULL, NULL, NULL, NULL, NULL, NULL, 0, SYSTEM_BLOCK, 0, 0, blockMem};
+static unsigned int nmi_int_num = 0;
 
+static void nmimsg_alarm_handler(CLOCK offset, void *data);
+struct alarm_s *nmimsg_alarm;
+
+/* ---------------------------------------------------------------------------------------------------- */
+void nmimsg_alarm_handler(CLOCK offset, void *data)
+{
+    alarm_unset(nmimsg_alarm);
+
+    if (data) {
+        vice_network_socket_t *s = (vice_network_socket_t *)data;
+        if (vice_network_select_poll_one(s)) {
+            char buffer[496];
+
+            int numBytes = vice_network_recvfrom(s, buffer, 2, 0);
+            assert(numBytes==2);
+
+            int msgBytes = buffer[0] + 256*buffer[1];
+            numBytes = vice_network_recvfrom(s, buffer, msgBytes, 0);
+            assert(numBytes==msgBytes);
+
+            log_message(LOG_DEFAULT, "NMI request: %d bytes.", msgBytes);
+
+            if (iduncart.rombase && nmi_int_num) {
+                memcpy(iduncart.rombase, buffer, msgBytes);
+                maincpu_set_nmi(nmi_int_num, IK_NMI);
+            } else {
+                log_error(LOG_DEFAULT, "NMI load fail. Is idun-cart attached?");
+            }
+        }
+    }
+
+    alarm_set(nmimsg_alarm, maincpu_clk + NMIMSG_POLL_INTERVAL);
+}
+
+/* ---------------------------------------------------------------------------------------------------- */
 static void iduncart_eram_read()
 {
     size_t offset = 0;
@@ -177,10 +220,11 @@ io_iduncart_t *iduncart_init(const char *host)
 
     iduncart.host = host;
     iduncart.pfirst = iduncart.plast = recvBuf;
+    nmi_int_num = interrupt_cpu_status_int_new(maincpu_int_status, "IdunCartridge");
 
     /* parse the address */
     vice_network_socket_address_t *ad = NULL;
-    ad = vice_network_address_generate(host, 0);
+    ad = vice_network_address_generate(host, 25232);
     if (!ad) {
         log_error(LOG_DEFAULT, "Bad idunhost. Should be ipaddr:port, but is '%s'.", host);
     }
@@ -188,7 +232,7 @@ io_iduncart_t *iduncart_init(const char *host)
         /* connect socket */
         iduncart.socket = vice_network_client(ad);
         if (!iduncart.socket) {
-            log_error(LOG_DEFAULT, "Cant open connection.");
+            log_error(LOG_DEFAULT, "Can't open connection.");
         }
         /* init the block cache by loading SYSTEM_BLOCK */
         iduncart.m_block = SYSTEM_BLOCK;
@@ -199,6 +243,23 @@ io_iduncart_t *iduncart_init(const char *host)
     if (ad) {
         vice_network_address_close(ad);
     }
+
+    /* setup unix datagram socket for nmi messages */
+    ad = vice_network_address_generate(NMIPORT, 0);
+    if (!ad) {
+        log_error(LOG_DEFAULT, "Fail generate nmi socket '%s'.", NMIPORT);
+    }
+    else {
+        iduncart.nmisock = vice_network_unix(ad);
+        if (!iduncart.nmisock) {
+            log_error(LOG_DEFAULT, "Can't open domain socket for nmi.");
+        }
+    }
+
+    /* alarm used to poll for nmi messages */
+    nmimsg_alarm = alarm_new(maincpu_alarm_context, "NmiMessageAlarm",
+                            nmimsg_alarm_handler, iduncart.nmisock);
+    alarm_set(nmimsg_alarm, maincpu_clk + NMIMSG_POLL_INTERVAL);
 
     return &iduncart;
 }
@@ -215,7 +276,11 @@ void iduncart_io_destroy(io_iduncart_t *context)
 
         vice_network_socket_close(context->socket);
         context->socket = NULL;
+        vice_network_socket_close(context->nmisock);
+        context->nmisock = NULL;
     } while (0);
+
+    alarm_destroy(nmimsg_alarm);
 }
 
 /* ---------------------------------------------------------------------------------------------------- */
@@ -356,4 +421,9 @@ int iduncart_io_dump()
 {
     mon_out("4096K avail bytes\n");
     return 0;
+}
+
+void iduncart_set_rombase(uint8_t* base)
+{
+    iduncart.rombase = base;
 }
