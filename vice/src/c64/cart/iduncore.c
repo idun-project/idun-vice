@@ -46,8 +46,8 @@
    - C64/C128 Idun cartridge
 */
 
-//#define IDUN_VERBOSE_DEBUG(_x) log_debug _x
-#define IDUN_VERBOSE_DEBUG(_x)
+#define IDUN_VERBOSE_DEBUG(_x) log_debug _x
+//#define IDUN_VERBOSE_DEBUG(_x)
 
 // This defines come from the `idunio` service
 #define MAX_PIPE_MSG_BYTES 293
@@ -81,14 +81,20 @@ void nmimsg_alarm_handler(CLOCK offset, void *data)
             char buffer[496];
 
             int numBytes = vice_network_recvfrom(s, buffer, 2, 0);
-            assert(numBytes==2);
+            if (numBytes != 2) {
+                log_error(LOG_DEFAULT, "NMI request sync.");
+                return;
+            }
 
-            int msgBytes = buffer[0] + 256*buffer[1];
+            int msgBytes = 256*buffer[0] + buffer[1];
+            assert(msgBytes <= sizeof buffer);
+            
             numBytes = vice_network_recvfrom(s, buffer, msgBytes, 0);
-            assert(numBytes==msgBytes);
+            if (numBytes != msgBytes) {
+                log_error(LOG_DEFAULT, "NMI request size.");
+            }
 
-            log_message(LOG_DEFAULT, "NMI request: %d bytes.", msgBytes);
-
+            IDUN_VERBOSE_DEBUG((LOG_DEFAULT, "NMI request: %d bytes.", msgBytes));
             if (iduncart.rombase && nmi_int_num) {
                 memcpy(iduncart.rombase, buffer, msgBytes);
                 maincpu_set_nmi(nmi_int_num, IK_NMI);
@@ -292,7 +298,7 @@ void iduncart_io_store_data(io_iduncart_t *context, uint8_t data)
         return;
     }
 
-    IDUN_VERBOSE_DEBUG(("Output 0x%02x '%c'.", data, isgraph(data) ? data : '.'));
+    IDUN_VERBOSE_DEBUG((LOG_DEFAULT, "Output 0x%02x '%c'.", data, isgraph(data) ? data : '.'));
 
     int n = vice_network_send(context->socket, &data, 1, 0);
     if (n < 0) {
@@ -342,16 +348,15 @@ void iduncart_soft_switch(io_iduncart_t *context, uint16_t addr, uint8_t byte)
 {
     assert(context!=NULL);
 
-    if (machine_class & VICE_MACHINE_C64 == 0) {
-        return;
-    }
-
+    maincpu_set_nmi(nmi_int_num, IK_NONE);
     if (addr == 0x7f) {
-        log_message(LOG_DEFAULT, "Soft-switch enable exrom");
-        cart_config_changed_slotmain(CMODE_8KGAME, CMODE_8KGAME, CMODE_READ);
+        IDUN_VERBOSE_DEBUG((LOG_DEFAULT, "Soft-switch enable exrom"));
+        if (machine_class & VICE_MACHINE_C64)
+            cart_config_changed_slotmain(CMODE_8KGAME, CMODE_8KGAME, CMODE_READ);
     } else if (addr == 0x7e) {
-        log_message(LOG_DEFAULT, "Soft-switch disable exrom");
-        cart_config_changed_slotmain(2, 2, CMODE_READ);
+        IDUN_VERBOSE_DEBUG((LOG_DEFAULT, "Soft-switch disable exrom"));
+        if (machine_class & VICE_MACHINE_C64)
+            cart_config_changed_slotmain(2, 2, CMODE_READ);
     }
 }
 
@@ -389,7 +394,7 @@ uint8_t iduncart_io_read(io_iduncart_t *context, uint16_t ioaddr)
         if (context->pfirst < context->plast)
             b = *(++context->pfirst);
 
-        IDUN_VERBOSE_DEBUG(("Idun($de00)=%x", b));
+        IDUN_VERBOSE_DEBUG((LOG_DEFAULT, "Idun($de00)=%x", b));
         
         return b;
     }
@@ -411,7 +416,7 @@ uint8_t iduncart_io_read(io_iduncart_t *context, uint16_t ioaddr)
         }
 #pragma GCC diagnostic pop
         
-        IDUN_VERBOSE_DEBUG(("Idun($de01)=%x", (unsigned int)c));
+        IDUN_VERBOSE_DEBUG((LOG_DEFAULT, "Idun($de01)=%x", (unsigned int)c));
 
         return (c < 256)? c : 255;
     }

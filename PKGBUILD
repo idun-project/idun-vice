@@ -1,6 +1,6 @@
 pkgname=idun-vice
 pkgver=3.9
-pkgrel=1
+pkgrel=2
 pkgdesc="Patched VICE emulator for Idun"
 arch=("x86_64" "armv7h")
 url="https://github.com/idun-project/idun-vice"
@@ -11,7 +11,7 @@ provides=(idun-vice)
 conflicts=(vice)
 options=(emptydirs)
 source=("$pkgname-$pkgver-$pkgrel.tar.gz")
-md5sums=('b87aad39bd4482580ef2bd1d3c236f5f')
+md5sums=('1d3542ab05012530607857f054ad4f90')
 
 build() {
   cd vice/idun && make clean && make
