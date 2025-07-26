@@ -73,6 +73,10 @@ entryPoint = *
     jsr kernelRESTOR
 }
 warmstart = *
+    ; this byte must be init'd to zero so the
+    ; idun kernel loads the default shell.
+    lda #0
+    sta $b00
     ; idun boot device
     lda #26     ;Z:
     sta IdunDrive
@@ -255,23 +259,20 @@ Open = *
     jmp -
     ;send flag
 +   pla
-    jsr mode
+    cmp #"R"
+    bne +
+    ldx #$2c    ; ","
+    stx idDataport
+    nop
+    jsr idunChOut
     ;end command
-    lda #0
++   lda #0
     jsr idunChOut
     jsr idunFlush
     jsr unlisten
     bne +
     sta $6c
 +   rts
-
-mode = *
-    cmp #"R"
-    bne +
-    rts
-+   ldx #$2c    ; ","
-    stx idDataport
-    jmp idunChOut
 
 talk = *
     lda #$01
@@ -296,15 +297,13 @@ listen = *
     adc #$20
     jsr idunChOut
     lda #$7e    ;Lfn=30
-    jsr idunChOut
-    rts
+    jmp idunChOut
 
 unlisten = *
     lda #$3F
     jsr idunChOut
     ; Get errno
-    jsr idunChIn
-    rts
+    jmp idunChIn
 
 Close = *
     lda #$01
@@ -354,7 +353,6 @@ idunGetbuf = *
     ; copy all available, up to lengthBuf
 -   lda idDataport
 !if useC128 {
-    ldx kFilebank
     jsr kernelSTA
 } else {
     sta (kCurraddr),y
@@ -368,8 +366,8 @@ idunGetbuf = *
 +   rts
 ROMEND = *
 
-!if ROMEND-$8000 > 512 {
-    !error "Max ROM size exceeded by ",ROMEND-$8000-512," bytes."
+!if ROMEND-$8000 > 496 {
+    !error "Max ROM size exceeded by ",ROMEND-$8000-ROMSIZE," bytes."
 }
 !if ROMEND-$8000 < ROMSIZE {
     * = $8000+ROMSIZE-1

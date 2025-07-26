@@ -2,10 +2,8 @@
 Directory="/usr/share/vice"
 NativeMonitor=1
 SidResidSampling=0
-BinaryMonitorServer=1
 
 [C64SC]
 Directory="/usr/share/vice"
 NativeMonitor=1
 SidResidSampling=0
-BinaryMonitorServer=1
