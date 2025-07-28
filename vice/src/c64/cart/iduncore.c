@@ -78,7 +78,7 @@ void nmimsg_alarm_handler(CLOCK offset, void *data)
     if (data) {
         vice_network_socket_t *s = (vice_network_socket_t *)data;
         if (vice_network_select_poll_one(s)) {
-            char buffer[496];
+            uint8_t buffer[496];
 
             int numBytes = vice_network_recvfrom(s, buffer, 2, 0);
             if (numBytes != 2) {
@@ -86,7 +86,7 @@ void nmimsg_alarm_handler(CLOCK offset, void *data)
                 return;
             }
 
-            int msgBytes = 256*buffer[0] + buffer[1];
+            int msgBytes = (buffer[0] ? 256:0) + buffer[1];
             assert(msgBytes <= sizeof buffer);
             
             numBytes = vice_network_recvfrom(s, buffer, msgBytes, 0);
