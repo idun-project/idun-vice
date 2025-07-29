@@ -64,6 +64,7 @@
 /* ---------------------------------------------------------------------------------------------------- */
 static uint8_t recvBuf[MAX_PIPE_MSG_BYTES];
 static uint8_t blockMem[16384];
+static uint8_t boot_rom_bkup[496];
 static io_iduncart_t iduncart = {NULL, NULL, NULL, NULL, NULL, NULL, 0, SYSTEM_BLOCK, 0, 0, blockMem};
 static unsigned int nmi_int_num = 0;
 
@@ -287,6 +288,10 @@ void iduncart_io_destroy(io_iduncart_t *context)
     } while (0);
 
     alarm_destroy(nmimsg_alarm);
+    if (iduncart.rombase && nmi_int_num) {
+        memcpy(iduncart.rombase, boot_rom_bkup, sizeof boot_rom_bkup);
+        maincpu_set_nmi(nmi_int_num, IK_NONE);
+    }
 }
 
 /* ---------------------------------------------------------------------------------------------------- */
@@ -431,4 +436,5 @@ int iduncart_io_dump()
 void iduncart_set_rombase(uint8_t* base)
 {
     iduncart.rombase = base;
+    memcpy(boot_rom_bkup, base, sizeof boot_rom_bkup);
 }
