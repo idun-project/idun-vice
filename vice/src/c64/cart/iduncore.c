@@ -218,6 +218,10 @@ void iduncart_io_reset(io_iduncart_t *context)
         if (context->host) {
             iduncart_init(context->host);
         }
+        if (iduncart.rombase && nmi_int_num) {
+            memcpy(iduncart.rombase, boot_rom_bkup, sizeof boot_rom_bkup);
+            maincpu_set_nmi(nmi_int_num, IK_NONE);
+        }
     }
 }
 
@@ -274,24 +278,23 @@ io_iduncart_t *iduncart_init(const char *host)
 void iduncart_io_destroy(io_iduncart_t *context)
 {
     log_message(LOG_DEFAULT, "Idun disconnect");
-
+    alarm_destroy(nmimsg_alarm);
+    if (!context) return;
+    
     do {
         if (!context->socket) {
-            log_error(LOG_DEFAULT, "Attempt to close non-open socket");
+            log_error(LOG_DEFAULT, "Attempt to close non-open idunio");
             break;
         }    
-
         vice_network_socket_close(context->socket);
         context->socket = NULL;
+        if (!context->nmisock) {
+            log_error(LOG_DEFAULT, "Attempt to close non-open idunnmi");
+            break;
+        }    
         vice_network_socket_close(context->nmisock);
         context->nmisock = NULL;
     } while (0);
-
-    alarm_destroy(nmimsg_alarm);
-    if (iduncart.rombase && nmi_int_num) {
-        memcpy(iduncart.rombase, boot_rom_bkup, sizeof boot_rom_bkup);
-        maincpu_set_nmi(nmi_int_num, IK_NONE);
-    }
 }
 
 /* ---------------------------------------------------------------------------------------------------- */
@@ -361,7 +364,7 @@ void iduncart_soft_switch(io_iduncart_t *context, uint16_t addr, uint8_t byte)
     } else if (addr == 0x7e) {
         IDUN_VERBOSE_DEBUG((LOG_DEFAULT, "Soft-switch disable exrom"));
         if (machine_class & VICE_MACHINE_C64)
-            cart_config_changed_slotmain(2, 2, CMODE_READ);
+            cart_config_changed_slotmain(CMODE_RAM, CMODE_RAM, CMODE_READ);
     }
 }
 
