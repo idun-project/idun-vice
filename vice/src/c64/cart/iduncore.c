@@ -87,6 +87,15 @@ void nmimsg_alarm_handler(CLOCK offset, void *data)
                 return;
             }
 
+            // check if the header is a negative value
+            if (buffer[0] & 128 > 0) {
+                // That's a reboot message to the cartridge monitor
+                // For emulation, we'll treat it as a generic reset.
+                machine_trigger_reset(MACHINE_RESET_MODE_POWER_CYCLE);
+                return;
+            }
+            // Otherwise, this is an nmi request and the header gives
+            // the size.
             int msgBytes = (buffer[0] ? 256:0) + buffer[1];
             assert(msgBytes <= sizeof buffer);
             
