@@ -57,7 +57,7 @@
 #define CMD_UPDATE_PAGE 0xfd
 #define CMD_FREEMAP 0xf7
 
-#define NMIPORT "unix:/tmp/idunmm-nmi"
+#define NMIPORT "unix:%s/cartmon"
 // We use vice alarms to poll for nmi messages
 #define NMIMSG_POLL_INTERVAL 128    //128 microsecs
 
@@ -87,16 +87,18 @@ void nmimsg_alarm_handler(CLOCK offset, void *data)
                 return;
             }
 
+            int16_t msgBytes = (int16_t)((uint16_t)buffer[1] | ((uint16_t)buffer[0] << 8));
             // check if the header is a negative value
-            if (buffer[0] & 128 > 0) {
-                // That's a reboot message to the cartridge monitor
-                // For emulation, we'll treat it as a generic reset.
-                machine_trigger_reset(MACHINE_RESET_MODE_POWER_CYCLE);
+            if (msgBytes < 0) {
+                if (msgBytes==-1 || msgBytes==-2 || msgBytes==-1000) {
+                    // That's a reboot message to the cartridge monitor
+                    // For emulation, we'll treat it as a generic reset.
+                    machine_trigger_reset(MACHINE_RESET_MODE_POWER_CYCLE);
+                }
                 return;
             }
             // Otherwise, this is an nmi request and the header gives
             // the size.
-            int msgBytes = (buffer[0] ? 256:0) + buffer[1];
             assert(msgBytes <= sizeof buffer);
             
             numBytes = vice_network_recvfrom(s, buffer, msgBytes, 0);
@@ -265,9 +267,11 @@ io_iduncart_t *iduncart_init(const char *host)
     }
 
     /* setup unix datagram socket for nmi messages */
-    ad = vice_network_address_generate(NMIPORT, 0);
+    char tmp[255];
+    sprintf(tmp, NMIPORT, getenv("XDG_RUNTIME_DIR"));
+    ad = vice_network_address_generate(tmp, 0);
     if (!ad) {
-        log_error(LOG_DEFAULT, "Fail generate nmi socket '%s'.", NMIPORT);
+        log_error(LOG_DEFAULT, "Fail generate nmi socket '%s'.", tmp);
     }
     else {
         iduncart.nmisock = vice_network_unix(ad);
