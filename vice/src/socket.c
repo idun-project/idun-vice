@@ -473,73 +473,6 @@ vice_network_socket_t *vice_network_server(
     return sockfd == INVALID_SOCKET ? NULL : vice_network_alloc_new_socket(sockfd);
 }
 
-/*! \brief Open a socket and initialise it for unix datagram
-     operation
-
-  \param server_address
-     The unix domain socket endpoint to bind to.
-
-  \return
-     0 on error;
-     else, a handle to the socket on success.
-
-  \remark
-     The server_address variable must be for a Unix Domain
-     Socket.
-*/
-vice_network_socket_t *vice_network_unix(
-        const vice_network_socket_address_t * server_address)
-{
-#ifdef HAVE_UNIX_DOMAIN_SOCKETS
-    int sockfd = INVALID_SOCKET;
-    int error = 1;
-    int err;
-
-    assert(server_address != NULL);
-
-    do {
-        if (socket_init() < 0) {
-            log_error(LOG_DEFAULT,
-                "vice_network_server(): socket_init() failed");
-            break;
-        }
-
-        sockfd = (int)socket(server_address->domain, SOCK_DGRAM, server_address->protocol);
-        if (sockfd == INVALID_SOCKET) {
-            err = errno;
-            log_error(LOG_DEFAULT,
-                "vice_network_unix(): socket() returned INVALID_SOCKET: %s",
-                strerror(err));
-            break;
-        }
-
-        // Remove old socket file if it exists
-        archdep_remove(server_address->address.local.sun_path);
-
-        if (bind(sockfd, &server_address->address.generic, server_address->len) < 0) {
-            err = errno;
-            log_error(LOG_DEFAULT,
-                "vice_network_unix(): bind() failed: %s",
-                strerror(err));
-            break;
-        }
-        error = 0;
-    } while (0);
-
-    if (error) {
-        if (sockfd != INVALID_SOCKET) {
-            closesocket(sockfd);
-        }
-        sockfd = INVALID_SOCKET;
-    }
-
-    return sockfd == INVALID_SOCKET ? NULL : vice_network_alloc_new_socket(sockfd);
-#else /* #ifdef HAVE_UNIX_DOMAIN_SOCKETS */
-    log_message(LOG_DEFAULT, "Unix domain sockets are not supported in this installation of VICE!\n");
-    return -1;
-#endif /* #ifdef HAVE_UNIX_DOMAIN_SOCKETS */
-}
-
 /*! \brief Open a socket and initialise it for client operation
 
   \param server_address
@@ -820,65 +753,6 @@ static int vice_network_address_generate_ipv6(vice_network_socket_address_t * so
 #endif /* #ifdef HAVE_IPV6 */
 }
 
-/*! \internal \brief Generate a unix domain socket address
-
-  Initialises a socket address with a unix domain socket address
-
-  \param socket_address
-     Pointer to an empty socket address that will be initialized
-
-  \param address_string
-     A string describing the address to set.
-
-  \return
-     0 on success,
-     else an error occurred.
-
-  \remark
-     address_string must be the path of a special file
-     which represents the Unix domain socket.
-
-  \remark
-     On platforms which do not support unix domain sockets, this function
-     returns -1 as error.
-*/
-static int vice_network_address_generate_local(vice_network_socket_address_t * socket_address, const char * address_string)
-{
-#ifdef HAVE_UNIX_DOMAIN_SOCKETS
-    int error = 1;
-
-    do {
-        if (address_string[0] == 0) {
-            break;
-        }
-
-        /* initialise the socket address */
-
-        memset(&socket_address->address, 0, sizeof socket_address->address);
-        socket_address->domain = PF_UNIX;
-        socket_address->protocol = 0;
-        socket_address->len = sizeof socket_address->address.local;
-        socket_address->address.local.sun_family = AF_UNIX;
-
-        if (strlen(address_string) >= sizeof socket_address->address.local.sun_path) {
-            log_message(LOG_DEFAULT,
-                        "Unix domain socket name of '%s' is too long; only %"PRI_SIZE_T" chars are allowed.",
-                        address_string, sizeof(socket_address->address.local.sun_path));
-            break;
-        }
-        strcpy(socket_address->address.local.sun_path, address_string);
-
-        error = 0;
-    } while (0);
-
-    return error;
-
-#else /* #ifdef HAVE_UNIX_DOMAIN_SOCKETS */
-    log_message(LOG_DEFAULT, "Unix domain sockets are not supported in this installation of VICE!\n");
-    return -1;
-#endif /* #ifdef HAVE_UNIX_DOMAIN_SOCKETS */
-}
-
 /*! \brief Generate a socket address
 
   Initialises a socket address with the value
@@ -900,9 +774,7 @@ static int vice_network_address_generate_local(vice_network_socket_address_t * s
      NULL in case of an error.
 
   \remark
-     If address_string starts with a pipe ('|'), then the
-     address_string is treated as a unix domain socket.
-     Otherwise, address_string can be prepended with ip6://
+     address_string can be prepended with ip6://
      or ip4://, in which case address_string is treated
      exactly as an IPv6 or IPv4 address, respectively.
 
@@ -920,11 +792,7 @@ vice_network_socket_address_t * vice_network_address_generate(const char * addre
         if (socket_address == NULL) {
             break;
         }
-        if (address_string && strncmp("unix:", address_string, sizeof "unix:" - 1) == 0) {
-            if (vice_network_address_generate_local(socket_address, &address_string[sizeof "unix:" - 1])) {
-                break;
-            }
-        } else if (address_string && strncmp("ip6://", address_string, sizeof "ip6://" - 1) == 0) {
+        if (address_string && strncmp("ip6://", address_string, sizeof "ip6://" - 1) == 0) {
             if (vice_network_address_generate_ipv6(socket_address, &address_string[sizeof "ip6://" - 1], port)) {
                 break;
             }
@@ -1111,40 +979,6 @@ ssize_t vice_network_receive(vice_network_socket_t * sockfd, void * buffer, size
 
     signals_pipe_set();
     ret = recv(sockfd->sockfd, buffer, buffer_length, flags);
-    signals_pipe_unset();
-
-    return ret;
-}
-
-/*! \brief Receive data from a datagram socket
-
-  This function receives incoming data from a datagram socket.
-
-  \param sockfd
-     The connected socket to receive from
-
-  \param buffer
-     Pointer to the buffer which will hold the received data
-
-  \param buffer_length
-     The length of the buffer pointed to by buffer. This
-     indicates the maximum number of bytes to receive.
-
-  \param flags
-     Flags for the socket. These flags are architecture dependent.
-
-  \return
-     the number of bytes received. This can be less than
-     buffer_length.
-
-     In case of an error, -1 is returned.
-*/
-ssize_t vice_network_recvfrom(vice_network_socket_t * sockfd, void * buffer, size_t buffer_length, int flags)
-{
-    ssize_t ret;
-
-    signals_pipe_set();
-    ret = recvfrom(sockfd->sockfd, buffer, buffer_length, flags, NULL, NULL);
     signals_pipe_unset();
 
     return ret;

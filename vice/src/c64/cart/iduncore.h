@@ -31,10 +31,12 @@
 #include "snapshot.h"
 #include "types.h"
 #include "vicesocket.h"
+#include "idunsocket.h"
 
 typedef struct io_iduncart_s {
     const char *host;
-    vice_network_socket_t *socket, *nmisock;
+    vice_network_socket_t *socket;
+    idun_socket_t *nmisock_unix_domain, *nmisock_udp;
     uint8_t *rombase;
     uint8_t *pfirst, *plast;
     uint8_t m_page, m_block;

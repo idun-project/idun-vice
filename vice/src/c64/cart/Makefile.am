@@ -246,5 +246,7 @@ libc64commoncart_a_SOURCES = \
 	idunio.h \
 	idunmm.c \
 	idunmm.h \
+	idunsocket.c \
+	idunsocket.h \
 	iduncore.c \
 	iduncore.h

@@ -57,7 +57,11 @@
 #define CMD_UPDATE_PAGE 0xfd
 #define CMD_FREEMAP 0xf7
 
-#define NMIPORT "unix:/tmp/idunmm-nmi"
+// For nmi local unix domain datagram socket
+#define NMI_UNIX_DOMAIN_PATH "/tmp/idunmm-nmi"
+// For nmi udp socket
+#define NMI_UDP_PORT 64128
+
 // We use vice alarms to poll for nmi messages
 #define NMIMSG_POLL_INTERVAL 128    //128 microsecs
 
@@ -65,23 +69,26 @@
 static uint8_t recvBuf[MAX_PIPE_MSG_BYTES];
 static uint8_t blockMem[16384];
 static uint8_t boot_rom_bkup[496];
-static io_iduncart_t iduncart = {NULL, NULL, NULL, NULL, NULL, NULL, 0, SYSTEM_BLOCK, 0, 0, blockMem};
+static io_iduncart_t iduncart = {NULL, NULL, NULL, NULL, NULL, NULL, NULL, 0, SYSTEM_BLOCK, 0, 0, blockMem};
 static unsigned int nmi_int_num = 0;
 
-static void nmimsg_alarm_handler(CLOCK offset, void *data);
-struct alarm_s *nmimsg_alarm;
+static void nmimsg_alarm_handler(void *data);
+#ifdef HAVE_UNIX_DOMAIN_SOCKETS
+static void nmimsg_alarm_handler_unix_domain(CLOCK offset, void *data);
+#endif
+static void nmimsg_alarm_handler_udp(CLOCK offset, void *data);
+struct alarm_s *nmimsg_alarm_unix_domain = NULL;
+struct alarm_s *nmimsg_alarm_udp = NULL;
 
 /* ---------------------------------------------------------------------------------------------------- */
-void nmimsg_alarm_handler(CLOCK offset, void *data)
+void nmimsg_alarm_handler(void *data)
 {
-    alarm_unset(nmimsg_alarm);
-
     if (data) {
-        vice_network_socket_t *s = (vice_network_socket_t *)data;
-        if (vice_network_select_poll_one(s)) {
+        idun_socket_t *s = (idun_socket_t *)data;
+        if (idun_socket_poll(s)) {
             uint8_t buffer[496];
 
-            int numBytes = vice_network_recvfrom(s, buffer, 2, 0);
+            int numBytes = idun_socket_recvfrom(s, buffer, 2, 0);
             if (numBytes != 2) {
                 log_error(LOG_DEFAULT, "NMI request sync.");
                 return;
@@ -99,7 +106,7 @@ void nmimsg_alarm_handler(CLOCK offset, void *data)
             int msgBytes = (buffer[0] ? 256:0) + buffer[1];
             assert(msgBytes <= sizeof buffer);
             
-            numBytes = vice_network_recvfrom(s, buffer, msgBytes, 0);
+            numBytes = idun_socket_recvfrom(s, buffer, msgBytes, 0);
             if (numBytes != msgBytes) {
                 log_error(LOG_DEFAULT, "NMI request size.");
             }
@@ -113,8 +120,24 @@ void nmimsg_alarm_handler(CLOCK offset, void *data)
             }
         }
     }
+}
 
-    alarm_set(nmimsg_alarm, maincpu_clk + NMIMSG_POLL_INTERVAL);
+/* ---------------------------------------------------------------------------------------------------- */
+#ifdef HAVE_UNIX_DOMAIN_SOCKETS
+void nmimsg_alarm_handler_unix_domain(CLOCK offset, void *data)
+{
+    alarm_unset(nmimsg_alarm_unix_domain);
+    nmimsg_alarm_handler(data);
+    alarm_set(nmimsg_alarm_unix_domain, maincpu_clk + NMIMSG_POLL_INTERVAL);
+}
+#endif
+
+/* ---------------------------------------------------------------------------------------------------- */
+void nmimsg_alarm_handler_udp(CLOCK offset, void *data)
+{
+    alarm_unset(nmimsg_alarm_udp);
+    nmimsg_alarm_handler(data);
+    alarm_set(nmimsg_alarm_udp, maincpu_clk + NMIMSG_POLL_INTERVAL);
 }
 
 /* ---------------------------------------------------------------------------------------------------- */
@@ -264,22 +287,54 @@ io_iduncart_t *iduncart_init(const char *host)
         vice_network_address_close(ad);
     }
 
-    /* setup unix datagram socket for nmi messages */
-    ad = vice_network_address_generate(NMIPORT, 0);
-    if (!ad) {
-        log_error(LOG_DEFAULT, "Fail generate nmi socket '%s'.", NMIPORT);
-    }
-    else {
-        iduncart.nmisock = vice_network_unix(ad);
-        if (!iduncart.nmisock) {
-            log_error(LOG_DEFAULT, "Can't open domain socket for nmi.");
+    /* determine if idunhost is local (127.0.0.1 or localhost) */
+    do {
+        const char *colon = strchr(host, ':');
+        size_t hostlen = colon ? (size_t)(colon - host) : strlen(host);
+        if (!((hostlen == 9 && strncmp(host, "127.0.0.1", 9) == 0) ||
+              (hostlen == 9 && strncmp(host, "localhost", 9) == 0))) {
+            break; /* remote host — skip to UDP below */
         }
-    }
 
-    /* alarm used to poll for nmi messages */
-    nmimsg_alarm = alarm_new(maincpu_alarm_context, "NmiMessageAlarm",
-                            nmimsg_alarm_handler, iduncart.nmisock);
-    alarm_set(nmimsg_alarm, maincpu_clk + NMIMSG_POLL_INTERVAL);
+#ifdef HAVE_UNIX_DOMAIN_SOCKETS
+        /* setup unix datagram socket for nmi messages - will work only when running vice on the same pi as idun */
+        iduncart.nmisock_unix_domain = idun_socket_open_unix(NMI_UNIX_DOMAIN_PATH);
+        if (!iduncart.nmisock_unix_domain) {
+            log_error(LOG_DEFAULT, "Can't open unix domain socket for nmi.");
+            break;
+        }
+
+        /* alarm used to poll unix domain socket for nmi messages */
+        nmimsg_alarm_unix_domain = alarm_new(maincpu_alarm_context, "NmiMessageAlarmUnixDomain",
+                                             nmimsg_alarm_handler_unix_domain, iduncart.nmisock_unix_domain);
+        alarm_set(nmimsg_alarm_unix_domain, maincpu_clk + NMIMSG_POLL_INTERVAL);
+
+        log_message(LOG_DEFAULT, "Idun unix domain socket bound");
+#else
+        log_error(LOG_DEFAULT, "Unix domain sockets not available; cannot open NMI socket for localhost.");
+#endif
+        return &iduncart;
+    } while(0);
+
+    /* UDP for NMI messages (remote host) */
+    do {
+        if (iduncart.nmisock_unix_domain) {
+            log_message(LOG_DEFAULT, "Not opening idun udp - unix domain socket open for local iduncart");
+        }
+
+        iduncart.nmisock_udp = idun_socket_open_udp(NMI_UDP_PORT);
+        if (!iduncart.nmisock_udp) {
+            log_error(LOG_DEFAULT, "Can't open udp socket for nmi.");
+            break;
+        }
+
+        /* alarm used to poll udp socket for nmi messages */
+        nmimsg_alarm_udp = alarm_new(maincpu_alarm_context, "NmiMessageAlarmUdp",
+                                     nmimsg_alarm_handler_udp, iduncart.nmisock_udp);
+        alarm_set(nmimsg_alarm_udp, maincpu_clk + NMIMSG_POLL_INTERVAL);
+
+        log_message(LOG_DEFAULT, "Idun udp socket bound");
+    } while(0);
 
     return &iduncart;
 }
@@ -287,23 +342,31 @@ io_iduncart_t *iduncart_init(const char *host)
 void iduncart_io_destroy(io_iduncart_t *context)
 {
     log_message(LOG_DEFAULT, "Idun disconnect");
-    alarm_destroy(nmimsg_alarm);
+
+    if (nmimsg_alarm_unix_domain) alarm_destroy(nmimsg_alarm_unix_domain);
+    if (nmimsg_alarm_udp) alarm_destroy(nmimsg_alarm_udp);
+
     if (!context) return;
     
     do {
         if (!context->socket) {
             log_error(LOG_DEFAULT, "Attempt to close non-open idunio");
             break;
-        }    
+        }
         vice_network_socket_close(context->socket);
         context->socket = NULL;
-        if (!context->nmisock) {
-            log_error(LOG_DEFAULT, "Attempt to close non-open idunnmi");
-            break;
-        }    
-        vice_network_socket_close(context->nmisock);
-        context->nmisock = NULL;
     } while (0);
+
+#ifdef HAVE_UNIX_DOMAIN_SOCKETS
+    if (context->nmisock_unix_domain) {
+        idun_socket_close(context->nmisock_unix_domain);
+        context->nmisock_unix_domain = NULL;
+    }
+#endif
+    if (context->nmisock_udp) {
+        idun_socket_close(context->nmisock_udp);
+        context->nmisock_udp = NULL;
+    }
 }
 
 /* ---------------------------------------------------------------------------------------------------- */
