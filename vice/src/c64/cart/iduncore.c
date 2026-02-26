@@ -57,8 +57,9 @@
 #define CMD_UPDATE_PAGE 0xfd
 #define CMD_FREEMAP 0xf7
 
-// For nmi local unix domain datagram socket
-#define NMI_UNIX_DOMAIN_PATH "/tmp/idunmm-nmi"
+// For nmi local unix domain datagram socket path (uses XDG_RUNTIME_DIR at runtime)
+#define NMI_XDG_ENV "XDG_RUNTIME_DIR"
+#define NMI_UNIX_DOMAIN_PATH_FMT "%s/cartmon"
 // For nmi udp socket
 #define NMI_UDP_PORT 64128
 
@@ -94,16 +95,18 @@ void nmimsg_alarm_handler(void *data)
                 return;
             }
 
+            int16_t msgBytes = (int16_t)((uint16_t)buffer[1] | ((uint16_t)buffer[0] << 8));
             // check if the header is a negative value
-            if (buffer[0] & 128 > 0) {
-                // That's a reboot message to the cartridge monitor
-                // For emulation, we'll treat it as a generic reset.
-                machine_trigger_reset(MACHINE_RESET_MODE_POWER_CYCLE);
+            if (msgBytes < 0) {
+                if (msgBytes==-1 || msgBytes==-2 || msgBytes==-1000) {
+                    // That's a reboot message to the cartridge monitor
+                    // For emulation, we'll treat it as a generic reset.
+                    machine_trigger_reset(MACHINE_RESET_MODE_POWER_CYCLE);
+                }
                 return;
             }
             // Otherwise, this is an nmi request and the header gives
             // the size.
-            int msgBytes = (buffer[0] ? 256:0) + buffer[1];
             assert(msgBytes <= sizeof buffer);
             
             numBytes = idun_socket_recvfrom(s, buffer, msgBytes, 0);
@@ -298,7 +301,10 @@ io_iduncart_t *iduncart_init(const char *host)
 
 #ifdef HAVE_UNIX_DOMAIN_SOCKETS
         /* setup unix datagram socket for nmi messages - will work only when running vice on the same pi as idun */
-        iduncart.nmisock_unix_domain = idun_socket_open_unix(NMI_UNIX_DOMAIN_PATH);
+        char nmi_path[256];
+        const char *xdg = getenv(NMI_XDG_ENV);
+        snprintf(nmi_path, sizeof(nmi_path), NMI_UNIX_DOMAIN_PATH_FMT, xdg ? xdg : "/tmp");
+        iduncart.nmisock_unix_domain = idun_socket_open_unix(nmi_path);
         if (!iduncart.nmisock_unix_domain) {
             log_error(LOG_DEFAULT, "Can't open unix domain socket for nmi.");
             break;

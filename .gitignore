@@ -21,6 +21,9 @@ vice/src/resid/siddefs.h
 vice/src/stamp-h1
 vice/src/version.h
 vice/src/vice-version.sh
+vice/src/tags
+vice/src/tagsdb/
+vice/src/.cache/
 *.o
 lib*.a
 *.o65
