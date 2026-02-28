@@ -753,6 +753,67 @@ static int vice_network_address_generate_ipv6(vice_network_socket_address_t * so
 #endif /* #ifdef HAVE_IPV6 */
 }
 
+#if 0
+/*! \internal \brief Generate a unix domain socket address
+
+  Initialises a socket address with a unix domain socket address
+
+  \param socket_address
+     Pointer to an empty socket address that will be initialized
+
+  \param address_string
+     A string describing the address to set.
+
+  \return
+     0 on success,
+     else an error occurred.
+
+  \remark
+     address_string must be the path of a special file
+     which represents the Unix domain socket.
+
+  \remark
+     On platforms which do not support unix domain sockets, this function
+     returns -1 as error.
+*/
+static int vice_network_address_generate_local(vice_network_socket_address_t * socket_address, const char * address_string)
+{
+#ifdef HAVE_UNIX_DOMAIN_SOCKETS
+    int error = 1;
+
+    do {
+        if (address_string[0] == 0) {
+            break;
+        }
+
+        /* initialise the socket address */
+
+        memset(&socket_address->address, 0, sizeof socket_address->address);
+        socket_address->domain = PF_UNIX;
+        socket_address->protocol = 0;
+        socket_address->len = sizeof socket_address->address.local;
+        socket_address->address.local.sun_family = AF_UNIX;
+
+        if (strlen(address_string) >= sizeof socket_address->address.local.sun_path) {
+            log_message(LOG_DEFAULT,
+                        "Unix domain socket name of '%s' is too long; only %"PRI_SIZE_T" chars are allowed.",
+                        address_string, sizeof(socket_address->address.local.sun_path));
+            break;
+        }
+        strcpy(socket_address->address.local.sun_path, address_string);
+
+        error = 0;
+    } while (0);
+
+    return error;
+
+#else /* #ifdef HAVE_UNIX_DOMAIN_SOCKETS */
+    log_message(LOG_DEFAULT, "Unix domain sockets are not supported in this installation of VICE!\n");
+    return -1;
+#endif /* #ifdef HAVE_UNIX_DOMAIN_SOCKETS */
+}
+#endif
+
 /*! \brief Generate a socket address
 
   Initialises a socket address with the value
@@ -774,7 +835,9 @@ static int vice_network_address_generate_ipv6(vice_network_socket_address_t * so
      NULL in case of an error.
 
   \remark
-     address_string can be prepended with ip6://
+     If address_string starts with a pipe ('|'), then the
+     address_string is treated as a unix domain socket.
+     Otherwise, address_string can be prepended with ip6://
      or ip4://, in which case address_string is treated
      exactly as an IPv6 or IPv4 address, respectively.
 
@@ -792,6 +855,14 @@ vice_network_socket_address_t * vice_network_address_generate(const char * addre
         if (socket_address == NULL) {
             break;
         }
+#if 0 /* FIXME: "|" as first character indicates that we want to pipe through an external process - if we
+                want to support unix domain socket, this has to use another syntax! */
+        if (address_string && address_string[0] == '|') {
+            if (vice_network_address_generate_local(socket_address, &address_string[1])) {
+                break;
+            }
+        } else
+#endif
         if (address_string && strncmp("ip6://", address_string, sizeof "ip6://" - 1) == 0) {
             if (vice_network_address_generate_ipv6(socket_address, &address_string[sizeof "ip6://" - 1], port)) {
                 break;
