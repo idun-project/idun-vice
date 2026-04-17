@@ -73,42 +73,39 @@ entryPoint = *
     jsr kernelRESTOR
 }
 warmstart = *
+    ; wait for keyboard scan
+    cli
+    lda $a2
+-   cmp $a2
+    beq -
+    sei
     ; this byte must be init'd to zero so the
     ; idun kernel loads the default shell.
     lda #0
     sta $b00
     ; idun boot device
-    lda #26     ;Z:
-    sta IdunDrive
-    ; setup booter filename
-    lda #1
+    sta IdunDrive      ;@:
+    ; stream booter cmd
+    ldx #2
+-   lda bootcmd,x
+    jsr idunChOut
+    dex
+    bpl -
+    ; select booter
+    lda $91
     sta kSecaddr
-    lda #7
-    ldx #<booter
-    ldy #>booter
-    jsr kernelSetnam
-!if useC128 {
-    lda #bkRam0
-    ldx #$08
-    jsr kernelSetbnk
-}
+    jsr idunChOut
     ; load booter and jump
-    jsr Loader
-    bcc +
-    brk
-+   jmp (kSaveaddr)
-booter = *
-!if useC128 {
-    !pet "boot128"
-} else {
-    !pet "boot-64"
-}
+    jsr LoaderCont
+    jmp (kSaveaddr)
+bootcmd !byte $f0,$7f,$20   ;CMD_STREAM_BOOTER
 
 Loader = *
     lda #"P"
     jsr Open
     beq +
     jmp kernalErrNotFound
+LoaderCont = *
 +   jsr talk
     jsr idunChIn
     sta temp
@@ -133,12 +130,11 @@ Loader = *
     sta kCurraddr+0
     bcc +
     inc kCurraddr+1
-+   nop
-!if useC64 {
-    cpy #>RAMR-1
-    bcc +
-    jsr kernelRESTOR
-}
+; !if useC64 {
+; +   cpy #>RAMR-1
+;     bcc +
+;     jsr kernelRESTOR
+; }
 +   jsr Close
     lda #$40
     sta kStatus
@@ -283,7 +279,7 @@ talk = *
     inc $6c
 +   lda IdunDrive
     clc
-    ;send OPEN command
+    ;send TALK command
     adc #$40
     jsr idunChOut
     lda #$7e    ;Lfn=30
@@ -313,13 +309,15 @@ Close = *
     jsr idunChOut
     inc $6c
 +   lda IdunDrive
+    beq +
     clc
     adc #$20
     jsr idunChOut
     lda #$9e    ;Lfn=30
     jsr idunChOut
     jsr idunFlush
-    jmp unlisten
+    jsr unlisten
++   rts
 
 ; ----------------------------------------------------------------------------
 idDataport = $de00
