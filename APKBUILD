@@ -7,12 +7,15 @@ arch="aarch64"
 url="https://github.com/idun-project/idun-vice"
 license="GPLv2"
 depends="alsa-lib giflib libjpeg-turbo libpng sdl3 sdl2-compat"
-makedepends="sdl3-dev sdl2-compat-dev pkgconf
-flex bison dos2unix curl-dev
-libvorbis-dev" #libpcap xa xorg-bdftopcf
+makedepends="sdl3-dev sdl2-compat-dev pkgconf flex bison dos2unix
+curl-dev libvorbis-dev"
 options="!check"
-source=("$pkgname-$pkgver.tar.gz")
-buildir="$srcdir"
+source="$pkgname-$pkgver.tar.gz"
+builddir="$srcdir"
+
+prepare() {
+	cd "${srcdir}"/vice && source autogen.sh
+}
 
 build() {
   cd "${srcdir}"/vice/idun && make clean && make
@@ -22,7 +25,8 @@ build() {
     --without-pulse \
     --without-oss \
     --with-vorbis \
-    --disable-pdf-docs \
+    --with-fastsid \
+    --disable-ffmpeg \
     --disable-html-docs \
     --libdir=/usr/lib \
     --prefix=/usr
@@ -43,3 +47,6 @@ package() {
   # install -m755 "${srcdir}"/vice/idun/emu.sh "${pkgdir}"${HOME}/idun-vice
   # install -m755 "${srcdir}"/vice/idun/emu64.sh "${pkgdir}"${HOME}/idun-vice
 }
+sha512sums="
+1a9d4563282386ac04f5e7844e52cc3f3c9cc8eb97154eaf8513b998aaaa07e3c57889f8fddaa80250da249f3d1f48e23d42caa9f0e20eb27a2dfc48a1bba417  idun-vice-3.9.tar.gz
+"

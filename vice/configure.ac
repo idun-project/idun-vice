@@ -1430,7 +1430,8 @@ if test x"$check_sdl2" = "xyes"; then
         VICE_CXXFLAGS="$VICE_CXXFLAGS $SDL2_IMAGE_CFLAGS"
         LIBS="$LIBS $SDL2_IMAGE_LIBS"
       else
-        AC_MSG_ERROR([SDL2_image-dev is required.])
+		AC_MSG_WARN([SDL2_image-dev not found, proceeding without it.])
+  		have_sdl2_image=no
       fi
     fi
     # LIBS="$LIBS -static-libstdc++"

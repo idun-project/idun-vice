@@ -33,7 +33,9 @@
 #include "archdep.h"
 #include "archdep_defs.h"
 #include "vice_sdl.h"
+#if 0
 #include <SDL_image.h>
+#endif
 #include <stdio.h>
 #include <stdlib.h>
 #include <stdint.h>
@@ -53,6 +55,7 @@
  */
 void sdl_ui_set_window_icon(SDL_Window *window)
 {
+#if 0
     SDL_Surface *surface;
     char *path;
 
@@ -70,6 +73,7 @@ void sdl_ui_set_window_icon(SDL_Window *window)
 
     /* ...and the surface containing the icon pixel data is no longer required. */
     SDL_FreeSurface(surface);
+#endif
 }
 
 #else
@@ -84,6 +88,7 @@ void sdl_ui_set_window_icon(SDL_Window *window)
  */
 void sdl_ui_set_window_icon(void *window)
 {
+#if 0
     SDL_Surface *surface;
     char *path;
 
@@ -105,6 +110,7 @@ void sdl_ui_set_window_icon(void *window)
 
     SDL_WM_SetIcon(surface, NULL);
     SDL_FreeSurface(surface);
+#endif
 }
 
 #endif
