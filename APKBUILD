@@ -37,16 +37,10 @@ build() {
 package() {
   cd "${builddir}"/vice
   make DESTDIR="$pkgdir" install
-  # set USER=idun
-  # set HOME=/home/${USER}
-  # install -d -o ${USER} -g ${USER} "${pkgdir}"${HOME}/idun-vice/resc
-  # install -d -o ${USER} -g ${USER} "${pkgdir}"${HOME}/.config/vice
-  # install -m644 "${srcdir}"/vice/idun/resc/emu.rom "${pkgdir}"${HOME}/idun-vice/resc
-  # install -m644 "${srcdir}"/vice/idun/resc/emu64.rom "${pkgdir}"${HOME}/idun-vice/resc
-  # install -m644 "${srcdir}"/vice/idun/sdl-vicerc "${pkgdir}"${HOME}/.config/vice
-  # install -m755 "${srcdir}"/vice/idun/emu.sh "${pkgdir}"${HOME}/idun-vice
-  # install -m755 "${srcdir}"/vice/idun/emu64.sh "${pkgdir}"${HOME}/idun-vice
+  install -m644 "${srcdir}"/vice/idun/resc/emu.rom "${pkgdir}"/usr/share/idun/rom/emu.rom
+  install -m644 "${srcdir}"/vice/idun/resc/emu64.rom "${pkgdir}"/usr/share/idun/rom/emu64.rom
+  install -m755 "${srcdir}"/vice/idun/vice.sh "${pkgdir}"/usr/bin/vice
 }
 sha512sums="
-1a9d4563282386ac04f5e7844e52cc3f3c9cc8eb97154eaf8513b998aaaa07e3c57889f8fddaa80250da249f3d1f48e23d42caa9f0e20eb27a2dfc48a1bba417  idun-vice-3.9.tar.gz
+b722193ab158ae53435561addab937a475195036e2d50dfd431ff99b2e5dccc14f161267bb8e847a0dfdec6c658f9cad81c96d01c2a86261c7c67e4dcb03f835  idun-vice-3.9.tar.gz
 "
