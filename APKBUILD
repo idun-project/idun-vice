@@ -43,5 +43,5 @@ package() {
   install -m755 "${builddir}"/vice/idun/vice.sh "${pkgdir}"/usr/bin/vice
 }
 sha512sums="
-84cc6b11743cc7b6b6c5d1123d2d3fbcd1cae1ec37437651ff245cf521ea4c290bce30df59cbbf308c685a3c79bced62f00ba905333179cb2b2d37d6f041e098  idun-vice-3.9.tar.gz
+89b49db4fe2f3eedcd44bd899f1dfbe96a13298222ecc0ccd7d4ef8192c96ee5f55bd056d308feb0a329f1a3d578f3aa32b6f515c507f33aae3257334b898762  idun-vice-3.9.tar.gz
 "

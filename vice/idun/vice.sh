@@ -77,10 +77,10 @@ else
     # Determine default emulator based on modesw and opposite flag
     if [[ "$modesw" == "1" ]]; then
         emulator="x64"
-        [[ $opposite -eq 1 ]] && emulator="x128"
+        [[ $opposite -eq 1 ]] && emulator="x128" && export IDUN_MODE_SWITCH=0
     else
         emulator="x128"
-        [[ $opposite -eq 1 ]] && emulator="x64"
+        [[ $opposite -eq 1 ]] && emulator="x64" && export IDUN_MODE_SWITCH=1
     fi
 fi
 
@@ -105,7 +105,7 @@ case "$emulator" in
         resources="[C128]\nVICIIFilter=0\nVDCFilter=0\nVICIIGLFilter=0"
         if [[ $idun_enabled -eq 1 ]]; then
             resources+="\nIDUNIO=1\nIDUNHOST=127.0.0.1:25232"
-            emu_args+=("-cartidun" "/usr/share/idun/rom/emu.rom")
+            emu_args+=("-cartidun128" "/usr/share/idun/rom/emu.rom")
         fi
         ;;
     xvic)
@@ -152,6 +152,13 @@ fi
 kvm=1
 if ! pgrep -x "idunkvm" > /dev/null; then
 	kvm=0
+fi
+
+# Check if a monitor is actively sending an EDID signal
+if ! grep -q "^connected$" /sys/class/drm/card*-*/status 2>/dev/null; then
+    echo "WARNING: No active display detected on the DRM planes." >&2
+    echo "--> Please verify your HDMI monitor is plugged in and POWERED ON! <--" >&2
+    exit 1
 fi
 
 echo "Starting $emulator emulator..."
