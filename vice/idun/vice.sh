@@ -45,6 +45,7 @@ while [[ $# -gt 0 ]]; do
             ;;
         -m)
             if [[ -n "$2" ]]; then
+            	idun_enabled=0
                 machine="$2"
                 shift 2
             else
@@ -87,9 +88,8 @@ fi
 # Resource Generation (Consolidated)
 # ==========================================
 
-# Create temporary file and ensure it is cleaned up on exit
+# Create temporary file for Vice resource configuration
 temp_conf=$(mktemp /tmp/vice_res.XXXXXX)
-trap 'rm -f "$temp_conf"' EXIT
 
 resources=""
 
@@ -129,16 +129,29 @@ esac
 echo -e "$resources" > "$temp_conf"
 
 # ==========================================
+# Environment Configuration
+# ==========================================
+
+# Define potential socket locations
+WAYLAND_SOCKET="${XDG_RUNTIME_DIR:-/run/user/$(id -u)}/${WAYLAND_DISPLAY:-wayland-0}"
+
+# Fallback check: look for any wayland-ish socket in common locations if the above fails
+if [[ -S "$WAYLAND_SOCKET" ]] || [[ -S "/tmp/wayland-0" ]]; then
+    export SDL_VIDEO_DRIVER=wayland
+    echo "Display driver: Wayland socket detected"
+else
+    export SDL_VIDEO_DRIVER=kmsdrm
+    echo "Display driver: No Wayland socket found, defaulting to KMS/DRM"
+fi
+
+# ==========================================
 # Process Synchronization & Execution
 # ==========================================
 
-# Wait for the idunkvm process to exist
+# Check whether idunkvm process is already running
+kvm=1
 if ! pgrep -x "idunkvm" > /dev/null; then
-    echo -n "Switch keyboard and mouse control now <Cmd+k>...waiting"
-    while ! pgrep -x "idunkvm" > /dev/null; do
-        sleep 0.5
-    done
-    echo "" # New line once the process is found
+	kvm=0
 fi
 
 echo "Starting $emulator emulator..."
@@ -149,9 +162,16 @@ echo "Starting $emulator emulator..."
 echo -e "\n[Sanity Check] Launching with command:"
 echo "$emulator -addconfig \"$temp_conf\" ${emu_args[*]}"
 
-# 2. Launch backgrounded & 3. Exit
-"$emulator" -addconfig "$temp_conf" "${emu_args[@]}" >/dev/null 2>&1 &
-disown
+# 2. Launch backgrounded
+nohup "$emulator" -addconfig "$temp_conf" "${emu_args[@]}" >/dev/null 2>&1 &
 
-sleep 1
+# 3. Trigger kvm switch if not already active and emulator will access Idun
+if [[ $kvm -eq 0 && $idun_enabled -eq 1 ]]; then
+	# Ensure the socket exists before trying to write to it
+    if [[ -S "/tmp/idunmm-lua" ]]; then
+        echo "sys.keystroke(171)" | socat - UNIX-CONNECT:/tmp/idunmm-lua
+    fi
+fi
+
+sleep 0.5
 exit 0

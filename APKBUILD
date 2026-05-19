@@ -1,7 +1,7 @@
 # Maintainer: Brian Holdsworth <brian@focus42llc.com>
 pkgname=idun-vice
 pkgver=3.9
-pkgrel=0
+pkgrel=1
 pkgdesc="Patched VICE emulator for Idun"
 arch="aarch64"
 url="https://github.com/idun-project/idun-vice"
@@ -37,10 +37,11 @@ build() {
 package() {
   cd "${builddir}"/vice
   make DESTDIR="$pkgdir" install
-  install -m644 "${srcdir}"/vice/idun/resc/emu.rom "${pkgdir}"/usr/share/idun/rom/emu.rom
-  install -m644 "${srcdir}"/vice/idun/resc/emu64.rom "${pkgdir}"/usr/share/idun/rom/emu64.rom
-  install -m755 "${srcdir}"/vice/idun/vice.sh "${pkgdir}"/usr/bin/vice
+  install -m644 -d "${pkgdir}"/usr/share/idun/rom
+  install -m644 "${builddir}"/vice/idun/resc/emu.rom "${pkgdir}"/usr/share/idun/rom/emu.rom
+  install -m644 "${builddir}"/vice/idun/resc/emu64.rom "${pkgdir}"/usr/share/idun/rom/emu64.rom
+  install -m755 "${builddir}"/vice/idun/vice.sh "${pkgdir}"/usr/bin/vice
 }
 sha512sums="
-b722193ab158ae53435561addab937a475195036e2d50dfd431ff99b2e5dccc14f161267bb8e847a0dfdec6c658f9cad81c96d01c2a86261c7c67e4dcb03f835  idun-vice-3.9.tar.gz
+84cc6b11743cc7b6b6c5d1123d2d3fbcd1cae1ec37437651ff245cf521ea4c290bce30df59cbbf308c685a3c79bced62f00ba905333179cb2b2d37d6f041e098  idun-vice-3.9.tar.gz
 "
