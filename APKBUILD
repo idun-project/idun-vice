@@ -37,7 +37,7 @@ build() {
 package() {
   cd "${builddir}"/vice
   make DESTDIR="$pkgdir" install
-  install -m644 -d "${pkgdir}"/usr/share/idun/rom
+  install -m755 -d "${pkgdir}"/usr/share/idun/rom
   install -m644 "${builddir}"/vice/idun/resc/emu.rom "${pkgdir}"/usr/share/idun/rom/emu.rom
   install -m644 "${builddir}"/vice/idun/resc/emu64.rom "${pkgdir}"/usr/share/idun/rom/emu64.rom
   install -m755 "${builddir}"/vice/idun/vice.sh "${pkgdir}"/usr/bin/vice
