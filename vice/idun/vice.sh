@@ -97,14 +97,14 @@ case "$emulator" in
     x64)
         resources="[C64SC]\nVICIIFilter=0\nVICIIGLFilter=0"
         if [[ $idun_enabled -eq 1 ]]; then
-            resources+="\nIDUNIO=1\nIDUNHOST=127.0.0.1:25232"
+            resources+="\nIDUNHOST=127.0.0.1:25232\nIDUNIO=1"
             emu_args+=("-cartidun" "/usr/share/idun/rom/emu64.rom")
         fi
         ;;
     x128)
         resources="[C128]\nVICIIFilter=0\nVDCFilter=0\nVICIIGLFilter=0"
         if [[ $idun_enabled -eq 1 ]]; then
-            resources+="\nIDUNIO=1\nIDUNHOST=127.0.0.1:25232"
+            resources+="\nIDUNHOST=127.0.0.1:25232\nIDUNIO=1"
             emu_args+=("-cartidun128" "/usr/share/idun/rom/emu.rom")
         fi
         ;;
