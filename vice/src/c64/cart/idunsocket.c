@@ -245,9 +245,7 @@ ssize_t idun_socket_recvfrom(idun_socket_t *sockfd, void *buffer, size_t buffer_
 {
     ssize_t ret;
 
-    signals_pipe_set();
     ret = recvfrom(sockfd->sockfd, buffer, buffer_length, flags, NULL, NULL);
-    signals_pipe_unset();
 
     return ret;
 }
