@@ -46,8 +46,10 @@
    - C64/C128 Idun cartridge
 */
 
-#define IDUN_VERBOSE_DEBUG(_x) log_debug _x
-//#define IDUN_VERBOSE_DEBUG(_x)
+#define IDUN_DEBUG(_x) log_debug _x
+//#define IDUN_DEBUG(_x)
+//#define IDUN_VERBOSE_DEBUG(_x) log_debug _x
+#define IDUN_VERBOSE_DEBUG(_x)
 
 // This defines come from the `idunio` service
 #define MAX_PIPE_MSG_BYTES 293
@@ -114,7 +116,7 @@ void nmimsg_alarm_handler(void *data)
                 log_error(LOG_DEFAULT, "NMI request size.");
             }
 
-            IDUN_VERBOSE_DEBUG((LOG_DEFAULT, "NMI request: %d bytes.", msgBytes));
+            IDUN_DEBUG((LOG_DEFAULT, "NMI request: %d bytes.", msgBytes));
             if (iduncart.rombase && nmi_int_num) {
                 memcpy(iduncart.rombase, buffer, msgBytes);
                 maincpu_set_nmi(nmi_int_num, IK_NMI);
@@ -436,13 +438,13 @@ void iduncart_soft_switch(io_iduncart_t *context, uint16_t addr, uint8_t byte)
 
     maincpu_set_nmi(nmi_int_num, IK_NONE);
     if (addr == 0x7f) {
-        IDUN_VERBOSE_DEBUG((LOG_DEFAULT, "Soft-switch enable exrom"));
-        if (machine_class & VICE_MACHINE_C64)
-            cart_config_changed_slotmain(CMODE_8KGAME, CMODE_8KGAME, CMODE_READ);
+        IDUN_DEBUG((LOG_DEFAULT, "Soft-switch enable exrom"));
+        if (machine_class & VICE_MACHINE_C64SC)
+            cart_config_changed_slotmain(CMODE_8KGAME, CMODE_8KGAME, CMODE_READ | CMODE_PHI2_RAM);
     } else if (addr == 0x7e) {
-        IDUN_VERBOSE_DEBUG((LOG_DEFAULT, "Soft-switch disable exrom"));
-        if (machine_class & VICE_MACHINE_C64)
-            cart_config_changed_slotmain(CMODE_RAM, CMODE_RAM, CMODE_READ);
+        IDUN_DEBUG((LOG_DEFAULT, "Soft-switch disable exrom"));
+        if (machine_class & VICE_MACHINE_C64SC)
+            cart_config_changed_slotmain(CMODE_RAM, CMODE_RAM, CMODE_READ | CMODE_PHI2_RAM);
     }
 }
 
