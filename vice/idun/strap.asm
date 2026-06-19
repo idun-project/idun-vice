@@ -98,8 +98,11 @@ warmstart = *
     ; load booter and jump
     jsr LoaderCont
     jmp (kSaveaddr)
-bootcmd !byte $f0,$7f,$20   ;CMD_STREAM_BOOTER
-
+!if useC64 {
+bootcmd !byte $f0,$7f,$20   ;CMD_STREAM_BOOTER_64
+} else {
+bootcmd !byte $ef,$7f,$20   ;CMD_STREAM_BOOTER_128
+}
 Loader = *
     lda #"P"
     jsr Open
