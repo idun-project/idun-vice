@@ -30,7 +30,7 @@ echo Staging into %STAGEDIR% ...
 mkdir "%STAGEDIR%"
 
 :: Copy bat files, README and resc to top level inside subdir
-copy emu*.bat "%STAGEDIR%\" > nul
+copy vice*.bat "%STAGEDIR%\" > nul
 copy ..\..\README.md "%STAGEDIR%\" > nul
 xcopy /e /i /q resc "%STAGEDIR%\resc\" > nul
 
