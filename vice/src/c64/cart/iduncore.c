@@ -43,11 +43,11 @@
 #include <assert.h>
 
 #ifndef MSG_WAITALL
-#  ifdef WINDOWS_COMPILE
-#    define MSG_WAITALL 0x8
-#  else
-#    define MSG_WAITALL 0x100
-#  endif
+#ifdef WINDOWS_COMPILE
+#define MSG_WAITALL 0x8
+#else
+#define MSG_WAITALL 0x100
+#endif
 #endif
 
 /* This module is currently used in the following emulated hardware:
