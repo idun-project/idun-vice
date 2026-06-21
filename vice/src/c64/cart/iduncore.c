@@ -42,6 +42,14 @@
 #include <ctype.h>
 #include <assert.h>
 
+#ifndef MSG_WAITALL
+#  ifdef WINDOWS_COMPILE
+#    define MSG_WAITALL 0x8
+#  else
+#    define MSG_WAITALL 0x100
+#  endif
+#endif
+
 /* This module is currently used in the following emulated hardware:
    - C64/C128 Idun cartridge
 */
@@ -154,21 +162,24 @@ static void iduncart_eram_read()
     uint8_t untalk[] = {0x5f};
 
     // TALK #0
-    size_t n = vice_network_send(iduncart.socket, &talk, 2, 0);
-    assert(n==2);
+    ssize_t n = vice_network_send(iduncart.socket, &talk, 2, 0);
+    if (n < 0) { log_error(LOG_DEFAULT, "eram_read: TALK send failed: %d", vice_network_get_errorcode()); return; }
+
     // First byte is num pages
     while (vice_network_select_poll_one(iduncart.socket) == 0);
     n = vice_network_receive(iduncart.socket, &pages, 1, 0);
-    assert(n==1);
-    assert(pages < PAGES_PER_BLOCK);
-    
+    if (n < 0) { log_error(LOG_DEFAULT, "eram_read: pages recv failed: %d", vice_network_get_errorcode()); return; }
+    if (pages >= PAGES_PER_BLOCK) { log_error(LOG_DEFAULT, "eram_read: invalid page count %d", pages); return; }
+
     log_debug(LOG_DEFAULT, "Read %d pages for block %d", pages, iduncart.m_block);
 
     while (pages > 0) {
-        n = vice_network_receive(iduncart.socket, &blockMem[offset], 256,
-                                0x100);    /* flags=MSG_WAITALL*/
-        assert(n == 256);
-        
+        n = vice_network_receive(iduncart.socket, &blockMem[offset], 256, MSG_WAITALL);
+        if (n != 256) {
+			log_error(LOG_DEFAULT, "eram_read: short page recv %zd", n);
+			return;
+		}
+
         uint8_t *a = blockMem;
         log_debug(LOG_DEFAULT, "page #%d", (int)offset/256);
         for (uint16_t i=0;i < 16; i++) {
@@ -178,23 +189,28 @@ static void iduncart_eram_read()
         }
 
         offset += 256;
+
         // UNTALK
-        vice_network_send(iduncart.socket, &untalk, 1, 0);
+        n = vice_network_send(iduncart.socket, &untalk, 1, 0);
+        if (n < 0) { log_error(LOG_DEFAULT, "eram_read: UNTALK send failed: %d", vice_network_get_errorcode()); return; }
         if (--pages == 0) return;
+
         // TALK #0
-        vice_network_send(iduncart.socket, &talk, 2, 0);
+        n = vice_network_send(iduncart.socket, &talk, 2, 0);
+        if (n < 0) { log_error(LOG_DEFAULT, "eram_read: TALK send failed: %d", vice_network_get_errorcode()); return; }
     }
     // UNTALK
-    vice_network_send(iduncart.socket, &untalk, 1, 0);
+    n = vice_network_send(iduncart.socket, &untalk, 1, 0);
+    if (n < 0) { log_error(LOG_DEFAULT, "eram_read: final UNTALK send failed: %d", vice_network_get_errorcode()); }
 }
 
 static void iduncart_eram_loadblock()
 {
     uint8_t cmd[] = {0x20, 0x7f, CMD_LOAD_BLOCK, iduncart.m_block};
 
-    int n = vice_network_send(iduncart.socket, &cmd, 4, 0);
+    ssize_t n = vice_network_send(iduncart.socket, &cmd, 4, 0);
     if (n < 0) {
-        log_error(LOG_DEFAULT, "Idun socket write failed: %d.", vice_network_get_errorcode());
+        log_error(LOG_DEFAULT, "eram_loadblock: send failed: %d", vice_network_get_errorcode());
     } else {
         iduncart_eram_read();
         log_debug(LOG_DEFAULT, "ERAM block %d loaded", iduncart.m_block);
@@ -205,9 +221,9 @@ static void iduncart_eram_freemap()
 {
     uint8_t cmd[] = {0x20, 0x7f, CMD_FREEMAP, iduncart.m_block};
 
-    int n = vice_network_send(iduncart.socket, &cmd, 4, 0);
+    ssize_t n = vice_network_send(iduncart.socket, &cmd, 4, 0);
     if (n < 0) {
-        log_error(LOG_DEFAULT, "Idun socket write failed: %d.", vice_network_get_errorcode());
+        log_error(LOG_DEFAULT, "eram_freemap: send failed: %d", vice_network_get_errorcode());
     } else {
         iduncart_eram_read();
         log_debug(LOG_DEFAULT, "ERAM system block re-loaded");
@@ -228,10 +244,12 @@ static void iduncart_eram_writeback()
         if (cmp & pg) {
             uint16_t offset = c * 256;
             cmd[3] = c;
-            size_t n = vice_network_send(iduncart.socket, &cmd, 4, 0);
-            assert(n==4);
+
+            ssize_t n = vice_network_send(iduncart.socket, &cmd, 4, 0);
+            if (n < 0) { log_error(LOG_DEFAULT, "eram_writeback: cmd send failed: %d", vice_network_get_errorcode()); return; }
+
             n = vice_network_send(iduncart.socket, &iduncart.block_data[offset], 256, 0);
-            assert(n==256);
+            if (n < 0) { log_error(LOG_DEFAULT, "eram_writeback: data send failed: %d", vice_network_get_errorcode()); return; }
 
             uint8_t *a = iduncart.block_data;
             log_debug(LOG_DEFAULT, "UPDATE #%d", c);
@@ -388,7 +406,7 @@ void iduncart_io_store_data(io_iduncart_t *context, uint8_t data)
 
     IDUN_VERBOSE_DEBUG((LOG_DEFAULT, "Output 0x%02x '%c'.", data, isgraph(data) ? data : '.'));
 
-    int n = vice_network_send(context->socket, &data, 1, 0);
+    ssize_t n = vice_network_send(context->socket, &data, 1, 0);
     if (n < 0) {
         log_error(LOG_DEFAULT, "Error writing: %d.", vice_network_get_errorcode());
         vice_network_socket_close(context->socket);
@@ -499,7 +517,8 @@ uint8_t iduncart_io_read(io_iduncart_t *context, uint16_t ioaddr)
         if (vice_network_select_poll_one(context->socket) > 0) {
             // socket ready; fetch data to buffer
             context->pfirst = recvBuf-1;
-            c = vice_network_receive(context->socket, recvBuf, MAX_PIPE_MSG_BYTES, 0);
+            ssize_t nr = vice_network_receive(context->socket, recvBuf, MAX_PIPE_MSG_BYTES, 0);
+            c = (nr > 0) ? (size_t)nr : 0;
             context->plast = context->pfirst + c;
         }
 #pragma GCC diagnostic pop
