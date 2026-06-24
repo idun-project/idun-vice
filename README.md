@@ -42,11 +42,3 @@ To connect to the cartridge from a PC running the emulator, you must edit `~/.co
 [io]
 socket = "0.0.0.0:25232"	# allow remote emulator connection
 ```
-
-### Using without idun-cartridge
-
-When there is no cartridge, but just a "naked" Raspberry Pi, then the system has no way to toggle the Mode switch. The default will be assumed Mode "OFF", which normally means to boot on a C128. There are a couple of options if what you really want to boot is an emulated C64.
-
-1. You can edit your idunrc.toml file, and change the options under `[start]`. If you set it up like a C64, then the default Mode "OFF" will give you a C64 emulated environment.
-2. You can fake the Mode switch to "ON" with a simple command run from a Linux prompt on the RasPi:
-`echo "1" | sudo tee /run/idun/modesw`
