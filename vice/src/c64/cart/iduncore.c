@@ -169,7 +169,7 @@ static void iduncart_eram_read()
     while (vice_network_select_poll_one(iduncart.socket) == 0);
     n = vice_network_receive(iduncart.socket, &pages, 1, 0);
     if (n < 0) { log_error(LOG_DEFAULT, "eram_read: pages recv failed: %d", vice_network_get_errorcode()); return; }
-    if (pages >= PAGES_PER_BLOCK) { log_error(LOG_DEFAULT, "eram_read: invalid page count %d", pages); return; }
+    if (pages > PAGES_PER_BLOCK) { log_error(LOG_DEFAULT, "eram_read: invalid page count %d", pages); return; }
 
     log_debug(LOG_DEFAULT, "Read %d pages for block %d", pages, iduncart.m_block);
 
